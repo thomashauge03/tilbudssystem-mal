@@ -9,8 +9,80 @@ import { toast } from "sonner";
 import {
   Plus, Trash2, Users, Building2, RefreshCw, Search,
   CheckCircle2, Clock, ChevronLeft, ChevronRight,
-  LayoutDashboard, Link2, X,
+  LayoutDashboard, Link2, X, ShieldAlert, Eye, EyeOff,
 } from "lucide-react";
+
+// ── Passord-bekreftelse modal ────────────────────────────────────────────────
+function PasswordConfirmModal({ onConfirm, onCancel, title, description }: {
+  onConfirm: () => void;
+  onCancel: () => void;
+  title: string;
+  description: string;
+}) {
+  const { user } = useAuth();
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const confirm = async () => {
+    if (!password) return;
+    setLoading(true);
+    setError("");
+    const { error: e } = await supabase.auth.signInWithPassword({
+      email: user?.email ?? "",
+      password,
+    });
+    setLoading(false);
+    if (e) { setError("Feil passord. Prøv igjen."); return; }
+    onConfirm();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-sm rounded-xl border bg-card shadow-xl p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+            <ShieldAlert className="h-5 w-5 text-amber-600" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-sm">{title}</h2>
+            <p className="text-xs text-muted-foreground">{description}</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Bekreft med ditt passord</Label>
+          <div className="relative">
+            <Input
+              type={show ? "text" : "password"}
+              placeholder="Passord…"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && confirm()}
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={() => setShow(!show)}
+              className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+            >
+              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" onClick={onCancel} disabled={loading}>Avbryt</Button>
+          <Button onClick={confirm} disabled={loading || !password}>
+            {loading ? "Bekrefter…" : "Bekreft"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
@@ -104,17 +176,18 @@ function AdminPage() {
   const [linking, setLinking] = useState(false);
   const [linkUserSearch, setLinkUserSearch] = useState("");
   const [linkTenantSearch, setLinkTenantSearch] = useState("");
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    const [{ data: t }, { data: tu }] = await Promise.all([
-      supabase.from("tenants").select("*").order("name"),
+    const [{ data: tu }, tenantsRes, usersRes] = await Promise.all([
       supabase.from("tenant_users").select("*"),
+      supabase.rpc("list_tenants" as never),
+      supabase.rpc("list_auth_users" as never),
     ]);
-    setTenants(t ?? []);
     setTenantUsers(tu ?? []);
-    const { data: users } = await supabase.rpc("list_auth_users" as never);
-    if (users) setAuthUsers(users as AuthUser[]);
+    if (tenantsRes.data) setTenants(tenantsRes.data as Tenant[]);
+    if (usersRes.data) setAuthUsers(usersRes.data as AuthUser[]);
     setLoading(false);
   };
 
@@ -187,8 +260,7 @@ function AdminPage() {
     load();
   };
 
-  const linkUser = async () => {
-    if (!linkTenantId || !linkUserId) return;
+  const doLinkUser = async () => {
     setLinking(true);
     const { error } = await supabase.from("tenant_users").insert({
       tenant_id: linkTenantId, user_id: linkUserId, role: linkRole,
@@ -197,9 +269,18 @@ function AdminPage() {
     if (error) { toast.error(error.message); return; }
     const t = tenants.find(t => t.id === linkTenantId);
     const u = authUsers.find(u => u.id === linkUserId);
-    toast.success(`${u?.email} koblet til «${t?.name}»`);
+    toast.success(`${u?.email} koblet til «${t?.name}» som ${linkRole}`);
     setLinkUserId(""); setLinkTenantId(""); setLinkUserSearch(""); setLinkTenantSearch("");
     load();
+  };
+
+  const linkUser = () => {
+    if (!linkTenantId || !linkUserId) return;
+    if (linkRole === "admin") {
+      setShowPasswordModal(true);
+    } else {
+      doLinkUser();
+    }
   };
 
   const unlinkUser = async (tuId: string) => {
@@ -512,6 +593,16 @@ function AdminPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Passord-modal */}
+      {showPasswordModal && (
+        <PasswordConfirmModal
+          title="Bekreft admin-tilgang"
+          description="Du er i ferd med å gi admin-tilgang. Skriv inn ditt passord for å bekrefte."
+          onConfirm={() => { setShowPasswordModal(false); doLinkUser(); }}
+          onCancel={() => setShowPasswordModal(false)}
+        />
       )}
 
       {/* ── KOBLE ── */}

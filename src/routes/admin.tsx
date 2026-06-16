@@ -263,6 +263,9 @@ function AdminPage() {
 
   const doLinkUser = async () => {
     setLinking(true);
+    // Bekreft e-post automatisk ved kobling
+    await supabase.rpc("confirm_user_email" as never, { target_user_id: linkUserId } as never);
+
     const { error } = await supabase.from("tenant_users").insert({
       tenant_id: linkTenantId, user_id: linkUserId, role: linkRole,
     });
@@ -270,7 +273,7 @@ function AdminPage() {
     if (error) { toast.error(error.message); return; }
     const t = tenants.find(t => t.id === linkTenantId);
     const u = authUsers.find(u => u.id === linkUserId);
-    toast.success(`${u?.email} koblet til «${t?.name}» som ${linkRole}`);
+    toast.success(`${u?.email} koblet til «${t?.name}» som ${linkRole} — e-post bekreftet`);
     setLinkUserId(""); setLinkTenantId(""); setLinkUserSearch(""); setLinkTenantSearch("");
     load();
   };
@@ -388,6 +391,18 @@ function AdminPage() {
                       <span className="text-sm">{u.email}</span>
                     </div>
                     <div className="flex items-center gap-2">
+                      {!u.confirmed_at && (
+                        <button
+                          onClick={async () => {
+                            await supabase.rpc("confirm_user_email" as never, { target_user_id: u.id } as never);
+                            toast.success(`${u.email} bekreftet`);
+                            load();
+                          }}
+                          className="text-xs text-amber-600 hover:underline font-medium"
+                        >
+                          Bekreft e-post
+                        </button>
+                      )}
                       {linked?.tenant
                         ? <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs">{linked.tenant.name}</span>
                         : <span className="text-xs text-muted-foreground italic">Ingen kunde</span>}

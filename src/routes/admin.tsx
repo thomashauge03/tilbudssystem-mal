@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Plus, Trash2, Users, Building2, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Users, Building2, RefreshCw, Search, CheckCircle2, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
@@ -14,7 +14,7 @@ export const Route = createFileRoute("/admin")({
 
 type Tenant = { id: string; name: string; slug: string; created_at: string };
 type TenantUser = { id: string; tenant_id: string; user_id: string; role: string };
-type AuthUser = { id: string; email: string };
+type AuthUser = { id: string; email: string; confirmed_at: string | null; created_at: string };
 
 function SectionCard({ title, description, icon: Icon, children }: {
   title: string;
@@ -52,6 +52,8 @@ function AdminPage() {
   const [tenantUsers, setTenantUsers] = useState<TenantUser[]>([]);
   const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userSearch, setUserSearch] = useState("");
+  const [userFilter, setUserFilter] = useState<"all" | "confirmed" | "unconfirmed">("all");
 
   // New tenant form
   const [newName, setNewName] = useState("");
@@ -61,7 +63,7 @@ function AdminPage() {
   // Link user form
   const [linkTenantId, setLinkTenantId] = useState("");
   const [linkUserId, setLinkUserId] = useState("");
-  const [linkRole, setLinkRole] = useState("admin");
+  const [linkRole, setLinkRole] = useState("member");
   const [linking, setLinking] = useState(false);
 
   const load = async () => {
@@ -73,9 +75,6 @@ function AdminPage() {
     setTenants(t ?? []);
     setTenantUsers(tu ?? []);
 
-    // Hent auth-brukere via service role (admin API)
-    // Siden vi ikke har direkte tilgang til auth.users fra klient,
-    // bruker vi en enkel workaround via SQL-funksjonen
     const { data: users } = await supabase.rpc("list_auth_users" as never);
     if (users) setAuthUsers(users as AuthUser[]);
 
@@ -84,7 +83,6 @@ function AdminPage() {
 
   useEffect(() => { load(); }, []);
 
-  // Auto-generer slug fra navn
   const handleNameChange = (name: string) => {
     setNewName(name);
     setNewSlug(name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""));
@@ -96,7 +94,7 @@ function AdminPage() {
     const { error } = await supabase.from("tenants").insert({ name: newName.trim(), slug: newSlug.trim() });
     setSaving(false);
     if (error) { toast.error("Feil: " + error.message); return; }
-    toast.success(`Tenant «${newName}» opprettet!`);
+    toast.success(`Kunde «${newName}» opprettet!`);
     setNewName(""); setNewSlug("");
     load();
   };
@@ -129,7 +127,7 @@ function AdminPage() {
   const unlinkUser = async (id: string) => {
     const { error } = await supabase.from("tenant_users").delete().eq("id", id);
     if (error) { toast.error("Feil: " + error.message); return; }
-    toast.success("Bruker fjernet fra tenant");
+    toast.success("Bruker fjernet");
     load();
   };
 
@@ -138,6 +136,18 @@ function AdminPage() {
 
   const getUserEmail = (userId: string) =>
     authUsers.find(u => u.id === userId)?.email ?? userId.slice(0, 8) + "…";
+
+  const filteredUsers = authUsers.filter(u => {
+    const matchSearch = u.email.toLowerCase().includes(userSearch.toLowerCase());
+    const matchFilter =
+      userFilter === "all" ? true :
+      userFilter === "confirmed" ? !!u.confirmed_at :
+      !u.confirmed_at;
+    return matchSearch && matchFilter;
+  });
+
+  const confirmedCount = authUsers.filter(u => !!u.confirmed_at).length;
+  const unconfirmedCount = authUsers.filter(u => !u.confirmed_at).length;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -151,6 +161,101 @@ function AdminPage() {
           Oppdater
         </Button>
       </div>
+
+      {/* Brukeroversikt */}
+      <SectionCard title="Brukere" description="Alle registrerte brukere og bekreftelsestatus" icon={Users}>
+        {/* Statistikk */}
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="rounded-lg border bg-muted/30 p-3 text-center">
+            <p className="text-2xl font-bold">{authUsers.length}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Totalt</p>
+          </div>
+          <div className="rounded-lg border bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900 p-3 text-center">
+            <p className="text-2xl font-bold text-green-600">{confirmedCount}</p>
+            <p className="text-xs text-green-600/70 mt-0.5">Bekreftet</p>
+          </div>
+          <div className="rounded-lg border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900 p-3 text-center">
+            <p className="text-2xl font-bold text-amber-600">{unconfirmedCount}</p>
+            <p className="text-xs text-amber-600/70 mt-0.5">Ikke bekreftet</p>
+          </div>
+        </div>
+
+        {/* Søk og filter */}
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Søk på e-post…"
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          <div className="flex rounded-md border overflow-hidden text-sm">
+            {(["all", "confirmed", "unconfirmed"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setUserFilter(f)}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  userFilter === f
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f === "all" ? "Alle" : f === "confirmed" ? "Bekreftet" : "Ubekreftet"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Brukerliste */}
+        <div className="space-y-1.5 max-h-72 overflow-y-auto">
+          {filteredUsers.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Ingen brukere funnet</p>
+          ) : filteredUsers.map(u => {
+            const tenant = tenantUsers.find(tu => tu.user_id === u.id);
+            const tenantName = tenant ? tenants.find(t => t.id === tenant.tenant_id)?.name : null;
+            return (
+              <div key={u.id} className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {u.confirmed_at ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{u.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {u.confirmed_at
+                        ? `Bekreftet ${new Date(u.confirmed_at).toLocaleDateString("nb-NO")}`
+                        : "Venter på e-postbekreftelse"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {tenantName && (
+                    <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
+                      {tenantName}
+                    </span>
+                  )}
+                  {tenant && (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      tenant.role === "admin"
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    }`}>
+                      {tenant.role}
+                    </span>
+                  )}
+                  {!tenantName && (
+                    <span className="text-xs text-muted-foreground italic">Ingen kunde</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </SectionCard>
 
       {/* Opprett tenant */}
       <SectionCard title="Opprett ny kunde" description="Legg til en ny bedrift/tenant i systemet" icon={Building2}>
@@ -191,7 +296,9 @@ function AdminPage() {
             >
               <option value="">Velg bruker…</option>
               {authUsers.map(u => (
-                <option key={u.id} value={u.id}>{u.email}</option>
+                <option key={u.id} value={u.id}>
+                  {u.email} {!u.confirmed_at ? "⚠️" : ""}
+                </option>
               ))}
             </select>
           </div>
@@ -215,8 +322,8 @@ function AdminPage() {
               value={linkRole}
               onChange={(e) => setLinkRole(e.target.value)}
             >
+              <option value="member">Member</option>
               <option value="admin">Admin</option>
-              <option value="member">Medlem</option>
             </select>
           </div>
           <Button onClick={linkUser} disabled={linking || !linkTenantId || !linkUserId}>
@@ -224,15 +331,9 @@ function AdminPage() {
             {linking ? "Kobler…" : "Koble"}
           </Button>
         </div>
-
-        {authUsers.length === 0 && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            Ingen brukere funnet. Brukere må opprettes i Supabase Authentication først.
-          </p>
-        )}
       </SectionCard>
 
-      {/* Oversikt over tenants og tilkoblede brukere */}
+      {/* Kunder og brukere */}
       <SectionCard title="Kunder og brukere" description="Oversikt over alle tenants og hvem som har tilgang" icon={Building2}>
         {loading ? (
           <p className="text-sm text-muted-foreground">Laster…</p>
@@ -258,32 +359,41 @@ function AdminPage() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-
                   {users.length === 0 ? (
                     <p className="text-xs text-muted-foreground italic">Ingen brukere koblet til ennå</p>
                   ) : (
                     <div className="space-y-1">
-                      {users.map(tu => (
-                        <div key={tu.id} className="flex items-center justify-between rounded bg-background px-3 py-1.5 text-sm">
-                          <span>{getUserEmail(tu.user_id)}</span>
-                          <div className="flex items-center gap-3">
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                              tu.role === "admin"
-                                ? "bg-primary/10 text-primary"
-                                : "bg-muted text-muted-foreground"
-                            }`}>
-                              {tu.role}
-                            </span>
-                            <button
-                              onClick={() => unlinkUser(tu.id)}
-                              className="text-muted-foreground hover:text-destructive transition-colors"
-                              title="Fjern tilgang"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                      {users.map(tu => {
+                        const authUser = authUsers.find(u => u.id === tu.user_id);
+                        return (
+                          <div key={tu.id} className="flex items-center justify-between rounded bg-background px-3 py-1.5 text-sm">
+                            <div className="flex items-center gap-2">
+                              {authUser?.confirmed_at ? (
+                                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                              ) : (
+                                <Clock className="h-3.5 w-3.5 text-amber-500" />
+                              )}
+                              <span>{getUserEmail(tu.user_id)}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                tu.role === "admin"
+                                  ? "bg-primary/10 text-primary"
+                                  : "bg-muted text-muted-foreground"
+                              }`}>
+                                {tu.role}
+                              </span>
+                              <button
+                                onClick={() => unlinkUser(tu.id)}
+                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                title="Fjern tilgang"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

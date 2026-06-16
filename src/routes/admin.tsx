@@ -245,7 +245,9 @@ function AdminPage() {
   const createTenant = async () => {
     if (!newName.trim() || !newSlug.trim()) return;
     setSaving(true);
-    const { error } = await supabase.from("tenants").insert({ name: newName.trim(), slug: newSlug.trim() });
+    const { error } = await supabase.rpc("admin_create_tenant" as never, {
+      p_name: newName.trim(), p_slug: newSlug.trim(),
+    } as never);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`«${newName}» opprettet!`);
@@ -255,7 +257,7 @@ function AdminPage() {
 
   const deleteTenant = async (id: string, name: string) => {
     if (!confirm(`Slett «${name}»? Dette sletter ALL data for denne kunden.`)) return;
-    const { error } = await supabase.from("tenants").delete().eq("id", id);
+    const { error } = await supabase.rpc("admin_delete_tenant" as never, { p_tenant_id: id } as never);
     if (error) { toast.error(error.message); return; }
     toast.success(`«${name}» slettet`);
     load();
@@ -266,9 +268,9 @@ function AdminPage() {
     // Bekreft e-post automatisk ved kobling
     await supabase.rpc("confirm_user_email" as never, { target_user_id: linkUserId } as never);
 
-    const { error } = await supabase.from("tenant_users").insert({
-      tenant_id: linkTenantId, user_id: linkUserId, role: linkRole,
-    });
+    const { error } = await supabase.rpc("admin_link_user" as never, {
+      p_user_id: linkUserId, p_tenant_id: linkTenantId, p_role: linkRole,
+    } as never);
     setLinking(false);
     if (error) { toast.error(error.message); return; }
     const t = tenants.find(t => t.id === linkTenantId);
@@ -337,15 +339,15 @@ function AdminPage() {
   const saveTilpass = async () => {
     if (!tilpassTenantId) return;
     setTilpassSaving(true);
-    await supabase.from("app_settings").upsert({
-      tenant_id: tilpassTenantId,
-      company_name: tilpassSettings.company_name,
-      company_tagline: tilpassSettings.company_tagline,
-      primary_color: tilpassSettings.primary_color,
-      logo_url: tilpassSettings.logo_url,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "tenant_id" });
+    const { error } = await supabase.rpc("save_app_settings", {
+      p_tenant_id:       tilpassTenantId,
+      p_company_name:    tilpassSettings.company_name,
+      p_company_tagline: tilpassSettings.company_tagline,
+      p_primary_color:   tilpassSettings.primary_color,
+      p_logo_url:        tilpassSettings.logo_url,
+    });
     setTilpassSaving(false);
+    if (error) { toast.error(error.message); return; }
     toast.success("Innstillinger lagret!");
   };
 

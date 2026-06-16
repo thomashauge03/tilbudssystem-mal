@@ -5,6 +5,7 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { AppNav } from "@/components/app-nav";
+import { useEffect } from "react";
 
 function NotFoundComponent() {
   return (
@@ -82,9 +83,18 @@ function NoTenantPage({ email, signOut }: { email: string; signOut: () => void }
 }
 
 function AppShell() {
-  const { user, loading, hasTenant, signOut } = useAuth();
+  const { user, loading, hasTenant, signOut, branding } = useAuth();
   const path = useRouterState({ select: (r) => r.location.pathname });
   const isPublic = path === "/login";
+
+  // Sett CSS-variabel for primærfarge basert på tenant-branding
+  useEffect(() => {
+    if (branding?.primary_color) {
+      document.documentElement.style.setProperty("--brand-primary", branding.primary_color);
+    } else {
+      document.documentElement.style.removeProperty("--brand-primary");
+    }
+  }, [branding?.primary_color]);
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Laster…</div>;
@@ -93,7 +103,6 @@ function AppShell() {
   if (!user && !isPublic) return <Navigate to="/login" />;
   if (isPublic) return <Outlet />;
 
-  // Innlogget men ingen tenant → blokker
   if (!hasTenant) {
     return <NoTenantPage email={user?.email ?? ""} signOut={signOut} />;
   }

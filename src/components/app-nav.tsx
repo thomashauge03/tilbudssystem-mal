@@ -60,7 +60,7 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
 ];
 
 export function AppNav() {
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, signOut, isAdmin, branding } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (r) => r.location.pathname });
   const { theme, setTheme } = useTheme();
@@ -85,8 +85,8 @@ export function AppNav() {
       {/* Brand */}
       <Link to="/" className="hm-brand">
         <img
-          src="/logo.png"
-          alt="Techauge"
+          src={branding?.logo_url || "/logo.png"}
+          alt={branding?.company_name || "Techauge"}
           className="hm-logo"
           style={{ height: "36px", width: "auto" }}
           onError={(e) => {
@@ -97,7 +97,7 @@ export function AppNav() {
           }}
         />
         <div className="hm-brand-text" style={{ display: "none" }}>
-          <span>Techauge</span>
+          <span>{branding?.company_name || "Techauge"}</span>
         </div>
       </Link>
 

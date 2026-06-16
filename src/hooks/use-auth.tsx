@@ -2,6 +2,13 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
+export interface TenantBranding {
+  company_name: string;
+  company_tagline: string;
+  primary_color: string;
+  logo_url: string;
+}
+
 interface AuthCtx {
   user: User | null;
   session: Session | null;
@@ -10,6 +17,7 @@ interface AuthCtx {
   isAdmin: boolean;
   tenantId: string | null;
   hasTenant: boolean;
+  branding: TenantBranding | null;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -23,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<"admin" | "member" | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [branding, setBranding] = useState<TenantBranding | null>(null);
 
   const fetchRole = async (userId: string) => {
     const { data } = await supabase
@@ -31,7 +40,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq("user_id", userId)
       .single();
     setRole((data?.role as "admin" | "member") ?? null);
-    setTenantId(data?.tenant_id ?? null);
+    const tid = data?.tenant_id ?? null;
+    setTenantId(tid);
+
+    if (tid) {
+      const { data: settings } = await supabase
+        .from("app_settings")
+        .select("company_name, company_tagline, primary_color, logo_url")
+        .eq("tenant_id", tid)
+        .single();
+      if (settings) {
+        setBranding({
+          company_name: settings.company_name ?? "",
+          company_tagline: (settings as any).company_tagline ?? "",
+          primary_color: (settings as any).primary_color ?? "#dc2626",
+          logo_url: (settings as any).logo_url ?? "",
+        });
+      }
+    }
   };
 
   useEffect(() => {
@@ -39,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) fetchRole(s.user.id);
-      else { setRole(null); setTenantId(null); }
+      else { setRole(null); setTenantId(null); setBranding(null); }
     });
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -69,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: role === "admin",
       tenantId,
       hasTenant: tenantId !== null,
+      branding,
       signIn, signUp, signOut,
     }}>
       {children}

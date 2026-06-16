@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import {
   Plus, Trash2, Users, Building2, RefreshCw, Search,
   CheckCircle2, Clock, ChevronLeft, ChevronRight,
-  LayoutDashboard, Link2, X, ShieldAlert, Eye, EyeOff, UserX,
+  LayoutDashboard, Link2, X, ShieldAlert, Eye, EyeOff, UserX, Palette, Upload,
 } from "lucide-react";
 
 // ── Passord-bekreftelse modal ────────────────────────────────────────────────
@@ -139,7 +139,7 @@ function StatCard({ label, value, color }: { label: string; value: number; color
   );
 }
 
-type Tab = "oversikt" | "brukere" | "kunder" | "koble";
+type Tab = "oversikt" | "brukere" | "kunder" | "koble" | "tilpass";
 
 function AdminPage() {
   const { isAdmin, loading: authLoading } = useAuth();
@@ -308,11 +308,71 @@ function AdminPage() {
     load();
   };
 
+  // ── Tilpass state ──────────────────────────────────────────────────────────
+  const [tilpassTenantId, setTilpassTenantId] = useState("");
+  const [tilpassSettings, setTilpassSettings] = useState<{
+    company_name: string; company_tagline: string; primary_color: string; logo_url: string;
+  }>({ company_name: "", company_tagline: "", primary_color: "#dc2626", logo_url: "" });
+  const [tilpassLoading, setTilpassLoading] = useState(false);
+  const [tilpassSaving, setTilpassSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+
+  const loadTilpass = async (tenantId: string) => {
+    setTilpassTenantId(tenantId);
+    setTilpassLoading(true);
+    const { data } = await supabase
+      .from("app_settings")
+      .select("company_name, company_tagline, primary_color, logo_url")
+      .eq("tenant_id", tenantId)
+      .single();
+    setTilpassSettings({
+      company_name: data?.company_name ?? tenants.find(t => t.id === tenantId)?.name ?? "",
+      company_tagline: data?.company_tagline ?? "",
+      primary_color: (data as any)?.primary_color ?? "#dc2626",
+      logo_url: (data as any)?.logo_url ?? "",
+    });
+    setTilpassLoading(false);
+  };
+
+  const saveTilpass = async () => {
+    if (!tilpassTenantId) return;
+    setTilpassSaving(true);
+    await supabase.from("app_settings").upsert({
+      tenant_id: tilpassTenantId,
+      company_name: tilpassSettings.company_name,
+      company_tagline: tilpassSettings.company_tagline,
+      primary_color: tilpassSettings.primary_color,
+      logo_url: tilpassSettings.logo_url,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "tenant_id" });
+    setTilpassSaving(false);
+    toast.success("Innstillinger lagret!");
+  };
+
+  const uploadLogo = async (file: File) => {
+    if (!tilpassTenantId) return;
+    setLogoUploading(true);
+    const ext = file.name.split(".").pop();
+    const path = `${tilpassTenantId}/logo.${ext}`;
+    const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
+    if (error) { toast.error(error.message); setLogoUploading(false); return; }
+    const { data } = supabase.storage.from("logos").getPublicUrl(path);
+    setTilpassSettings(s => ({ ...s, logo_url: data.publicUrl }));
+    setLogoUploading(false);
+    toast.success("Logo lastet opp!");
+  };
+
+  const PRESET_COLORS = [
+    "#dc2626", "#ea580c", "#d97706", "#16a34a",
+    "#0284c7", "#7c3aed", "#db2777", "#0f172a",
+  ];
+
   const TABS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "oversikt", label: "Oversikt", icon: LayoutDashboard },
     { id: "brukere", label: `Brukere (${authUsers.length})`, icon: Users },
     { id: "kunder", label: `Kunder (${tenants.length})`, icon: Building2 },
     { id: "koble", label: "Koble bruker", icon: Link2 },
+    { id: "tilpass", label: "Tilpass", icon: Palette },
   ];
 
   return (
@@ -781,6 +841,185 @@ function AdminPage() {
               {linking ? "Kobler…" : "Koble bruker til kunde"}
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* ── TILPASS ── */}
+      {tab === "tilpass" && (
+        <div className="space-y-4">
+          {/* Velg tenant */}
+          <div className="rounded-xl border bg-card shadow-sm">
+            <div className="border-b px-6 py-4">
+              <h2 className="text-sm font-semibold">Velg kunde å tilpasse</h2>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {tenants.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => loadTilpass(t.id)}
+                    className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                      tilpassTenantId === t.id
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "bg-background hover:bg-muted/50"
+                    }`}
+                  >
+                    <p className="font-medium text-sm">{t.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{t.slug}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Innstillinger */}
+          {tilpassTenantId && (
+            <div className="rounded-xl border bg-card shadow-sm">
+              <div className="border-b px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold">
+                    Tilpass: {tenants.find(t => t.id === tilpassTenantId)?.name}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">Vises når deres brukere logger inn</p>
+                </div>
+                <Button onClick={saveTilpass} disabled={tilpassSaving || tilpassLoading}>
+                  {tilpassSaving ? "Lagrer…" : "Lagre"}
+                </Button>
+              </div>
+
+              {tilpassLoading ? (
+                <div className="p-6 text-sm text-muted-foreground">Laster…</div>
+              ) : (
+                <div className="p-6 space-y-6">
+
+                  {/* Logo */}
+                  <div className="space-y-3">
+                    <Label>Logo</Label>
+                    <div className="flex items-start gap-4">
+                      {tilpassSettings.logo_url ? (
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-lg border bg-muted/30 p-2 flex items-center justify-center w-24 h-16">
+                            <img
+                              src={tilpassSettings.logo_url}
+                              alt="Logo"
+                              className="max-h-12 max-w-20 object-contain"
+                            />
+                          </div>
+                          <button
+                            onClick={() => setTilpassSettings(s => ({ ...s, logo_url: "" }))}
+                            className="text-xs text-destructive hover:underline"
+                          >
+                            Fjern logo
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border-2 border-dashed border-muted-foreground/30 p-6 text-center w-48">
+                          <p className="text-xs text-muted-foreground">Ingen logo lastet opp</p>
+                        </div>
+                      )}
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) uploadLogo(f);
+                            e.target.value = "";
+                          }}
+                        />
+                        <Button variant="outline" size="sm" asChild disabled={logoUploading}>
+                          <span>
+                            <Upload className="mr-2 h-4 w-4" />
+                            {logoUploading ? "Laster opp…" : "Last opp logo"}
+                          </span>
+                        </Button>
+                      </label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">PNG, SVG eller JPG — helst med gjennomsiktig bakgrunn</p>
+                  </div>
+
+                  {/* Firmanavn og tagline */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Firmanavn</Label>
+                      <Input
+                        value={tilpassSettings.company_name}
+                        onChange={(e) => setTilpassSettings(s => ({ ...s, company_name: e.target.value }))}
+                        placeholder="T.d. TT Anlegg"
+                      />
+                      <p className="text-xs text-muted-foreground">Vises i toppen og på PDF-er</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tagline</Label>
+                      <Input
+                        value={tilpassSettings.company_tagline}
+                        onChange={(e) => setTilpassSettings(s => ({ ...s, company_tagline: e.target.value }))}
+                        placeholder="T.d. Anlegg · Maskin · Transport"
+                      />
+                      <p className="text-xs text-muted-foreground">Undertittel under firmanavnet</p>
+                    </div>
+                  </div>
+
+                  {/* Primærfarge */}
+                  <div className="space-y-3">
+                    <Label>Primærfarge</Label>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {PRESET_COLORS.map(color => (
+                        <button
+                          key={color}
+                          onClick={() => setTilpassSettings(s => ({ ...s, primary_color: color }))}
+                          className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 ${
+                            tilpassSettings.primary_color === color
+                              ? "border-foreground scale-110"
+                              : "border-transparent"
+                          }`}
+                          style={{ backgroundColor: color }}
+                          title={color}
+                        />
+                      ))}
+                      <div className="flex items-center gap-2 ml-2">
+                        <input
+                          type="color"
+                          value={tilpassSettings.primary_color}
+                          onChange={(e) => setTilpassSettings(s => ({ ...s, primary_color: e.target.value }))}
+                          className="h-8 w-8 cursor-pointer rounded border"
+                          title="Velg egendefinert farge"
+                        />
+                        <span className="text-xs font-mono text-muted-foreground">
+                          {tilpassSettings.primary_color}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Forhåndsvisning */}
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-2">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Forhåndsvisning</p>
+                      <div className="flex items-center gap-3">
+                        {tilpassSettings.logo_url && (
+                          <img src={tilpassSettings.logo_url} alt="" className="h-8 w-auto object-contain" />
+                        )}
+                        <div>
+                          <p className="font-bold text-sm" style={{ color: tilpassSettings.primary_color }}>
+                            {tilpassSettings.company_name || "Firmanavn"}
+                          </p>
+                          {tilpassSettings.company_tagline && (
+                            <p className="text-xs text-muted-foreground">{tilpassSettings.company_tagline}</p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        className="rounded px-3 py-1.5 text-sm font-medium text-white"
+                        style={{ backgroundColor: tilpassSettings.primary_color }}
+                      >
+                        Eksempelknapp
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

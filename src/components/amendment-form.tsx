@@ -58,7 +58,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
       const { data } = await supabase
         .from("projects")
         .select("id, name, project_number, status")
-        .eq("status", "active")
+        .eq("status", "aktiv")
         .order("name");
       return data ?? [];
     },
@@ -149,7 +149,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
     const id = await save(); if (!id) return;
     if (!a.customer_email) { toast.error("Mangler kunde-e-post"); return; }
     const subject = `Endringsmelding nr. ${a.amendment_number} – Prosjekt ${a.project_ref}`;
-    const body = `Hei,\n\nVedlagt finner du endringsmelding nr. ${a.amendment_number} for prosjekt ${a.project_ref}.\n\nMed vennlig hilsen\n${a.company_name ?? "Tilbudssystem"}`;
+    const body = `Hei,\n\nVedlagt finner du endringsmelding nr. ${a.amendment_number} for prosjekt ${a.project_ref}.\n\nMed vennlig hilsen\n${appSettings?.company_name ?? "Tilbudssystem"}`;
     const cc = a.project_manager && a.project_manager.includes("@") ? `&cc=${encodeURIComponent(a.project_manager)}` : "";
     window.location.href = `mailto:${encodeURIComponent(a.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}${cc}`;
   };
@@ -300,7 +300,7 @@ function generatePdf(a: AState, lines: ALine[], subtotal: number) {
 
   const html = `
     <div class="header">
-      <div><h1>${escapeHtml(a.company_name ?? "Tilbudssystem")}</h1><div style="font-size:9.5pt;color:#555;margin-top:4px">Endringsmelding</div></div>
+      <div><h1>${escapeHtml(appSettings?.company_name ?? "Tilbudssystem")}</h1><div style="font-size:9.5pt;color:#555;margin-top:4px">Endringsmelding</div></div>
       <div class="meta">
         <div>Nr.: <strong>${escapeHtml(a.amendment_number)}</strong></div>
         <div>Prosjekt: ${escapeHtml(a.project_ref)}</div>
@@ -327,7 +327,7 @@ function generatePdf(a: AState, lines: ALine[], subtotal: number) {
       <tfoot><tr class="total-row"><td colspan="4" class="num">Total eks. mva</td><td class="num">${nok(subtotal)}</td></tr></tfoot>
     </table>
 
-    <div class="footer">Prosjektleder: ${escapeHtml(a.project_manager || "—")} · ${escapeHtml(a.company_name ?? "Tilbudssystem")}</div>
+    <div class="footer">Prosjektleder: ${escapeHtml(a.project_manager || "—")} · ${escapeHtml(appSettings?.company_name ?? "Tilbudssystem")}</div>
   `;
   openPrintPdf(`Endringsmelding-${a.amendment_number}`, html);
 }

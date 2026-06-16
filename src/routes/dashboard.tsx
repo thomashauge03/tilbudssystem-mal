@@ -30,10 +30,10 @@ function useDashboard() {
     queryKey: ["dashboard"],
     queryFn: async () => {
       const [offersRes, amendmentsRes, recentRes, expiringRes] = await Promise.all([
-        supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "Godkjent").order("offer_number", { ascending: false }),
+        supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("offer_number", { ascending: false }),
         supabase.from("amendments").select("id, amendment_number, project_ref, notified_date, invoiced_amount, amendment_lines(quantity, unit_price)"),
-        supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "Godkjent").order("created_at", { ascending: false }).limit(6),
-        supabase.from("offers").select("id, offer_number, title, customer_name, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "Godkjent").gte("valid_until", today).lte("valid_until", soon),
+        supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("created_at", { ascending: false }).limit(6),
+        supabase.from("offers").select("id, offer_number, title, customer_name, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").gte("valid_until", today).lte("valid_until", soon),
       ]);
 
       const offers = offersRes.data ?? [];

@@ -42,7 +42,7 @@ function OrdrePage() {
       const { data, error } = await supabase
         .from("offers")
         .select("id, offer_number, title, customer_name, offer_date, valid_until, our_ref, project_number, offer_lines(quantity, unit_price, included), admin_cost_pct, invoiced_amount")
-        .eq("status", "Godkjent")
+        .eq("status", "godkjent")
         .order("offer_number", { ascending: false });
       if (error) throw error;
       return data ?? [];

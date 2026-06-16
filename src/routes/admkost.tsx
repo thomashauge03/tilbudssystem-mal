@@ -29,7 +29,7 @@ function AdminCostsPage() {
   });
 
   const add = async () => {
-    const { error } = await supabase.from("admin_costs").insert({ year: newYear, percentage: newPct });
+    const { error } = await supabase.from("admin_costs").insert({ year: newYear, pct: newPct });
     if (error) { toast.error(error.message); return; }
     toast.success("Lagt til");
     qc.invalidateQueries({ queryKey: ["admin-costs"] });
@@ -37,7 +37,7 @@ function AdminCostsPage() {
   };
 
   const saveEdit = async (id: string) => {
-    const { error } = await supabase.from("admin_costs").update({ percentage: editVal }).eq("id", id);
+    const { error } = await supabase.from("admin_costs").update({ pct: editVal }).eq("id", id);
     if (error) { toast.error(error.message); return; }
     setEditId(null);
     toast.success("Oppdatert");
@@ -78,14 +78,14 @@ function AdminCostsPage() {
                     {editId === r.id ? (
                       <Input type="number" step="0.1" value={editVal} onChange={(e) => setEditVal(Number(e.target.value))} className="w-32" />
                     ) : (
-                      <span className="font-mono">{Number(r.percentage)} %</span>
+                      <span className="font-mono">{Number(r.pct)} %</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
                     {editId === r.id ? (
                       <Button size="sm" onClick={() => saveEdit(r.id)}><Check className="mr-1 h-3 w-3" />Lagre</Button>
                     ) : (
-                      <Button size="sm" variant="ghost" onClick={() => { setEditId(r.id); setEditVal(Number(r.percentage)); }}><Pencil className="h-3 w-3" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setEditId(r.id); setEditVal(Number(r.pct)); }}><Pencil className="h-3 w-3" /></Button>
                     )}
                   </td>
                 </tr>

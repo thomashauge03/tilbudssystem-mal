@@ -16,7 +16,7 @@ export const Route = createFileRoute("/prosjekter")({
   component: ProsjekterPage,
 });
 
-type Status = "active" | "completed" | "paused";
+type Status = "aktiv" | "fullført" | "pause";
 
 interface Project {
   id?: string;
@@ -30,21 +30,21 @@ interface Project {
 }
 
 const STATUS_LABELS: Record<Status, string> = {
-  active: "Aktiv",
-  completed: "Fullført",
-  paused: "På vent",
+  aktiv: "Aktiv",
+  fullført: "Fullført",
+  pause: "På vent",
 };
 
 const STATUS_COLORS: Record<Status, string> = {
-  active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-  completed: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
-  paused: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  aktiv: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+  fullført: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+  pause: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
 };
 
 function emptyProject(): Project {
   return {
     name: "", project_number: "", customer_id: null, customer_name: "",
-    status: "active", description: "", start_date: "",
+    status: "aktiv", description: "", start_date: "",
   };
 }
 
@@ -159,7 +159,7 @@ function ProsjekterPage() {
           <Input placeholder="Søk på namn, nummer, kunde…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
         </div>
         <div className="flex gap-1 rounded-lg border bg-muted/40 p-1">
-          {(["all", "active", "completed", "paused"] as const).map((s) => (
+          {(["all", "aktiv", "fullført", "pause"] as const).map((s) => (
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
@@ -279,9 +279,9 @@ function ProsjekterPage() {
                 <Select value={edit.status} onValueChange={(v) => setEdit({ ...edit, status: v as Status })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">Aktiv</SelectItem>
-                    <SelectItem value="paused">På vent</SelectItem>
-                    <SelectItem value="completed">Fullført</SelectItem>
+                    <SelectItem value="aktiv">Aktiv</SelectItem>
+                    <SelectItem value="pause">På vent</SelectItem>
+                    <SelectItem value="fullført">Fullført</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -106,9 +106,9 @@ function CustomersPage() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">Ingen kunder.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Ingen kunder.</td></tr>
             ) : rows.map((c: any, i: number) => (
               <tr key={c.id} className={`border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
                 <td className="px-4 py-3 font-medium">{c.name}</td>

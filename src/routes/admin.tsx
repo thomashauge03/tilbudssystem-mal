@@ -181,12 +181,12 @@ function AdminPage() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: tu }, tenantsRes, usersRes] = await Promise.all([
-      supabase.from("tenant_users").select("*"),
+    const [tuRes, tenantsRes, usersRes] = await Promise.all([
+      supabase.rpc("list_tenant_users" as never),
       supabase.rpc("list_tenants" as never),
       supabase.rpc("list_auth_users" as never),
     ]);
-    setTenantUsers(tu ?? []);
+    if (tuRes.data) setTenantUsers(tuRes.data as TenantUser[]);
     if (tenantsRes.data) setTenants(tenantsRes.data as Tenant[]);
     if (usersRes.data) setAuthUsers(usersRes.data as AuthUser[]);
     setLoading(false);

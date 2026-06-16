@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import {
   Plus, Trash2, Users, Building2, RefreshCw, Search,
   CheckCircle2, Clock, ChevronLeft, ChevronRight,
-  LayoutDashboard, Link2, X, ShieldAlert, Eye, EyeOff,
+  LayoutDashboard, Link2, X, ShieldAlert, Eye, EyeOff, UserX,
 } from "lucide-react";
 
 // ── Passord-bekreftelse modal ────────────────────────────────────────────────
@@ -177,6 +177,7 @@ function AdminPage() {
   const [linkUserSearch, setLinkUserSearch] = useState("");
   const [linkTenantSearch, setLinkTenantSearch] = useState("");
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [deleteUserModal, setDeleteUserModal] = useState<AuthUser | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -287,6 +288,19 @@ function AdminPage() {
     const { error } = await supabase.from("tenant_users").delete().eq("id", tuId);
     if (error) { toast.error(error.message); return; }
     toast.success("Tilgang fjernet");
+    load();
+  };
+
+  const deleteUser = async (user: AuthUser) => {
+    // Fjern fra tenant_users først, deretter slett auth-bruker
+    const userTenantLinks = tenantUsers.filter(tu => tu.user_id === user.id);
+    for (const tu of userTenantLinks) {
+      await supabase.from("tenant_users").delete().eq("id", tu.id);
+    }
+    const { error } = await supabase.rpc("delete_auth_user" as never, { target_user_id: user.id } as never);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`${user.email} er slettet fra systemet`);
+    setDeleteUserModal(null);
     load();
   };
 
@@ -462,8 +476,8 @@ function AdminPage() {
                         </span>
                         <button
                           onClick={() => unlinkUser(linked.tuId)}
-                          title="Fjern tilgang"
-                          className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                          title="Fjern fra kunde"
+                          className="text-muted-foreground hover:text-amber-500 transition-colors p-1"
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -476,6 +490,13 @@ function AdminPage() {
                         + Koble til kunde
                       </button>
                     )}
+                    <button
+                      onClick={() => setDeleteUserModal(u)}
+                      title="Slett bruker permanent"
+                      className="text-muted-foreground hover:text-destructive transition-colors p-1 ml-1"
+                    >
+                      <UserX className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               );
@@ -593,6 +614,16 @@ function AdminPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Slett bruker modal */}
+      {deleteUserModal && (
+        <PasswordConfirmModal
+          title={`Slett ${deleteUserModal.email}`}
+          description="Dette fjerner brukeren permanent fra systemet og alle tilknyttede kunder. Handlingen kan ikke angres."
+          onConfirm={() => deleteUser(deleteUserModal)}
+          onCancel={() => setDeleteUserModal(null)}
+        />
       )}
 
       {/* Passord-modal */}

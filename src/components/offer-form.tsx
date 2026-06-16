@@ -65,8 +65,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     queryKey: ["admin-cost-current"],
     queryFn: async () => {
       const year = new Date().getFullYear();
-      const { data } = await supabase.from("admin_costs").select("percentage").eq("year", year).maybeSingle();
-      return Number(data?.percentage ?? 0);
+      const { data } = await supabase.from("admin_costs").select("pct").eq("year", year).maybeSingle();
+      return Number(data?.pct ?? 0);
     },
   });
 
@@ -83,8 +83,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     queryFn: async () => {
       const { data } = await supabase
         .from("projects")
-        .select("id, name, project_number, customer_id, customer_name, status")
-        .eq("status", "active")
+        .select("id, name, customer_id, status")
+        .eq("status", "aktiv")
         .order("name");
       return data ?? [];
     },
@@ -327,9 +327,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <Select value={offer.our_ref} onValueChange={(v) => set("our_ref", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {(appSettings?.our_refs ?? [{ name: "Tommy Hauge", phone: "", email: "" }]).map((r) => (
+                {(appSettings?.our_refs ?? []).filter(r => r.name?.trim()).map((r) => (
                   <SelectItem key={r.name} value={r.name}>{r.name}</SelectItem>
                 ))}
+                {!(appSettings?.our_refs ?? []).some(r => r.name?.trim()) && (
+                  <SelectItem value="__ingen">Ingen referanser satt opp</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>

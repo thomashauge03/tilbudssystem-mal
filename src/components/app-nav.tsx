@@ -22,6 +22,7 @@ const links = [
   { to: "/kunder", label: "Kunder" },
   { to: "/potensielle-kunder", label: "Potensielle kunder" },
   { to: "/admkost", label: "Adm.kost." },
+  { to: "/admin", label: "Admin" },
 ];
 
 type Theme = "light" | "dark" | "system";

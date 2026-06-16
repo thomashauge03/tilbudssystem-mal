@@ -28,7 +28,7 @@ type Theme = "light" | "dark" | "system";
 
 function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {
-    return (localStorage.getItem("hm-theme") as Theme) ?? "light";
+    return (localStorage.getItem("th-theme") as Theme) ?? "light";
   });
 
   useEffect(() => {
@@ -36,7 +36,7 @@ function useTheme() {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark = theme === "dark" || (theme === "system" && prefersDark);
     root.classList.toggle("dark", isDark);
-    localStorage.setItem("hm-theme", theme);
+    localStorage.setItem("th-theme", theme);
   }, [theme]);
 
   return { theme, setTheme };
@@ -79,7 +79,7 @@ export function AppNav() {
       <Link to="/" className="hm-brand">
         <img
           src="/logo.png"
-          alt="Tilbudssystem"
+          alt="Techauge"
           className="hm-logo"
           style={{ height: "36px", width: "auto" }}
           onError={(e) => {
@@ -90,7 +90,7 @@ export function AppNav() {
           }}
         />
         <div className="hm-brand-text" style={{ display: "none" }}>
-          <span>Tilbudssystem</span>
+          <span>Techauge</span>
         </div>
       </Link>
 

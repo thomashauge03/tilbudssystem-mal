@@ -36,7 +36,7 @@ function LoginPage() {
         <div className="mb-8 flex flex-col items-center gap-4">
           <img
             src="/logo.png"
-            alt="Tilbudssystem"
+            alt="Techauge"
             className="h-16 w-auto"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
           />
@@ -45,7 +45,7 @@ function LoginPage() {
               style={{ color: "oklch(0.14 0.004 80)", letterSpacing: "0.08em" }}
               className="text-base font-bold uppercase"
             >
-              Tilbudssystem
+              Techauge
             </div>
             <div
               style={{ color: "oklch(0.55 0.012 80)" }}

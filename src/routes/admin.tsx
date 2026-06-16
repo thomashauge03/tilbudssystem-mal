@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +39,15 @@ function SectionCard({ title, description, icon: Icon, children }: {
 }
 
 function AdminPage() {
+  const { isAdmin, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) navigate({ to: "/" });
+  }, [isAdmin, authLoading]);
+
+  if (authLoading || !isAdmin) return null;
+
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantUsers, setTenantUsers] = useState<TenantUser[]>([]);
   const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);

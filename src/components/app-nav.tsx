@@ -1,6 +1,6 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Moon, Sun, Monitor, Settings, ChevronDown } from "lucide-react";
 
-const links = [
+const BASE_LINKS = [
   { to: "/", label: "Dashboard", exact: true },
   { to: "/tilbud", label: "Tilbud" },
   { to: "/ordre", label: "Ordre" },
@@ -22,8 +22,9 @@ const links = [
   { to: "/kunder", label: "Kunder" },
   { to: "/potensielle-kunder", label: "Potensielle kunder" },
   { to: "/admkost", label: "Adm.kost." },
-  { to: "/admin", label: "Admin" },
 ];
+
+const ADMIN_LINK = { to: "/admin", label: "Admin" };
 
 type Theme = "light" | "dark" | "system";
 
@@ -59,10 +60,15 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
 ];
 
 export function AppNav() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (r) => r.location.pathname });
   const { theme, setTheme } = useTheme();
+
+  const links = useMemo(
+    () => isAdmin ? [...BASE_LINKS, ADMIN_LINK] : BASE_LINKS,
+    [isAdmin]
+  );
 
   const isActive = (to: string, exact?: boolean) =>
     exact ? path === to : to === "/" ? path === "/" : path.startsWith(to);

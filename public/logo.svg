@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 140" width="220" height="140">
+  <defs>
+    <style>
+      .ltr { font-family: 'Arial Black', Impact, 'Franklin Gothic Heavy', sans-serif; font-size: 128px; font-style: italic; font-weight: 900; }
+    </style>
+  </defs>
+  <!-- H extrusion -->
+  <text class="ltr" x="8" y="126" fill="#111111">H</text>
+  <!-- H face (outline) -->
+  <text class="ltr" x="2" y="120" fill="#0d0d0d" stroke="#2e2e2e" stroke-width="3" paint-order="stroke">H</text>
+  <!-- M extrusion -->
+  <text class="ltr" x="98" y="126" fill="#8b0000">M</text>
+  <!-- M face -->
+  <text class="ltr" x="92" y="120" fill="#CC0000">M</text>
+</svg>

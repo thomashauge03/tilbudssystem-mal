@@ -1,0 +1,408 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* ============================================================
+   Tilbudssystem — lys varm profil med rød aksent
+   ============================================================ */
+:root {
+  --radius: 0.625rem;
+
+  /* Warm neutrals */
+  --background: oklch(0.97 0.008 80);
+  --foreground: oklch(0.14 0.004 80);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.14 0.004 80);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.14 0.004 80);
+
+  /* HM rød */
+  --primary: oklch(0.49 0.22 27);
+  --primary-foreground: oklch(1 0 0);
+
+  --secondary: oklch(0.95 0.01 80);
+  --secondary-foreground: oklch(0.35 0.01 80);
+  --muted: oklch(0.95 0.01 80);
+  --muted-foreground: oklch(0.55 0.012 80);
+  --accent: oklch(0.99 0.005 80);
+  --accent-foreground: oklch(0.14 0.004 80);
+
+  --destructive: oklch(0.55 0.16 25);
+  --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.55 0.13 150);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.65 0.13 70);
+  --warning-foreground: oklch(0.14 0.004 80);
+
+  /* Warm borders */
+  --border: oklch(0.90 0.015 80);
+  --input: oklch(0.84 0.02 80);
+  --ring: oklch(0.49 0.22 27);
+
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.14 0.004 80);
+  --sidebar-primary: oklch(0.49 0.22 27);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.95 0.01 80);
+  --sidebar-accent-foreground: oklch(0.14 0.004 80);
+  --sidebar-border: oklch(0.90 0.015 80);
+  --sidebar-ring: oklch(0.49 0.22 27);
+}
+
+/* Dark mode override — lysare for betre lesbarheit */
+.dark {
+  --background: oklch(0.19 0.004 80);
+  --foreground: oklch(0.94 0.005 80);
+  --card: oklch(0.23 0.004 80);
+  --card-foreground: oklch(0.94 0.005 80);
+  --popover: oklch(0.23 0.004 80);
+  --popover-foreground: oklch(0.94 0.005 80);
+  --primary: oklch(0.56 0.22 27);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.28 0.004 80);
+  --secondary-foreground: oklch(0.84 0.005 80);
+  --muted: oklch(0.28 0.004 80);
+  --muted-foreground: oklch(0.62 0.008 80);
+  --accent: oklch(0.28 0.004 80);
+  --accent-foreground: oklch(0.94 0.005 80);
+  --destructive: oklch(0.60 0.18 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.56 0.22 27);
+  --sidebar: oklch(0.21 0.004 80);
+  --sidebar-foreground: oklch(0.94 0.005 80);
+  --sidebar-primary: oklch(0.56 0.22 27);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.28 0.004 80);
+  --sidebar-accent-foreground: oklch(0.94 0.005 80);
+  --sidebar-border: oklch(1 0 0 / 11%);
+  --sidebar-ring: oklch(0.56 0.22 27);
+}
+
+/* Dark mode nav */
+.dark .hm-topnav {
+  background: oklch(0.21 0.004 80);
+  border-bottom-color: oklch(1 0 0 / 11%);
+}
+.dark .hm-nav-divider { background: oklch(1 0 0 / 11%); }
+.dark .hm-brand { color: oklch(0.94 0.005 80); }
+.dark .hm-tab { color: oklch(0.60 0.008 80); }
+.dark .hm-tab:hover { color: oklch(0.94 0.005 80); }
+.dark .hm-tab.active { color: oklch(0.94 0.005 80); }
+.dark .hm-user-chip {
+  background: oklch(0.28 0.004 80);
+  color: oklch(0.84 0.005 80);
+}
+.dark .hm-user-chip:hover {
+  background: oklch(0.32 0.004 80);
+  border-color: oklch(1 0 0 / 14%);
+}
+
+/* Skjul spinner-piler på number-input */
+.no-spinner::-webkit-inner-spin-button,
+.no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner {
+  -moz-appearance: textfield;
+}
+
+/* Logo: fjern kvit boks på lys bakgrunn */
+.hm-logo {
+  mix-blend-mode: multiply;
+}
+/* Logo: liten kvit pille i mørk modus */
+.dark .hm-logo {
+  mix-blend-mode: normal;
+  background: white;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'cv11';
+    transition: background-color 150ms, color 150ms;
+  }
+}
+
+/* ============================================================
+   Typography helpers
+   ============================================================ */
+.label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  color: oklch(0.55 0.012 80);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================================
+   Top nav
+   ============================================================ */
+.hm-topnav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: white;
+  border-bottom: 1px solid oklch(0.90 0.015 80);
+  height: 60px;
+  display: flex;
+  align-items: stretch;
+  padding: 0 32px;
+  gap: 0;
+}
+.hm-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: oklch(0.14 0.004 80);
+  text-decoration: none;
+  padding-right: 24px;
+}
+.hm-brand img {
+  height: 30px;
+  width: auto;
+}
+.hm-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+.hm-brand-text span:first-child {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: oklch(0.14 0.004 80);
+}
+.hm-brand-text span:last-child {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: oklch(0.49 0.22 27);
+  margin-top: 2px;
+}
+.hm-nav-divider {
+  width: 1px;
+  background: oklch(0.90 0.015 80);
+  margin: 14px 0;
+}
+.hm-tabs {
+  display: flex;
+  align-items: stretch;
+  margin-left: 8px;
+}
+.hm-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: oklch(0.55 0.012 80);
+  border: none;
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: color 80ms;
+  white-space: nowrap;
+}
+.hm-tab:hover { color: oklch(0.14 0.004 80); }
+.hm-tab.active {
+  color: oklch(0.14 0.004 80);
+  font-weight: 600;
+}
+.hm-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: -1px;
+  height: 2px;
+  background: oklch(0.49 0.22 27);
+  border-radius: 2px 2px 0 0;
+}
+.hm-nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hm-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 6px;
+  border-radius: 999px;
+  background: oklch(0.95 0.01 80);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: oklch(0.35 0.01 80);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 80ms;
+}
+.hm-user-chip:hover {
+  background: oklch(0.99 0.005 80);
+  border-color: oklch(0.90 0.015 80);
+}
+.hm-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: oklch(0.49 0.22 27);
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Toolbar / segmented filter
+   ============================================================ */
+.hm-segmented {
+  display: inline-flex;
+  background: oklch(0.95 0.01 80);
+  padding: 3px;
+  border-radius: 8px;
+  gap: 2px;
+}
+.hm-segmented button {
+  border: none;
+  background: transparent;
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: oklch(0.55 0.012 80);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 80ms;
+  white-space: nowrap;
+}
+.hm-segmented button.active {
+  background: white;
+  color: oklch(0.14 0.004 80);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(20,20,18,0.08);
+}
+
+/* ============================================================
+   Table chip filters
+   ============================================================ */
+.hm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid oklch(0.90 0.015 80);
+  background: white;
+  font-size: 12px;
+  font-weight: 500;
+  color: oklch(0.55 0.012 80);
+  cursor: pointer;
+  transition: all 80ms;
+}
+.hm-chip:hover { border-color: oklch(0.84 0.02 80); }
+.hm-chip.active {
+  background: oklch(0.14 0.004 80);
+  color: white;
+  border-color: oklch(0.14 0.004 80);
+}
+
+/* ============================================================
+   Stat cards
+   ============================================================ */
+.hm-stat {
+  background: white;
+  border: 1px solid oklch(0.90 0.015 80);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 1px 2px rgba(20,20,18,0.04);
+}
+.hm-stat-label {
+  font-size: 11px;
+  color: oklch(0.55 0.012 80);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.hm-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: oklch(0.14 0.004 80);
+  font-variant-numeric: tabular-nums;
+}
+.hm-stat-sub {
+  font-size: 11.5px;
+  color: oklch(0.55 0.012 80);
+}
+
+@media print {
+  body { background: white; }
+  .no-print { display: none !important; }
+}

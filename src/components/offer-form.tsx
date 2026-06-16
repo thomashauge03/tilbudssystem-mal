@@ -169,12 +169,18 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (!offer.customer_name.trim()) { toast.error("Kundenavn er påkrevd"); return null; }
 
     const payload = {
-      title: offer.title, project_id: offer.project_id || null,
-      customer_id: offer.customer_id, customer_name: offer.customer_name,
-      customer_email: offer.customer_email || null, offer_text: offer.offer_text,
-      offer_date: offer.offer_date, valid_until: offer.valid_until,
-      their_ref: offer.their_ref || null, our_ref: offer.our_ref || null,
-      project_number: offer.project_number || null, admin_cost_pct: Number(offer.admin_cost_pct || 0),
+      title: offer.title,
+      project_id: offer.project_id || null,
+      customer_id: offer.customer_id,
+      customer_name: offer.customer_name || null,
+      customer_email: offer.customer_email || null,
+      offer_text: offer.offer_text || null,
+      offer_date: offer.offer_date,
+      valid_until: offer.valid_until,
+      their_ref: offer.their_ref || null,
+      our_ref: offer.our_ref || null,
+      project_number: offer.project_number || null,
+      admin_cost_pct: Number(offer.admin_cost_pct || 0),
       forbehold: offer.forbehold ?? [],
     };
 
@@ -191,9 +197,15 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
     if (lines.length) {
       const linesInsert = lines.map((l, idx) => ({
-        offer_id: id!, sort_order: idx, included: l.included, description: l.description,
-        comment: l.comment || null, quantity: Number(l.quantity || 0), unit: l.unit,
-        unit_price: Number(l.unit_price || 0), discount_pct: Number(l.discount_pct || 0),
+        offer_id: id!,
+        sort_order: idx,
+        included: l.included,
+        description: l.description,
+        comment: l.comment || null,
+        quantity: Number(l.quantity || 0),
+        unit: l.unit,
+        unit_price: Number(l.unit_price || 0),
+        discount_pct: Number(l.discount_pct || 0),
       }));
       const { error } = await supabase.from("offer_lines").insert(linesInsert);
       if (error) { toast.error(error.message); return null; }

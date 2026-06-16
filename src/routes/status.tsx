@@ -93,7 +93,7 @@ function PaymentsPanel({
     const paid = !p.paid;
     const { error } = await supabase
       .from("payments")
-      .update({ paid, paid_date: paid ? today : null })
+      .update({ paid, paid_date: paid ? today : null, paid_at: paid ? new Date().toISOString() : null })
       .eq("id", p.id);
     if (error) { toast.error(error.message); return; }
     await syncInvoicedAmount(parentId, parentType);
@@ -115,6 +115,7 @@ function PaymentsPanel({
       description: newDesc || null,
       invoice_date: newDate || null,
       paid: false,
+      paid_at: new Date().toISOString(),
     };
     const { error } = await supabase.from("payments").insert({ ...payload, tenant_id: tenantId } as any);
     if (error) { toast.error(error.message); return; }

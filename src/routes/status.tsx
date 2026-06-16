@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { nok, fmtDate } from "@/lib/format";
 import { Check, Search, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/status")({
@@ -61,6 +62,7 @@ function PaymentsPanel({
   parentType: "offers" | "amendments";
   onSaved: () => void;
 }) {
+  const { tenantId } = useAuth();
   const qc = useQueryClient();
   const [newDesc, setNewDesc] = useState("");
   const [newAmount, setNewAmount] = useState<number | "">("");
@@ -114,7 +116,7 @@ function PaymentsPanel({
       invoice_date: newDate || null,
       paid: false,
     };
-    const { error } = await supabase.from("payments").insert(payload as any);
+    const { error } = await supabase.from("payments").insert({ ...payload, tenant_id: tenantId } as any);
     if (error) { toast.error(error.message); return; }
     toast.success("Faktura lagt til");
     setNewDesc("");

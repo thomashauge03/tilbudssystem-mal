@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useAuth } from "@/hooks/use-auth";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,6 +25,7 @@ interface Customer {
 }
 
 function CustomersPage() {
+  const { tenantId } = useAuth();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -67,7 +69,7 @@ function CustomersPage() {
     };
     const { error } = c.id
       ? await supabase.from("customers").update(payload).eq("id", c.id)
-      : await supabase.from("customers").insert(payload);
+      : await supabase.from("customers").insert({ ...payload, tenant_id: tenantId });
     if (error) { toast.error(error.message); return; }
     toast.success("Kunde lagret");
     setOpen(false); setEdit(null);

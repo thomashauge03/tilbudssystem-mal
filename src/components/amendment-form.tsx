@@ -13,6 +13,7 @@ import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft } from "lucide-react";
 import { nok, num, fmtDate, toISODate, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openPrintPdf, escapeHtml } from "@/lib/pdf";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { useAuth } from "@/hooks/use-auth";
 
 interface ALine { id?: string; sort_order: number; description: string; quantity: number; unit: string; unit_price: number; }
 interface AState {
@@ -36,6 +37,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isEdit = !!amendmentId;
+  const { tenantId } = useAuth();
   const { data: appSettings } = useAppSettings();
   const units = appSettings?.units ?? FALLBACK_UNITS;
 
@@ -123,15 +125,20 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
       if (error) { toast.error(error.message); return null; }
       await supabase.from("amendment_lines").delete().eq("amendment_id", amendmentId!);
     } else {
-      const { data, error } = await supabase.from("amendments").insert(payload).select("id").single();
+      const { data, error } = await supabase.from("amendments").insert({ ...payload, tenant_id: tenantId }).select("id").single();
       if (error) { toast.error(error.message); return null; }
       id = data.id;
       setA((p) => ({ ...p, amendment_number: number }));
     }
     if (lines.length) {
       const ins = lines.map((l, idx) => ({
-        amendment_id: id!, sort_order: idx, description: l.description,
-        quantity: Number(l.quantity || 0), unit: l.unit, unit_price: Number(l.unit_price || 0),
+        amendment_id: id!,
+        tenant_id: tenantId,
+        sort_order: idx,
+        description: l.description,
+        quantity: Number(l.quantity || 0),
+        unit: l.unit,
+        unit_price: Number(l.unit_price || 0),
       }));
       const { error } = await supabase.from("amendment_lines").insert(ins);
       if (error) { toast.error(error.message); return null; }

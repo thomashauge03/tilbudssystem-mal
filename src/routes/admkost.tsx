@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Check, Pencil } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admkost")({
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/admkost")({
 });
 
 function AdminCostsPage() {
+  const { tenantId } = useAuth();
   const qc = useQueryClient();
   const currentYear = new Date().getFullYear();
   const [newYear, setNewYear] = useState(currentYear + 1);
@@ -29,7 +31,7 @@ function AdminCostsPage() {
   });
 
   const add = async () => {
-    const { error } = await supabase.from("admin_costs").insert({ year: newYear, pct: newPct });
+    const { error } = await supabase.from("admin_costs").insert({ year: newYear, pct: newPct, tenant_id: tenantId });
     if (error) { toast.error(error.message); return; }
     toast.success("Lagt til");
     qc.invalidateQueries({ queryKey: ["admin-costs"] });

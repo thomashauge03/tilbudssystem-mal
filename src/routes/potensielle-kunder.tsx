@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Pencil, X, Check, Phone, Mail, ChevronDown } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/potensielle-kunder")({
   component: PotensielleKunderPage,
@@ -187,7 +188,7 @@ function EditRow({ lead, refs, onSave, onCancel }: {
   );
 }
 
-async function upsertCustomer(lead: Omit<Lead, "id" | "created_at" | "status_changed_at">) {
+async function upsertCustomer(lead: Omit<Lead, "id" | "created_at" | "status_changed_at">, tenantId: string | null) {
   if (!lead.navn.trim()) return;
   // Sjekk om kunden finst frå før på namn
   const { data: existing } = await supabase
@@ -214,11 +215,13 @@ async function upsertCustomer(lead: Omit<Lead, "id" | "created_at" | "status_cha
       phone: lead.telefon || null,
       address: adresse || null,
       notes: notes,
+      tenant_id: tenantId,
     });
   }
 }
 
 function PotensielleKunderPage() {
+  const { tenantId } = useAuth();
   const qc = useQueryClient();
   const { data: appSettings } = useAppSettings();
   const refs = (appSettings?.our_refs ?? []).map((r) => r.name);
@@ -266,7 +269,7 @@ function PotensielleKunderPage() {
     };
 
     if (id === "new") {
-      const { error } = await supabase.from("potential_customers").insert({ ...payload, status_changed_at: now });
+      const { error } = await supabase.from("potential_customers").insert({ ...payload, status_changed_at: now, tenant_id: tenantId });
       if (error) { toast.error(error.message); return; }
       toast.success("Lead lagt til");
     } else {
@@ -276,7 +279,7 @@ function PotensielleKunderPage() {
     }
 
     // Opprett/oppdater kunden i kunderegister
-    await upsertCustomer(data);
+    await upsertCustomer(data, tenantId);
     qc.invalidateQueries({ queryKey: ["customers-simple"] });
     qc.invalidateQueries({ queryKey: ["customers"] });
 

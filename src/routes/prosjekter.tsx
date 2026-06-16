@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Search, Pencil, FolderOpen } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { fmtDate, nok } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -49,6 +50,7 @@ function emptyProject(): Project {
 }
 
 function ProsjekterPage() {
+  const { tenantId } = useAuth();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | Status>("all");
@@ -115,7 +117,7 @@ function ProsjekterPage() {
     };
     const { error } = p.id
       ? await supabase.from("projects").update(payload).eq("id", p.id)
-      : await supabase.from("projects").insert(payload);
+      : await supabase.from("projects").insert({ ...payload, tenant_id: tenantId });
     if (error) { toast.error(error.message); return; }
     toast.success(p.id ? "Prosjekt oppdatert" : "Prosjekt oppretta");
     setOpen(false);

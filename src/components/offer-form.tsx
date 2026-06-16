@@ -14,6 +14,7 @@ import { nok, num, fmtDate, toISODate, addDays, UNITS as FALLBACK_UNITS } from "
 import { openOfferPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { useAuth } from "@/hooks/use-auth";
 
 interface Line {
   id?: string;
@@ -58,6 +59,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isEdit = !!offerId;
+  const { tenantId } = useAuth();
   const { data: appSettings } = useAppSettings();
   const units = appSettings?.units ?? FALLBACK_UNITS;
 
@@ -190,7 +192,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       if (error) { toast.error(error.message); return null; }
       await supabase.from("offer_lines").delete().eq("offer_id", offerId!);
     } else {
-      const { data, error } = await supabase.from("offers").insert({ ...payload, status: "Avventes" }).select("id").single();
+      const { data, error } = await supabase.from("offers").insert({ ...payload, status: "utkast", tenant_id: tenantId }).select("id").single();
       if (error) { toast.error(error.message); return null; }
       id = data.id;
     }
@@ -198,6 +200,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (lines.length) {
       const linesInsert = lines.map((l, idx) => ({
         offer_id: id!,
+        tenant_id: tenantId,
         sort_order: idx,
         included: l.included,
         description: l.description,

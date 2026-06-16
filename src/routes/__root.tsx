@@ -54,22 +54,49 @@ function RootComponent() {
   );
 }
 
+function NoTenantPage({ email, signOut }: { email: string; signOut: () => void }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="max-w-sm text-center space-y-4">
+        <div className="flex justify-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+            <svg className="h-8 w-8 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+        </div>
+        <h1 className="text-xl font-semibold">Ingen tilgang</h1>
+        <p className="text-sm text-muted-foreground">
+          Kontoen <strong>{email}</strong> er ikke koblet til noe system ennå.<br />
+          Kontakt Techauge for å få tilgang.
+        </p>
+        <button
+          onClick={signOut}
+          className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+        >
+          Logg ut
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AppShell() {
-  const { user, loading } = useAuth();
+  const { user, loading, hasTenant, signOut } = useAuth();
   const path = useRouterState({ select: (r) => r.location.pathname });
   const isPublic = path === "/login";
 
-  // Ventar på at Supabase-sesjonen er sjekka
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Laster…</div>;
   }
 
-  // Ikkje innlogga → send direkte til login (ingen useEffect-forsinkelse)
-  if (!user && !isPublic) {
-    return <Navigate to="/login" />;
-  }
-
+  if (!user && !isPublic) return <Navigate to="/login" />;
   if (isPublic) return <Outlet />;
+
+  // Innlogget men ingen tenant → blokker
+  if (!hasTenant) {
+    return <NoTenantPage email={user?.email ?? ""} signOut={signOut} />;
+  }
 
   return (
     <div className="min-h-screen bg-background">

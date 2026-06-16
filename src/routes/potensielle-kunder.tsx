@@ -135,7 +135,7 @@ function EditRow({ lead, refs, onSave, onCancel }: {
           <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Vel…" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__none">— Ikkje tildelt —</SelectItem>
-            {refs.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+            {refs.filter(r => r?.trim()).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
           </SelectContent>
         </Select>
       </td>

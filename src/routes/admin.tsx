@@ -287,8 +287,9 @@ function AdminPage() {
   const unlinkUser = async (tuId: string) => {
     const { error } = await supabase.rpc("delete_tenant_user" as never, { tenant_user_id: tuId } as never);
     if (error) { toast.error(error.message); return; }
+    // Oppdater state direkte uten å vente på re-fetch
+    setTenantUsers(prev => prev.filter(tu => tu.id !== tuId));
     toast.success("Tilgang fjernet");
-    load();
   };
 
   const deleteUser = async (user: AuthUser) => {

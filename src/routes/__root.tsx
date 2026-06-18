@@ -87,12 +87,27 @@ function AppShell() {
   const path = useRouterState({ select: (r) => r.location.pathname });
   const isPublic = path === "/login";
 
-  // Sett CSS-variabel for primærfarge basert på tenant-branding
+  // Sett primærfarge basert på tenant-branding
   useEffect(() => {
-    if (branding?.primary_color) {
-      document.documentElement.style.setProperty("--brand-primary", branding.primary_color);
+    const root = document.documentElement;
+    const color = branding?.primary_color;
+    if (color) {
+      // Berekn luminans for å velje riktig tekstfarge (kvit/svart)
+      const hex = color.replace("#", "");
+      const r = parseInt(hex.slice(0, 2), 16) / 255;
+      const g = parseInt(hex.slice(2, 4), 16) / 255;
+      const b = parseInt(hex.slice(4, 6), 16) / 255;
+      const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const fg = luminance > 0.45 ? "#111111" : "#ffffff";
+      root.style.setProperty("--primary", color);
+      root.style.setProperty("--primary-foreground", fg);
+      root.style.setProperty("--ring", color);
+      root.style.setProperty("--sidebar-primary", color);
+      root.style.setProperty("--sidebar-primary-foreground", fg);
+      root.style.setProperty("--sidebar-ring", color);
     } else {
-      document.documentElement.style.removeProperty("--brand-primary");
+      ["--primary","--primary-foreground","--ring","--sidebar-primary","--sidebar-primary-foreground","--sidebar-ring"]
+        .forEach(v => root.style.removeProperty(v));
     }
   }, [branding?.primary_color]);
 

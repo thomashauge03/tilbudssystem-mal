@@ -234,7 +234,7 @@
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: oklch(0.49 0.22 27);
+  color: var(--primary);
   margin-top: 2px;
 }
 .hm-nav-divider {
@@ -275,7 +275,7 @@
   right: 16px;
   bottom: -1px;
   height: 2px;
-  background: oklch(0.49 0.22 27);
+  background: var(--primary);
   border-radius: 2px 2px 0 0;
 }
 .hm-nav-right {
@@ -306,8 +306,8 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: oklch(0.49 0.22 27);
-  color: white;
+  background: var(--primary);
+  color: var(--primary-foreground);
   display: grid;
   place-items: center;
   font-size: 10px;

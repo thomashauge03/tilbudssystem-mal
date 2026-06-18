@@ -67,10 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (s?.user) fetchRole(s.user.id);
       else { setRole(null); setTenantId(null); setBranding(null); }
     });
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
       setUser(data.session?.user ?? null);
-      if (data.session?.user) fetchRole(data.session.user.id);
+      if (data.session?.user) await fetchRole(data.session.user.id);
       setLoading(false);
     });
     return () => subscription.unsubscribe();

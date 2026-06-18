@@ -112,7 +112,35 @@ function AppShell() {
   }, [branding?.primary_color]);
 
   if (loading || roleLoading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Laster…</div>;
+    return (
+      <div style={{
+        background: "#080808",
+        minHeight: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 20,
+      }}>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+          .th-spinner {
+            width: 44px; height: 44px; border-radius: 50%;
+            border: 2px solid rgba(220,38,38,0.15);
+            border-top-color: #dc2626;
+            animation: spin 0.8s linear infinite;
+          }
+          .th-loading-text {
+            font-size: 11px; font-weight: 600; letter-spacing: 0.14em;
+            text-transform: uppercase; color: rgba(255,255,255,0.25);
+            animation: pulse 2s ease-in-out infinite;
+          }
+        `}</style>
+        <div className="th-spinner" />
+        <span className="th-loading-text">Laster</span>
+      </div>
+    );
   }
 
   if (!user && !isPublic) return <Navigate to="/login" />;

@@ -83,7 +83,7 @@ function NoTenantPage({ email, signOut }: { email: string; signOut: () => void }
 }
 
 function AppShell() {
-  const { user, loading, hasTenant, signOut, branding } = useAuth();
+  const { user, loading, roleLoading, hasTenant, signOut, branding } = useAuth();
   const path = useRouterState({ select: (r) => r.location.pathname });
   const isPublic = path === "/login";
 
@@ -111,7 +111,7 @@ function AppShell() {
     }
   }, [branding?.primary_color]);
 
-  if (loading) {
+  if (loading || roleLoading) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Laster…</div>;
   }
 

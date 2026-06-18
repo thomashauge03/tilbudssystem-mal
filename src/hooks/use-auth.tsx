@@ -13,6 +13,7 @@ interface AuthCtx {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  roleLoading: boolean;
   role: "admin" | "member" | null;
   isAdmin: boolean;
   tenantId: string | null;
@@ -29,34 +30,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [roleLoading, setRoleLoading] = useState(false);
   const [role, setRole] = useState<"admin" | "member" | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [branding, setBranding] = useState<TenantBranding | null>(null);
 
   const fetchRole = async (userId: string) => {
-    const { data } = await supabase
-      .from("tenant_users")
-      .select("role, tenant_id")
-      .eq("user_id", userId)
-      .single();
-    setRole((data?.role as "admin" | "member") ?? null);
-    const tid = data?.tenant_id ?? null;
-    setTenantId(tid);
-
-    if (tid) {
-      const { data: settings } = await supabase
-        .from("app_settings")
-        .select("company_name, company_tagline, primary_color, logo_url")
-        .eq("tenant_id", tid)
+    setRoleLoading(true);
+    try {
+      const { data } = await supabase
+        .from("tenant_users")
+        .select("role, tenant_id")
+        .eq("user_id", userId)
         .single();
-      if (settings) {
-        setBranding({
-          company_name: settings.company_name ?? "",
-          company_tagline: (settings as any).company_tagline ?? "",
-          primary_color: (settings as any).primary_color ?? "#dc2626",
-          logo_url: (settings as any).logo_url ?? "",
-        });
+      setRole((data?.role as "admin" | "member") ?? null);
+      const tid = data?.tenant_id ?? null;
+      setTenantId(tid);
+
+      if (tid) {
+        const { data: settings } = await supabase
+          .from("app_settings")
+          .select("company_name, company_tagline, primary_color, logo_url")
+          .eq("tenant_id", tid)
+          .single();
+        if (settings) {
+          setBranding({
+            company_name: settings.company_name ?? "",
+            company_tagline: (settings as any).company_tagline ?? "",
+            primary_color: (settings as any).primary_color ?? "#dc2626",
+            logo_url: (settings as any).logo_url ?? "",
+          });
+        }
       }
+    } finally {
+      setRoleLoading(false);
     }
   };
 
@@ -91,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider value={{
-      user, session, loading, role,
+      user, session, loading, roleLoading, role,
       isAdmin: role === "admin",
       tenantId,
       hasTenant: tenantId !== null,

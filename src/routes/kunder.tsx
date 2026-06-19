@@ -35,15 +35,15 @@ function CustomersPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["customers-full"],
     queryFn: async () => {
-      const [c, o] = await Promise.all([
-        supabase.from("customers").select("*").order("name"),
-        supabase.from("offers").select("customer_id"),
-      ]);
-      const counts = new Map<string, number>();
-      (o.data ?? []).forEach((r: any) => {
-        if (r.customer_id) counts.set(r.customer_id, (counts.get(r.customer_id) ?? 0) + 1);
-      });
-      return (c.data ?? []).map((x: any) => ({ ...x, offer_count: counts.get(x.id) ?? 0 }));
+      const { data, error } = await supabase
+        .from("customers")
+        .select("*, offers(count)")
+        .order("name");
+      if (error) throw error;
+      return (data ?? []).map((x: any) => ({
+        ...x,
+        offer_count: (x.offers?.[0]?.count ?? 0) as number,
+      }));
     },
   });
 

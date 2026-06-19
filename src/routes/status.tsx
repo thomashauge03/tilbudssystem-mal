@@ -123,7 +123,7 @@ function PaymentsPanel({
     toast.success("Faktura lagt til");
     setNewDesc("");
     setNewAmount("");
-    setNewDate(today);
+    setNewDate(getToday());
     setAdding(false);
     invalidate();
   };

@@ -14,9 +14,6 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-const today = new Date().toISOString().slice(0, 10);
-const soon = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
-const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
 function offerTotal(lines: any[], adminCostPct: number) {
   const base = (lines ?? [])
@@ -29,9 +26,11 @@ function useDashboard() {
   return useQuery({
     queryKey: ["dashboard"],
     queryFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const soon = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
       const [offersRes, amendmentsRes, recentRes, expiringRes] = await Promise.all([
-        supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("offer_number", { ascending: false }),
-        supabase.from("amendments").select("id, amendment_number, project_ref, notified_date, invoiced_amount, amendment_lines(quantity, unit_price)"),
+        supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("offer_number", { ascending: false }).limit(500),
+        supabase.from("amendments").select("id, amendment_number, project_ref, notified_date, invoiced_amount, amendment_lines(quantity, unit_price)").limit(500),
         supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("created_at", { ascending: false }).limit(6),
         supabase.from("offers").select("id, offer_number, title, customer_name, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").gte("valid_until", today).lte("valid_until", soon),
       ]);

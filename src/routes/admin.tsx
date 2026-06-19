@@ -24,9 +24,11 @@ function PasswordConfirmModal({ onConfirm, onCancel, title, description }: {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [attempts, setAttempts] = useState(0);
+  const maxAttempts = 3;
 
   const confirm = async () => {
-    if (!password) return;
+    if (!password || attempts >= maxAttempts) return;
     setLoading(true);
     setError("");
     const { error: e } = await supabase.auth.signInWithPassword({
@@ -34,7 +36,13 @@ function PasswordConfirmModal({ onConfirm, onCancel, title, description }: {
       password,
     });
     setLoading(false);
-    if (e) { setError("Feil passord. Prøv igjen."); return; }
+    if (e) {
+      const next = attempts + 1;
+      setAttempts(next);
+      if (next >= maxAttempts) { setError("For mange feil forsøk. Prøv igjen seinare."); onCancel(); return; }
+      setError(`Feil passord. Prøv igjen (${next}/${maxAttempts}).`);
+      return;
+    }
     onConfirm();
   };
 
@@ -312,9 +320,9 @@ function AdminPageContent() {
   const deleteUser = async (user: AuthUser) => {
     // H6: use RPC instead of direct delete to respect security-definer logic
     const userTenantLinks = tenantUsers.filter(tu => tu.user_id === user.id);
-    for (const tu of userTenantLinks) {
-      await supabase.rpc("delete_tenant_user" as never, { tenant_user_id: tu.id } as never);
-    }
+    await Promise.all(userTenantLinks.map(tu =>
+      supabase.rpc("delete_tenant_user" as never, { tenant_user_id: tu.id } as never)
+    ));
     const { error } = await supabase.rpc("delete_auth_user" as never, { target_user_id: user.id } as never);
     if (error) { toast.error(error.message); return; }
     toast.success(`${user.email} er slettet fra systemet`);
@@ -952,7 +960,7 @@ function AdminPageContent() {
                       <label className="cursor-pointer">
                         <input
                           type="file"
-                          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                          accept="image/png,image/jpeg,image/webp"
                           className="hidden"
                           onChange={(e) => {
                             const f = e.target.files?.[0];

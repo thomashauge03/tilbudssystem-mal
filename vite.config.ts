@@ -14,4 +14,14 @@ export default defineConfig({
   resolve: {
     alias: { "@": "/src" },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          recharts: ["recharts"],
+          jspdf: ["jspdf", "jspdf-autotable"],
+        },
+      },
+    },
+  },
 });

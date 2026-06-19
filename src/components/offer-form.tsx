@@ -261,7 +261,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const handleEmail = async () => {
     const id = await save();
     if (!id) return;
-    if (!offer.customer_email) { toast.error("Kunden mangler e-postadresse"); return; }
+    if (!offer.customer_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(offer.customer_email)) { toast.error("Kunden mangler gyldig e-postadresse"); return; }
     const subject = `Tilbud nr. ${offer.offer_number ?? ""} – ${offer.title}`;
     const senderName = appSettings?.company_name ?? "Tilbudssystem";
     const body = `Hei,\n\nVedlagt finner du tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.\n\nTilbudet er gyldig t.o.m. ${fmtDate(offer.valid_until)}.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;

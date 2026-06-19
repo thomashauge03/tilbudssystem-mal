@@ -234,11 +234,13 @@ function PotensielleKunderPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { data: leads = [], isLoading } = useQuery({
-    queryKey: ["potential-customers"],
+    queryKey: ["potential-customers", tenantId],
+    enabled: !!tenantId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("potential_customers")
         .select("*")
+        .eq("tenant_id", tenantId!)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as Lead[];
@@ -430,14 +432,14 @@ function PotensielleKunderPage() {
                   <td className="px-3 py-2.5 text-xs text-muted-foreground">{lead.adresse || "—"}</td>
                   <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{lead.postnr_sted || "—"}</td>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                    {lead.telefon
+                    {lead.telefon && /^\+?[\d\s\-()]{5,20}$/.test(lead.telefon)
                       ? <a href={`tel:${lead.telefon}`} className="flex items-center gap-1 text-primary hover:underline"><Phone className="h-3 w-3" />{lead.telefon}</a>
-                      : "—"}
+                      : (lead.telefon ?? "—")}
                   </td>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                    {lead.mail
+                    {lead.mail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.mail)
                       ? <a href={`mailto:${lead.mail}`} className="flex items-center gap-1 text-primary hover:underline"><Mail className="h-3 w-3" />{lead.mail}</a>
-                      : "—"}
+                      : (lead.mail ?? "—")}
                   </td>
                   <td className="px-3 py-2.5 text-xs max-w-[200px] text-muted-foreground">
                     <span className="line-clamp-2">{lead.hva || "—"}</span>

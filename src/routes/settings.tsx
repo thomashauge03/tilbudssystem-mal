@@ -135,6 +135,7 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
     onChange(refs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
   const handleSignatureUpload = (i: number, file: File) => {
+    if (file.size > 200 * 1024) { alert("Signaturbildet er for stort (maks 200 KB)"); return; }
     const reader = new FileReader();
     reader.onload = (e) => upd(i, { signature: e.target?.result as string });
     reader.readAsDataURL(file);
@@ -237,7 +238,7 @@ function SettingsPage() {
   const [vatPct, setVatPct] = useState(DEFAULT_SETTINGS.vat_pct);
   const [closingPageOffsetMm, setClosingPageOffsetMm] = useState(DEFAULT_SETTINGS.closing_page_offset_mm);
   const [theme, setThemeState] = useState<Theme>(() =>
-    (localStorage.getItem("hm-theme") as Theme) ?? "light"
+    (typeof window !== "undefined" ? (localStorage.getItem("hm-theme") as Theme) : null) ?? "light"
   );
 
   useEffect(() => {

@@ -108,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTenantId(null);
         setBranding(null);
         setAuthError(null);
+        setRoleLoading(false); // reset if fetchRole was in-flight when sign-out fired
       }
 
       // Mark initial load done after first auth event

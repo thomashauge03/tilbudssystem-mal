@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -157,6 +157,9 @@ function AdminPage() {
 }
 
 function AdminPageContent() {
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
   const [tab, setTab] = useState<Tab>("oversikt");
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantUsers, setTenantUsers] = useState<TenantUser[]>([]);
@@ -193,6 +196,7 @@ function AdminPageContent() {
       supabase.rpc("list_tenants" as never),
       supabase.rpc("list_auth_users" as never),
     ]);
+    if (!mountedRef.current) return;
     if (tuRes.data) setTenantUsers(tuRes.data as TenantUser[]);
     if (tenantsRes.data) setTenants(tenantsRes.data as Tenant[]);
     if (usersRes.data) setAuthUsers(usersRes.data as AuthUser[]);

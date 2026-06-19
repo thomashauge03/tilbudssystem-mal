@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, Save, Sun, Moon, Monitor, GripVertical, Upload, X } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -220,6 +221,7 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
 }
 
 function SettingsPage() {
+  const { tenantId } = useAuth();
   const { data: saved, isLoading } = useAppSettings();
   const saveSettings = useSaveSettings();
 
@@ -285,7 +287,7 @@ function SettingsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Innstillingar</h1>
           <p className="mt-1 text-sm text-muted-foreground">Konfigurer standardverdiar og preferansar</p>
         </div>
-        <Button onClick={handleSave}>
+        <Button onClick={handleSave} disabled={!tenantId}>
           <Save className="mr-2 h-4 w-4" />Lagre
         </Button>
       </div>
@@ -484,7 +486,7 @@ function SettingsPage() {
       </SectionCard>
 
       <div className="flex justify-end pb-4">
-        <Button onClick={handleSave} size="lg">
+        <Button onClick={handleSave} size="lg" disabled={!tenantId}>
           <Save className="mr-2 h-4 w-4" />Lagre alle innstillingar
         </Button>
       </div>

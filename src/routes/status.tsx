@@ -15,7 +15,8 @@ export const Route = createFileRoute("/status")({
 
 type Filter = "all" | "active" | "partial";
 
-const today = new Date().toISOString().slice(0, 10);
+// H3/M7: derive today at call time so it doesn't go stale if the app is open across midnight
+const getToday = () => new Date().toISOString().slice(0, 10);
 
 function progressColor(pct: number) {
   if (pct >= 100) return "bg-green-500";
@@ -66,7 +67,7 @@ function PaymentsPanel({
   const qc = useQueryClient();
   const [newDesc, setNewDesc] = useState("");
   const [newAmount, setNewAmount] = useState<number | "">("");
-  const [newDate, setNewDate] = useState(today);
+  const [newDate, setNewDate] = useState(() => getToday());
   const [adding, setAdding] = useState(false);
 
   const col = parentType === "offers" ? "offer_id" : "amendment_id";
@@ -93,7 +94,7 @@ function PaymentsPanel({
     const paid = !p.paid;
     const { error } = await supabase
       .from("payments")
-      .update({ paid, paid_date: paid ? today : null, paid_at: paid ? new Date().toISOString() : null })
+      .update({ paid, paid_date: paid ? getToday() : null, paid_at: paid ? new Date().toISOString() : null })
       .eq("id", p.id);
     if (error) { toast.error(error.message); return; }
     await syncInvoicedAmount(parentId, parentType);
@@ -115,7 +116,7 @@ function PaymentsPanel({
       description: newDesc || null,
       invoice_date: newDate || null,
       paid: false,
-      paid_at: new Date().toISOString(),
+      paid_at: null, // M4: don't set paid_at when inserting an unpaid invoice
     };
     const { error } = await supabase.from("payments").insert({ ...payload, tenant_id: tenantId } as any);
     if (error) { toast.error(error.message); return; }
@@ -237,6 +238,7 @@ function StatusPage() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
+  const today = useMemo(() => getToday(), []);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const toggleExpanded = (id: string) =>

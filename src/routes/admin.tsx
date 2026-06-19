@@ -94,11 +94,12 @@ type AuthUser = { id: string; email: string; confirmed_at: string | null; create
 
 const PAGE_SIZE = 15;
 
-function usePagination<T>(items: T[]) {
+// M6: reset on resetKey (search/filter string) so page resets when filter changes, not just count
+function usePagination<T>(items: T[], resetKey?: unknown) {
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const paged = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  useEffect(() => { setPage(1); }, [items.length]);
+  useEffect(() => { setPage(1); }, [resetKey]);
   return { paged, page, setPage, totalPages };
 }
 
@@ -141,16 +142,21 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 
 type Tab = "oversikt" | "brukere" | "kunder" | "koble" | "tilpass";
 
+// C1: wrap so hooks are not called after early return
 function AdminPage() {
   const { isAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
+  // H1: navigate added to deps
   useEffect(() => {
     if (!authLoading && !isAdmin) navigate({ to: "/" });
-  }, [isAdmin, authLoading]);
+  }, [isAdmin, authLoading, navigate]);
 
   if (authLoading || !isAdmin) return null;
+  return <AdminPageContent />;
+}
 
+function AdminPageContent() {
   const [tab, setTab] = useState<Tab>("oversikt");
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantUsers, setTenantUsers] = useState<TenantUser[]>([]);
@@ -178,6 +184,7 @@ function AdminPage() {
   const [linkTenantSearch, setLinkTenantSearch] = useState("");
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [deleteUserModal, setDeleteUserModal] = useState<AuthUser | null>(null);
+  const [deleteTenantModal, setDeleteTenantModal] = useState<Tenant | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -226,8 +233,8 @@ function AdminPage() {
       t.slug.toLowerCase().includes(tenantSearch.toLowerCase())
     ), [tenants, tenantSearch]);
 
-  const userPagination = usePagination(filteredUsers);
-  const tenantPagination = usePagination(filteredTenants);
+  const userPagination = usePagination(filteredUsers, userSearch + userFilter);
+  const tenantPagination = usePagination(filteredTenants, tenantSearch);
 
   // Link search
   const filteredLinkUsers = useMemo(() =>
@@ -255,11 +262,12 @@ function AdminPage() {
     load();
   };
 
-  const deleteTenant = async (id: string, name: string) => {
-    if (!confirm(`Slett «${name}»? Dette sletter ALL data for denne kunden.`)) return;
-    const { error } = await supabase.rpc("admin_delete_tenant" as never, { p_tenant_id: id } as never);
+  // L2: use PasswordConfirmModal instead of window.confirm() for destructive action
+  const deleteTenant = async (tenant: Tenant) => {
+    const { error } = await supabase.rpc("admin_delete_tenant" as never, { p_tenant_id: tenant.id } as never);
     if (error) { toast.error(error.message); return; }
-    toast.success(`«${name}» slettet`);
+    toast.success(`«${tenant.name}» slettet`);
+    setDeleteTenantModal(null);
     load();
   };
 
@@ -298,10 +306,10 @@ function AdminPage() {
   };
 
   const deleteUser = async (user: AuthUser) => {
-    // Fjern fra tenant_users først, deretter slett auth-bruker
+    // H6: use RPC instead of direct delete to respect security-definer logic
     const userTenantLinks = tenantUsers.filter(tu => tu.user_id === user.id);
     for (const tu of userTenantLinks) {
-      await supabase.from("tenant_users").delete().eq("id", tu.id);
+      await supabase.rpc("delete_tenant_user" as never, { tenant_user_id: tu.id } as never);
     }
     const { error } = await supabase.rpc("delete_auth_user" as never, { target_user_id: user.id } as never);
     if (error) { toast.error(error.message); return; }
@@ -353,8 +361,15 @@ function AdminPage() {
 
   const uploadLogo = async (file: File) => {
     if (!tilpassTenantId) return;
+    // L5: reject files over 2 MB
+    if (file.size > 2 * 1024 * 1024) { toast.error("Logo kan ikke være større enn 2 MB"); return; }
     setLogoUploading(true);
-    const ext = file.name.split(".").pop();
+    // L4: derive extension from MIME type, not filename
+    const mimeToExt: Record<string, string> = {
+      "image/png": "png", "image/jpeg": "jpg",
+      "image/svg+xml": "svg", "image/webp": "webp",
+    };
+    const ext = mimeToExt[file.type] ?? "png";
     const path = `${tilpassTenantId}/logo.${ext}`;
     const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
     if (error) { toast.error(error.message); setLogoUploading(false); return; }
@@ -651,7 +666,7 @@ function AdminPage() {
                           + Legg til bruker
                         </button>
                         <button
-                          onClick={() => deleteTenant(tenant.id, tenant.name)}
+                          onClick={() => setDeleteTenantModal(tenant)}
                           className="text-muted-foreground hover:text-destructive transition-colors p-1"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -692,6 +707,16 @@ function AdminPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Slett tenant modal */}
+      {deleteTenantModal && (
+        <PasswordConfirmModal
+          title={`Slett «${deleteTenantModal.name}»`}
+          description="Dette sletter ALL data for denne kunden. Handlingen kan ikke angres."
+          onConfirm={() => deleteTenant(deleteTenantModal)}
+          onCancel={() => setDeleteTenantModal(null)}
+        />
       )}
 
       {/* Slett bruker modal */}
@@ -898,7 +923,8 @@ function AdminPage() {
                   <div className="space-y-3">
                     <Label>Logo</Label>
                     <div className="flex items-start gap-4">
-                      {tilpassSettings.logo_url ? (
+                      {/* H5: only render logo from Supabase storage to prevent XSS via data: or javascript: URLs */}
+                      {tilpassSettings.logo_url && tilpassSettings.logo_url.includes("supabase.co/storage/") ? (
                         <div className="flex items-center gap-3">
                           <div className="rounded-lg border bg-muted/30 p-2 flex items-center justify-center w-24 h-16">
                             <img
@@ -998,7 +1024,7 @@ function AdminPage() {
                     <div className="rounded-lg border p-4 bg-muted/20 space-y-2">
                       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Forhåndsvisning</p>
                       <div className="flex items-center gap-3">
-                        {tilpassSettings.logo_url && (
+                        {tilpassSettings.logo_url && tilpassSettings.logo_url.includes("supabase.co/storage/") && (
                           <img src={tilpassSettings.logo_url} alt="" className="h-8 w-auto object-contain" />
                         )}
                         <div>

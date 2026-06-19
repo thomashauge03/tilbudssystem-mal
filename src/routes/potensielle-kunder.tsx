@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, X, Check, Phone, Mail, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Pencil, X, Check, Phone, Mail, ChevronDown, AlertTriangle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -189,12 +189,13 @@ function EditRow({ lead, refs, onSave, onCancel }: {
 }
 
 async function upsertCustomer(lead: Omit<Lead, "id" | "created_at" | "status_changed_at">, tenantId: string | null) {
-  if (!lead.navn.trim()) return;
-  // Sjekk om kunden finst frå før på namn
+  if (!lead.navn.trim() || !tenantId) return;
+  // C5: filter by both name AND tenant_id to avoid cross-tenant match
   const { data: existing } = await supabase
     .from("customers")
     .select("id")
     .eq("name", lead.navn)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   const adresse = [lead.adresse, lead.postnr_sted].filter(Boolean).join(", ");
@@ -229,6 +230,8 @@ function PotensielleKunderPage() {
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [filterStatus, setFilterStatus] = useState<Status | "Alle">("Alle");
   const [search, setSearch] = useState("");
+  // L2: replace window.confirm() with proper modal
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["potential-customers"],
@@ -246,16 +249,18 @@ function PotensielleKunderPage() {
 
   // Slett automatisk "Tilbud Avslått" som er eldre enn 24 timar
   useEffect(() => {
+    if (!tenantId) return; // C4: guard — tenantId not yet loaded
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     supabase
       .from("potential_customers")
       .delete()
       .eq("status", "Tilbud Avslått")
+      .eq("tenant_id", tenantId) // C4: only delete own tenant's rows
       .lt("status_changed_at", cutoff)
       .then(({ error }) => {
         if (!error) refresh();
       });
-  }, []); // køyr berre ved sidelast
+  }, [tenantId]); // re-run when tenantId becomes available
 
   const save = async (id: string | "new", data: Omit<Lead, "id" | "created_at" | "status_changed_at">) => {
     if (!data.navn.trim()) { toast.error("Kundenavn er påkrevd"); return; }
@@ -299,10 +304,10 @@ function PotensielleKunderPage() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Slett denne raden?")) return;
     const { error } = await supabase.from("potential_customers").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     toast.success("Sletta");
+    setDeleteId(null);
     refresh();
   };
 
@@ -446,7 +451,7 @@ function PotensielleKunderPage() {
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingId(lead.id)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => remove(lead.id)}>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeleteId(lead.id)}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
@@ -462,6 +467,27 @@ function PotensielleKunderPage() {
         * Tilbud Avslått-rader vert automatisk sletta etter 24 timar.
         Nye kunder vert automatisk lagt til i kunderegister.
       </p>
+
+      {/* L2: delete confirm modal instead of window.confirm() */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-sm rounded-xl border bg-card shadow-xl p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-sm">Slett rad</h2>
+                <p className="text-xs text-muted-foreground">Er du sikker? Handlingen kan ikkje angrast.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setDeleteId(null)}>Avbryt</Button>
+              <Button variant="destructive" onClick={() => remove(deleteId)}>Slett</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

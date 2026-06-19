@@ -72,10 +72,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     },
   });
 
-  const { data: customers } = useQuery({
+  // M5: destructure isLoading/error so UI can show loading/error states
+  const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
     queryKey: ["customers-simple"],
     queryFn: async () => {
-      const { data } = await supabase.from("customers").select("id, name, email, phone, address").order("name");
+      const { data, error } = await supabase.from("customers").select("id, name, email, phone, address").order("name");
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -121,7 +123,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       setLines(loaded.lines.length ? loaded.lines : []);
       setInitialized(true);
     }
-  }, [isEdit, loaded, adminCost, initialized]);
+  // L3: appSettings added to deps — it's read for offer_validity_days, our_refs, and default_offer_text
+  }, [isEdit, loaded, adminCost, initialized, appSettings]);
 
   const lineSum = (l: Line) => {
     const gross = Number(l.quantity || 0) * Number(l.unit_price || 0);
@@ -307,13 +310,18 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           </div>
           <div className="space-y-2">
             <Label>Kunde</Label>
-            <Select value={offer.customer_id ?? "__none"} onValueChange={pickCustomer}>
-              <SelectTrigger><SelectValue placeholder="Velg fra kunderegister…" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">— Skriv inn manuelt —</SelectItem>
-                {(customers ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {/* M5: show loading/error states for customer list */}
+            {customersError ? (
+              <p className="text-xs text-destructive">Kunne ikke laste kunder</p>
+            ) : (
+              <Select value={offer.customer_id ?? "__none"} onValueChange={pickCustomer} disabled={customersLoading}>
+                <SelectTrigger><SelectValue placeholder={customersLoading ? "Laster kunder…" : "Velg fra kunderegister…"} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">— Skriv inn manuelt —</SelectItem>
+                  {(customers ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Kundenavn *</Label>

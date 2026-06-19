@@ -24,7 +24,8 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
+  // L1: only log to console in dev; don't leak schema/DB details in production
+  if (import.meta.env.DEV) console.error(error);
   const router = useRouter();
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -90,7 +91,9 @@ function AppShell() {
   // Sett primærfarge basert på tenant-branding
   useEffect(() => {
     const root = document.documentElement;
-    const color = branding?.primary_color;
+    const raw = branding?.primary_color;
+    // H4: validate hex color before writing to CSS to prevent CSS injection
+    const color = raw && /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : null;
     if (color) {
       // Berekn luminans for å velje riktig tekstfarge (kvit/svart)
       const hex = color.replace("#", "");

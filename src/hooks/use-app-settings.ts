@@ -1,8 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-
-const SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
+import { useAuth } from "@/hooks/use-auth";
 
 export interface Forbehold {
   title: string;
@@ -33,7 +32,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  id: SETTINGS_ID,
+  id: "",
   offer_validity_days: 60,
   our_refs: [{ name: "", phone: "", email: "" }],
   company_name: "Tilbudssystem",
@@ -76,13 +75,15 @@ function parseStringArray(v: unknown, fallback: string[]): string[] {
 }
 
 export function useAppSettings() {
+  const { tenantId } = useAuth();
   return useQuery({
-    queryKey: ["app-settings"],
+    queryKey: ["app-settings", tenantId],
+    enabled: !!tenantId,
     queryFn: async (): Promise<AppSettings> => {
       const { data, error } = await supabase
         .from("app_settings")
         .select("*")
-        .eq("id", SETTINGS_ID)
+        .eq("tenant_id", tenantId!)
         .maybeSingle();
       if (error) throw error;
       if (!data) return DEFAULT_SETTINGS;
@@ -99,13 +100,15 @@ export function useAppSettings() {
 }
 
 export function useSaveSettings() {
+  const { tenantId } = useAuth();
   const qc = useQueryClient();
   return async (patch: Partial<Omit<AppSettings, "id">>) => {
+    if (!tenantId) { toast.error("Ingen tenant tilknytta"); return false; }
     const { error } = await supabase
       .from("app_settings")
-      .upsert({ id: SETTINGS_ID, ...patch });
+      .upsert({ ...patch, tenant_id: tenantId }, { onConflict: "tenant_id" });
     if (error) { toast.error(error.message); return false; }
-    qc.invalidateQueries({ queryKey: ["app-settings"] });
+    qc.invalidateQueries({ queryKey: ["app-settings", tenantId] });
     toast.success("Innstillingar lagra");
     return true;
   };

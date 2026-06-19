@@ -19,7 +19,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           recharts: ["recharts"],
-          jspdf: ["jspdf", "jspdf-autotable"],
         },
       },
     },

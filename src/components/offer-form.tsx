@@ -188,6 +188,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       project_number: offer.project_number || null,
       admin_cost_pct: Number(offer.admin_cost_pct || 0),
       forbehold: offer.forbehold ?? [],
+      ...(isEdit && offer.status ? { status: offer.status } : {}),
     };
 
     let id = offerId;
@@ -428,6 +429,21 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <Label>Prosjektnr.</Label>
             <Input value={offer.project_number} onChange={(e) => set("project_number", e.target.value)} placeholder="Valgfritt" />
           </div>
+          {isEdit && (
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={offer.status ?? "utkast"} onValueChange={(v) => set("status", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="utkast">Utkast</SelectItem>
+                  <SelectItem value="sendt">Sendt</SelectItem>
+                  <SelectItem value="godkjent">Godkjent</SelectItem>
+                  <SelectItem value="startet">Startet</SelectItem>
+                  <SelectItem value="avslått">Avslått</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {(appSettings?.forbehold ?? []).length > 0 && (
             <div className="rounded-md border overflow-hidden">
               <button

@@ -64,6 +64,7 @@ interface OfferPdfData {
 interface OfferPdfSettings {
   company_name: string;
   company_tagline: string;
+  logo_url?: string;
   payment_terms: string;
   vat_pct: number;
   ref_phone?: string;
@@ -99,7 +100,7 @@ export function openOfferPdf(
   totals: OfferTotals,
   settings: OfferPdfSettings,
 ) {
-  const logoUrl = window.location.origin + "/logo.png";
+  const logoUrl = settings.logo_url || (window.location.origin + "/logo.png");
   const included = lines.filter((l) => l.included);
   const vat = totals.total * (settings.vat_pct / 100);
   const totalInclVat = totals.total + vat;
@@ -825,6 +826,7 @@ export interface ContractData {
   offer_text?: string;
   total_incl_vat: number;
   company_name: string;
+  logo_url?: string;
   company_org_nr?: string;
   company_address?: string;
   company_phone?: string;
@@ -837,7 +839,7 @@ export interface ContractData {
 }
 
 export function openContractPdf(d: ContractData) {
-  const logoUrl = window.location.origin + "/logo.png";
+  const logoUrl = d.logo_url || (window.location.origin + "/logo.png");
   const nokFmt = (n: number) =>
     new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " kr";
   const dateFmt = (s: string) =>

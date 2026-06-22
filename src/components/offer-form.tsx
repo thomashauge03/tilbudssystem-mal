@@ -248,6 +248,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       {
         company_name: appSettings?.company_name ?? "Tilbudssystem",
         company_tagline: appSettings?.company_tagline ?? "",
+        logo_url: appSettings?.logo_url ?? "",
         payment_terms: appSettings?.payment_terms ?? "30 dager netto",
         vat_pct: appSettings?.vat_pct ?? 25,
         ref_phone: refObj?.phone ?? "",
@@ -343,6 +344,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       offer_text: offer.offer_text,
       total_incl_vat: totalInclVat,
       company_name: appSettings?.company_name ?? "Tilbudssystem",
+      logo_url: appSettings?.logo_url ?? "",
       company_org_nr: "931 356 933",
       ref_name: refObj?.name ?? offer.our_ref,
       ref_signature: refObj?.signature ?? "",

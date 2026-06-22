@@ -22,6 +22,7 @@ export interface AppSettings {
   our_refs: OurRef[];
   company_name: string;
   company_tagline: string;
+  logo_url: string;
   units: string[];
   forbehold: Forbehold[];
   payment_terms: string;
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   our_refs: [{ name: "", phone: "", email: "" }],
   company_name: "Tilbudssystem",
   company_tagline: "",
+  logo_url: "",
   units: ["stk", "m", "m²", "m³", "tonn", "time", "LS", "RS"],
   forbehold: [],
   payment_terms: "30 dager netto",

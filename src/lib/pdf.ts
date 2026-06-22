@@ -831,6 +831,8 @@ export interface ContractData {
   company_ceo?: string;
   ref_name?: string;
   ref_signature?: string;
+  customer_signed_name?: string;
+  customer_signature?: string;
   forbehold?: Array<{ title: string; description: string }>;
 }
 
@@ -974,16 +976,21 @@ ${forbeholdHtml}
   <div class="sig-grid">
     <div class="sig-box">
       <div class="lbl">For kunden</div>
-      <div class="name">${escapeHtml(d.customer_name)}</div>
-      <div class="sig-line">Dato: _______________________</div>
-      <div class="sig-line">Signatur: _______________________</div>
+      <div class="name">${escapeHtml(d.customer_signed_name ?? d.customer_name)}</div>
+      ${d.customer_signature
+        ? `<img src="${d.customer_signature}" alt="Kundesignatur" class="sig-img" />`
+        : `<div style="height:18mm;border-bottom:1px dashed #aaa;margin-bottom:2mm;"></div>`}
+      <div class="sig-line">Dato: ${d.customer_signed_name ? "____________________" : "_______________________"}</div>
+      <div class="sig-line">Navn: ${escapeHtml(d.customer_signed_name ?? "_______________________")}</div>
     </div>
     <div class="sig-box">
       <div class="lbl">For ${escapeHtml(d.company_name)}</div>
       <div class="name">${escapeHtml(d.ref_name ?? d.company_ceo ?? "")}</div>
-      ${d.ref_signature ? `<img src="${d.ref_signature}" alt="Signatur" class="sig-img" />` : ""}
+      ${d.ref_signature
+        ? `<img src="${d.ref_signature}" alt="Signatur" class="sig-img" />`
+        : `<div style="height:18mm;border-bottom:1px dashed #aaa;margin-bottom:2mm;"></div>`}
       <div class="sig-line">Dato: ${dateFmt(d.offer_date)}</div>
-      <div class="sig-line">Signatur: _______________________</div>
+      <div class="sig-line">Navn: ${escapeHtml(d.ref_name ?? d.company_ceo ?? "_______________________")}</div>
     </div>
   </div>
 </div>

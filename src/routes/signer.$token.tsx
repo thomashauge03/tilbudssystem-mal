@@ -146,6 +146,7 @@ function SignerPage() {
     const { data, error: signErr } = await supabase.rpc("sign_offer" as never, {
       p_token: token,
       p_signer_name: signerName.trim(),
+      p_signer_signature: signatureDataUrl || null,
     } as never);
     if (signErr) { alert((signErr as any).message); setSubmitting(false); return; }
     setSignedInfo(data as any);

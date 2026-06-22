@@ -306,6 +306,23 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === offer.our_ref);
     const vatPct = appSettings?.vat_pct ?? 25;
     const totalInclVat = total * (1 + vatPct / 100);
+
+    // Hent kundesignatur frå signing tokens
+    let customerSignedName: string | undefined;
+    let customerSignature: string | undefined;
+    const { data: tokenRows } = await supabase
+      .from("offer_signing_tokens" as never)
+      .select("signer_name, signer_signature, used_at")
+      .eq("offer_id" as never, id as never)
+      .not("used_at" as never, "is" as never, null as never)
+      .order("used_at" as never, { ascending: false })
+      .limit(1);
+    if (tokenRows && (tokenRows as any[]).length > 0) {
+      const row = (tokenRows as any[])[0];
+      customerSignedName = row.signer_name ?? undefined;
+      customerSignature = row.signer_signature ?? undefined;
+    }
+
     openContractPdf({
       offer_number: offer.offer_number ?? 0,
       title: offer.title,
@@ -320,6 +337,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       company_org_nr: "931 356 933",
       ref_name: refObj?.name ?? offer.our_ref,
       ref_signature: refObj?.signature ?? "",
+      customer_signed_name: customerSignedName,
+      customer_signature: customerSignature,
       forbehold: (offer.forbehold ?? []).map((f: any) =>
         typeof f === "string" ? { title: f, description: "" } : f
       ),
@@ -338,7 +357,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           </h1>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          {isEdit && offer.status === "startet" && (
+          {isEdit && (
             <Button variant="outline" onClick={handleContract}>
               <FileSignature className="mr-2 h-4 w-4" />Kontrakt PDF
             </Button>

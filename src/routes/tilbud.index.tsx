@@ -12,20 +12,21 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2, PenLine, FileCheck } from "lucide-react";
 
-const STATUSES = ["utkast", "sendt", "godkjent", "avvist"] as const;
+const STATUSES = ["utkast", "sendt", "godkjent", "startet", "avvist"] as const;
 type OfferStatus = typeof STATUSES[number];
 
 const STATUS_STYLE: Record<OfferStatus, string> = {
   utkast:   "bg-gray-100 text-gray-700 border-gray-300",
   sendt:    "bg-yellow-100 text-yellow-800 border-yellow-300",
   godkjent: "bg-green-100 text-green-800 border-green-300",
+  startet:  "bg-blue-100 text-blue-800 border-blue-300",
   avvist:   "bg-red-100 text-red-700 border-red-300",
 };
 
 const STATUS_LABEL: Record<OfferStatus, string> = {
-  utkast: "Utkast", sendt: "Sendt", godkjent: "Godkjent", avvist: "Avvist",
+  utkast: "Utkast", sendt: "Sendt", godkjent: "Godkjent", startet: "Startet", avvist: "Avvist",
 };
 
 function StatusBadge({ status, offerId, onUpdate }: { status: OfferStatus; offerId: string; onUpdate: () => void }) {
@@ -83,6 +84,7 @@ function OffersList() {
         .from("offers")
         .select(`
           id, offer_number, title, status, valid_until, our_ref, customer_ref, created_at,
+          customer_signed_at, contract_signed,
           customers(name),
           offer_lines(quantity, unit_price, discount_pct)
         `)
@@ -157,6 +159,12 @@ function OffersList() {
               <th className="px-4 py-3">Opprettet</th>
               <th className="px-4 py-3">Gyldig t.o.m.</th>
               <th className="px-4 py-3">Vår ref.</th>
+              <th className="px-4 py-3 text-center" title="Kunde signert">
+                <PenLine className="inline h-3.5 w-3.5" />
+              </th>
+              <th className="px-4 py-3 text-center" title="Kontrakt signert">
+                <FileCheck className="inline h-3.5 w-3.5" />
+              </th>
               <th className="px-4 py-3 text-right">Sum eks. mva</th>
               <th className="px-4 py-3"></th>
             </tr>
@@ -188,6 +196,22 @@ function OffersList() {
                     {o.valid_until ? fmtDate(o.valid_until) : "—"}
                   </td>
                   <td className="px-4 py-3 text-sm">{o.our_ref ?? "—"}</td>
+                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()} title={o.customer_signed_at ? `Signert av kunde` : "Ikkje signert av kunde"}>
+                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.customer_signed_at ? "bg-green-500" : "bg-red-400"}`} />
+                  </td>
+                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      title={o.contract_signed ? "Kontrakt signert" : "Kontrakt ikkje signert — klikk for å endre"}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
+                        queryClient.invalidateQueries({ queryKey: ["offers"] });
+                      }}
+                      className="inline-flex items-center justify-center"
+                    >
+                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.contract_signed ? "bg-green-500" : "bg-red-400"}`} />
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-right font-medium">{nok(sumOf(o))}</td>
                   <td className="px-4 py-3 text-right">
                     <button

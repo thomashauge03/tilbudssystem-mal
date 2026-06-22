@@ -172,7 +172,7 @@ function SignerPage() {
     );
   }
 
-  if (offerInfo.used_at || offerInfo.status === "godkjent") {
+  if (offerInfo.used_at) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="max-w-sm text-center space-y-3">

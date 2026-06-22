@@ -4,7 +4,8 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { nok, fmtDate } from "@/lib/format";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Search, PenLine, FileCheck } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/ordre")({
   component: OrdrePage,
@@ -35,13 +36,14 @@ function ProgressBar({ pct }: { pct: number }) {
 
 function OrdrePage() {
   const [q, setQ] = useState("");
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ["offers-godkjent"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("offers")
-        .select("id, offer_number, title, customer_name, offer_date, valid_until, our_ref, project_number, offer_lines(quantity, unit_price, included), admin_cost_pct, invoiced_amount")
+        .select("id, offer_number, title, customer_name, offer_date, valid_until, our_ref, project_number, offer_lines(quantity, unit_price, included), admin_cost_pct, invoiced_amount, customer_signed_at, contract_signed")
         .eq("status", "godkjent")
         .order("offer_number", { ascending: false });
       if (error) throw error;
@@ -114,6 +116,12 @@ function OrdrePage() {
               <th className="px-4 py-3">Beskrivelse</th>
               <th className="px-4 py-3">Dato</th>
               <th className="px-4 py-3">Vår ref.</th>
+              <th className="px-4 py-3 text-center" title="Kunde signert">
+                <PenLine className="inline h-3.5 w-3.5" />
+              </th>
+              <th className="px-4 py-3 text-center" title="Kontrakt signert">
+                <FileCheck className="inline h-3.5 w-3.5" />
+              </th>
               <th className="px-4 py-3 text-right">Totalt</th>
               <th className="px-4 py-3 text-right">Fakturert</th>
               <th className="px-4 py-3">Fremdrift</th>
@@ -145,6 +153,23 @@ function OrdrePage() {
                   <td className="px-4 py-3">{o.title}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{fmtDate(o.offer_date)}</td>
                   <td className="px-4 py-3 text-sm">{o.our_ref ?? "—"}</td>
+
+                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()} title={o.customer_signed_at ? "Signert av kunde" : "Ikkje signert av kunde"}>
+                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.customer_signed_at ? "bg-green-500" : "bg-red-400"}`} />
+                  </td>
+                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      title={o.contract_signed ? "Kontrakt signert" : "Kontrakt ikkje signert — klikk for å endre"}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
+                        queryClient.invalidateQueries({ queryKey: ["offers-godkjent"] });
+                      }}
+                      className="inline-flex items-center justify-center"
+                    >
+                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.contract_signed ? "bg-green-500" : "bg-red-400"}`} />
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-right font-medium">{nok(total)}</td>
                   <td className="px-4 py-3 text-right text-sm text-muted-foreground">{invoiced > 0 ? nok(invoiced) : "—"}</td>
                   <td className="px-4 py-3">

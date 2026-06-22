@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2 } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw } from "lucide-react";
 import { nok, num, fmtDate, toISODate, addDays, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
@@ -299,6 +299,15 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     toast.success("Signeringslenke kopiert til utklippstavlen!");
   };
 
+  const handleResetSignature = async () => {
+    if (!offerId) return;
+    if (!window.confirm("Er du sikker på at du vil nullstille kundesignaturen? Alle signeringslenker for dette tilbudet vil slutte å fungere.")) return;
+    await supabase.from("offer_signing_tokens" as never).delete().eq("offer_id" as never, offerId as never);
+    await supabase.from("offers").update({ customer_signed_at: null } as any).eq("id", offerId);
+    qc.invalidateQueries({ queryKey: ["offer", offerId] });
+    toast.success("Signatur nullstilt. Du kan nå sende ut en ny signeringslenke.");
+  };
+
   const handleContract = async () => {
     const id = await save();
     if (!id) return;
@@ -365,6 +374,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           <Button variant="outline" onClick={handleSigningLink} title="Generer signeringslenke og kopier til utklippstavle">
             <Link2 className="mr-2 h-4 w-4" />Signeringslenke
           </Button>
+          {isEdit && (loaded?.offer as any)?.customer_signed_at && (
+            <Button variant="outline" onClick={handleResetSignature} className="text-destructive border-destructive/50 hover:bg-destructive/10" title="Nullstill kundesignatur">
+              <RotateCcw className="mr-2 h-4 w-4" />Nullstill signatur
+            </Button>
+          )}
           <Button variant="outline" onClick={handleEmail}><Mail className="mr-2 h-4 w-4" />Send på e-post</Button>
           <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Last ned PDF</Button>
           <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre tilbud</Button>

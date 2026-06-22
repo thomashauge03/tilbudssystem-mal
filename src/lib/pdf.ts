@@ -834,6 +834,7 @@ export interface ContractData {
   ref_name?: string;
   ref_signature?: string;
   customer_signed_name?: string;
+  customer_signed_at?: string;
   customer_signature?: string;
   forbehold?: Array<{ title: string; description: string }>;
 }
@@ -982,7 +983,7 @@ ${forbeholdHtml}
       ${d.customer_signature
         ? `<img src="${d.customer_signature}" alt="Kundesignatur" class="sig-img" />`
         : `<div style="height:18mm;border-bottom:1px dashed #aaa;margin-bottom:2mm;"></div>`}
-      <div class="sig-line">Dato: ${d.customer_signed_name ? "____________________" : "_______________________"}</div>
+      <div class="sig-line">Dato: ${d.customer_signed_at ? dateFmt(d.customer_signed_at) : "_______________________"}</div>
       <div class="sig-line">Navn: ${escapeHtml(d.customer_signed_name ?? "_______________________")}</div>
     </div>
     <div class="sig-box">

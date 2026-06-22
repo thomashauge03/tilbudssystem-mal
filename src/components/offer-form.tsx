@@ -327,10 +327,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       .not("used_at" as never, "is" as never, null as never)
       .order("used_at" as never, { ascending: false })
       .limit(1);
+    let customerSignedAt: string | undefined;
     if (tokenRows && (tokenRows as any[]).length > 0) {
       const row = (tokenRows as any[])[0];
       customerSignedName = row.signer_name ?? undefined;
       customerSignature = row.signer_signature ?? undefined;
+      customerSignedAt = row.used_at ?? undefined;
     }
 
     openContractPdf({
@@ -349,6 +351,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       ref_name: refObj?.name ?? offer.our_ref,
       ref_signature: refObj?.signature ?? "",
       customer_signed_name: customerSignedName,
+      customer_signed_at: customerSignedAt,
       customer_signature: customerSignature,
       forbehold: (offer.forbehold ?? []).map((f: any) =>
         typeof f === "string" ? { title: f, description: "" } : f

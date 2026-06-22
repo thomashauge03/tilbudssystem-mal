@@ -17,7 +17,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 interface ALine { id?: string; sort_order: number; description: string; quantity: number; unit: string; unit_price: number; }
 interface AState {
-  id?: string; amendment_number: string; project_id: string | null; project_ref: string; internal_description: string;
+  id?: string; amendment_number: string; offer_id: string | null; project_id: string | null; project_ref: string; internal_description: string;
   is_mass_settlement: boolean; is_additional_work: boolean; is_price_increase: boolean;
   notified_date: string; revised_date: string | null; project_manager: string; customer_email: string;
   change_description: string; reason: string; other_notes: string;
@@ -25,7 +25,7 @@ interface AState {
 
 function empty(): AState {
   return {
-    amendment_number: "", project_id: null, project_ref: "", internal_description: "",
+    amendment_number: "", offer_id: null, project_id: null, project_ref: "", internal_description: "",
     is_mass_settlement: false, is_additional_work: false, is_price_increase: false,
     notified_date: toISODate(new Date()), revised_date: null,
     project_manager: "", customer_email: "",
@@ -66,6 +66,21 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
     },
   });
 
+  const { data: offers } = useQuery({
+    queryKey: ["offers-for-amendment", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("offers")
+        .select("id, offer_number, title, customer_name, project_number, status")
+        .eq("tenant_id", tenantId!)
+        .in("status", ["godkjent", "startet"])
+        .order("offer_number", { ascending: false })
+        .limit(200);
+      return data ?? [];
+    },
+  });
+
   const [a, setA] = useState<AState>(() => empty());
   const [lines, setLines] = useState<ALine[]>([]);
   const [init, setInit] = useState(false);
@@ -87,6 +102,18 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
       project_id: proj.id,
       project_ref: proj.project_number ?? proj.name ?? "",
       customer_email: p.customer_email || "",
+    }));
+  };
+
+  const pickOffer = (id: string) => {
+    if (id === "__none") { setA((p) => ({ ...p, offer_id: null })); return; }
+    const o = (offers ?? []).find((x: any) => x.id === id);
+    if (!o) return;
+    setA((p) => ({
+      ...p,
+      offer_id: o.id,
+      project_ref: p.project_ref || o.project_number || String(o.offer_number),
+      internal_description: p.internal_description || o.title || "",
     }));
   };
 
@@ -112,7 +139,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
     if (!isEdit && !number) number = await nextNumber(a.project_ref);
 
     const payload = {
-      amendment_number: number, project_id: a.project_id || null,
+      amendment_number: number, offer_id: a.offer_id || null, project_id: a.project_id || null,
       project_ref: a.project_ref, internal_description: a.internal_description,
       is_mass_settlement: a.is_mass_settlement, is_additional_work: a.is_additional_work, is_price_increase: a.is_price_increase,
       notified_date: a.notified_date, revised_date: a.revised_date || null,
@@ -180,6 +207,20 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Endringsinfo</h2>
+          <div className="space-y-2">
+            <Label>Knytt til tilbud</Label>
+            <Select value={a.offer_id ?? "__none"} onValueChange={pickOffer}>
+              <SelectTrigger><SelectValue placeholder="Vel tilbud…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">— Ikkje knytt til tilbud —</SelectItem>
+                {(offers ?? []).map((o: any) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    #{o.offer_number} – {o.title}{o.customer_name ? ` (${o.customer_name})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label>Knytt til prosjekt</Label>
             <Select value={a.project_id ?? "__none"} onValueChange={pickProject}>

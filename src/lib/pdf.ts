@@ -813,3 +813,189 @@ ${pagesHtml}
   win.document.write(html);
   win.document.close();
 }
+
+export interface ContractData {
+  offer_number: number;
+  title: string;
+  offer_date: string;
+  customer_name: string;
+  customer_address?: string;
+  customer_phone?: string;
+  project_number?: string;
+  offer_text?: string;
+  total_incl_vat: number;
+  company_name: string;
+  company_org_nr?: string;
+  company_address?: string;
+  company_phone?: string;
+  company_ceo?: string;
+  ref_name?: string;
+  ref_signature?: string;
+  forbehold?: Array<{ title: string; description: string }>;
+}
+
+export function openContractPdf(d: ContractData) {
+  const logoUrl = window.location.origin + "/logo.png";
+  const nokFmt = (n: number) =>
+    new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " kr";
+  const dateFmt = (s: string) =>
+    s ? new Intl.DateTimeFormat("nb-NO", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(s)) : "—";
+
+  const forbeholdHtml = (d.forbehold ?? []).length > 0
+    ? (d.forbehold!).map((f) =>
+        `<li><strong>${escapeHtml(f.title)}</strong>${f.description ? ` – ${escapeHtml(f.description)}` : ""}</li>`
+      ).join("")
+    : "<li>Værforhold og naturhendelser.</li><li>Uforutsette grunnforhold, kabler, rør eller fundamenter.</li>";
+
+  const html = `<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8"/>
+<title>Entreprisekontrakt – ${escapeHtml(d.company_name)}</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11pt; line-height: 1.5; margin: 0; }
+  .cover { page-break-after: always; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 257mm; text-align: center; gap: 0; }
+  .cover img { height: 36mm; width: auto; margin-bottom: 16mm; }
+  .cover h1 { font-size: 18pt; font-weight: 900; letter-spacing: 0.04em; margin: 0 0 2mm 0; }
+  .cover h2 { font-size: 15pt; font-weight: 700; letter-spacing: 0.06em; margin: 0 0 16mm 0; }
+  .cover .proj-label { font-size: 10pt; font-weight: 700; margin-bottom: 1mm; }
+  .cover .proj-line { font-size: 10pt; border-bottom: 1px solid #111; width: 60mm; display: inline-block; margin-bottom: 10mm; }
+  .cover .desc { font-size: 11pt; font-weight: 700; margin: 4mm 0 2mm 0; }
+  .cover .addr { font-size: 10pt; margin: 0 0 10mm 0; }
+  .cover .kunde-label { font-size: 11pt; font-weight: 900; letter-spacing: 0.1em; margin: 6mm 0 4mm 0; }
+  .cover .kunde-name { font-size: 11pt; font-weight: 700; margin-bottom: 1mm; }
+  .cover .kunde-info { font-size: 10pt; line-height: 1.6; }
+
+  .content { }
+  h3 { font-size: 13pt; font-weight: 900; margin: 8mm 0 3mm 0; border-bottom: 1px solid #111; padding-bottom: 1mm; }
+  p { margin: 0 0 4mm 0; }
+  table.bp { width: 100%; border-collapse: collapse; margin: 4mm 0 6mm 0; }
+  table.bp th { background: #111; color: #fff; padding: 5px 8px; font-size: 10pt; text-align: left; }
+  table.bp td { padding: 5px 8px; border-bottom: 1px solid #ddd; font-size: 10pt; }
+  table.bp td:last-child { text-align: right; }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-bottom: 6mm; }
+  .party-box { background: #f5f5f5; border-left: 3px solid #111; padding: 5mm; }
+  .party-box .lbl { font-size: 9pt; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 2mm; color: #555; }
+  .party-box p { margin: 0; font-size: 10pt; line-height: 1.6; }
+  .sig-section { margin-top: 10mm; page-break-inside: avoid; }
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16mm; margin-top: 4mm; }
+  .sig-box .lbl { font-weight: 700; font-size: 10pt; margin-bottom: 3mm; }
+  .sig-box .name { font-size: 10pt; margin-bottom: 8mm; }
+  .sig-line { border-top: 1px solid #111; padding-top: 3mm; font-size: 9pt; color: #555; }
+  .sig-line + .sig-line { margin-top: 8mm; }
+  .sig-img { max-height: 18mm; max-width: 60mm; width: auto; display: block; margin-bottom: 2mm; }
+  @media print {
+    body { font-size: 10pt; }
+    .cover { min-height: auto; height: 257mm; }
+  }
+</style>
+</head>
+<body>
+
+<!-- FORSIDE -->
+<div class="cover">
+  <img src="${logoUrl}" alt="${escapeHtml(d.company_name)}" onerror="this.style.display='none'" />
+  <h1>${escapeHtml(d.company_name).toUpperCase()}</h1>
+  <h2>ENTREPRISEKONTRAKT</h2>
+
+  <div class="proj-label">Prosjekt nr.:</div>
+  <div class="proj-line">${escapeHtml(d.project_number ?? "")}&nbsp;</div>
+
+  ${d.title ? `<div class="desc">${escapeHtml(d.title)}</div>` : ""}
+  ${d.customer_address ? `<div class="addr">${escapeHtml(d.customer_address)}</div>` : ""}
+
+  <div class="kunde-label">KUNDE</div>
+  <div class="kunde-name">${escapeHtml(d.customer_name)}</div>
+  <div class="kunde-info">
+    ${d.customer_address ? escapeHtml(d.customer_address) + "<br/>" : ""}
+    ${d.customer_phone ? "Tlf. " + escapeHtml(d.customer_phone) : ""}
+  </div>
+</div>
+
+<!-- AVTALETEKST -->
+<div class="content">
+
+<h3>1. Partene</h3>
+<div class="parties">
+  <div class="party-box">
+    <div class="lbl">Entreprenør</div>
+    <p><strong>${escapeHtml(d.company_name)}</strong><br/>
+    ${d.company_org_nr ? "Org.nr. " + escapeHtml(d.company_org_nr) + "<br/>" : ""}
+    ${d.company_address ? escapeHtml(d.company_address) + "<br/>" : ""}
+    ${d.company_phone ? "Tlf. " + escapeHtml(d.company_phone) : ""}</p>
+  </div>
+  <div class="party-box">
+    <div class="lbl">Kunde</div>
+    <p><strong>${escapeHtml(d.customer_name)}</strong><br/>
+    ${d.customer_address ? escapeHtml(d.customer_address) + "<br/>" : ""}
+    ${d.customer_phone ? "Tlf. " + escapeHtml(d.customer_phone) : ""}</p>
+  </div>
+</div>
+
+<h3>2. Kontraktsgrunnlag</h3>
+<p>Kontrakten bygger på tilbud nr. ${escapeHtml(String(d.offer_number))} datert ${dateFmt(d.offer_date)}. Tilbudet med beskrivelser, mengder, illustrasjoner og forbehold utgjør vedlegg 1 til denne kontrakten. Ved motstrid går denne kontrakten foran tilbudet.</p>
+
+<h3>3. Arbeidets omfang</h3>
+<p>Entreprenøren skal utføre ${d.offer_text ? escapeHtml(d.offer_text) : escapeHtml(d.title)}. Arbeidene utføres etter god fagmessig standard.</p>
+
+<h3>4. Kontraktssum</h3>
+<p><strong>${nokFmt(d.total_incl_vat)}&nbsp;inkl. mva</strong></p>
+
+<h3>5. Betalingsplan</h3>
+<p>Betalingsplan avtalast mellom partane. Betalingsfrist er 14 dager fra fakturadato.</p>
+
+<h3>6. Manglende betaling</h3>
+<p>Ved manglende betaling har entreprenøren rett til å stanse arbeidene umiddelbart. Entreprenøren kan kreve forsinkelsesrenter, dekning av merkostnader og nødvendig fristforlengelse som følge av betalingsmislighold.</p>
+
+<h3>7. Tilleggsarbeider</h3>
+<p>Arbeider utenfor kontraktens omfang anses som tilleggsarbeider. Tilleggsarbeider skal varsles så langt det er praktisk mulig før utførelse og faktureres etter avtale eller etter medgått tid, maskinbruk, materialer og underentreprenørkostnader.</p>
+
+<h3>8. Fremdrift og fristforlengelse</h3>
+<p>Entreprenøren har rett til fristforlengelse ved værforhold, naturhendelser, leveranseproblemer, offentlige pålegg, forhold hos kunden eller andre forhold utenfor entreprenørens kontroll.</p>
+
+<h3>9. Forbehold</h3>
+<ul>
+${forbeholdHtml}
+</ul>
+
+<h3>10. Reklamasjon</h3>
+<p>Eventuelle mangler skal meldes skriftlig innen rimelig tid. Entreprenøren skal gis mulighet til å undersøke og eventuelt utbedre forholdet før andre engasjeres.</p>
+
+<h3>11. Eiendomsforbehold</h3>
+<p>Leverte materialer og utført arbeid forblir entreprenørens eiendom inntil fullt oppgjør er mottatt i den grad loven tillater dette.</p>
+
+<h3>12. Tvister</h3>
+<p>Tvister skal først søkes løst ved forhandlinger. Dersom dette ikke fører frem, skal tvisten avgjøres av de ordinære domstoler med Agder tingrett som avtalt verneting. Norsk rett gjelder.</p>
+
+<h3>13. Signaturer</h3>
+<div class="sig-section">
+  <div class="sig-grid">
+    <div class="sig-box">
+      <div class="lbl">For kunden</div>
+      <div class="name">${escapeHtml(d.customer_name)}</div>
+      <div class="sig-line">Dato: _______________________</div>
+      <div class="sig-line">Signatur: _______________________</div>
+    </div>
+    <div class="sig-box">
+      <div class="lbl">For ${escapeHtml(d.company_name)}</div>
+      <div class="name">${escapeHtml(d.ref_name ?? d.company_ceo ?? "")}</div>
+      ${d.ref_signature ? `<img src="${d.ref_signature}" alt="Signatur" class="sig-img" />` : ""}
+      <div class="sig-line">Dato: ${dateFmt(d.offer_date)}</div>
+      <div class="sig-line">Signatur: _______________________</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>window.onload = () => { setTimeout(() => window.print(), 200); };</script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=900,height=1200");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+}

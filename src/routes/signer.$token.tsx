@@ -1,0 +1,269 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { CheckCircle2, PenLine, RotateCcw } from "lucide-react";
+
+export const Route = createFileRoute("/signer/$token")({
+  component: SignerPage,
+});
+
+interface OfferInfo {
+  token_id: string;
+  used_at: string | null;
+  offer_id: string;
+  offer_number: number;
+  title: string;
+  customer_name: string;
+  offer_date: string;
+  valid_until: string;
+  offer_text: string;
+  status: string;
+}
+
+function fmtDate(d: string) {
+  if (!d) return "—";
+  return new Intl.DateTimeFormat("nb-NO", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(d));
+}
+
+function SignatureCanvas({ onSign }: { onSign: (dataUrl: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawing = useRef(false);
+  const [hasSignature, setHasSignature] = useState(false);
+
+  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if ("touches" in e) {
+      return {
+        x: (e.touches[0].clientX - rect.left) * scaleX,
+        y: (e.touches[0].clientY - rect.top) * scaleY,
+      };
+    }
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const start = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    drawing.current = true;
+    const ctx = canvasRef.current!.getContext("2d")!;
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+  };
+
+  const move = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current!.getContext("2d")!;
+    const pos = getPos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = "#1a1a2e";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    setHasSignature(true);
+  };
+
+  const end = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    drawing.current = false;
+    if (hasSignature) {
+      onSign(canvasRef.current!.toDataURL("image/png"));
+    }
+  };
+
+  const clear = () => {
+    const canvas = canvasRef.current!;
+    canvas.getContext("2d")!.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSignature(false);
+    onSign("");
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="relative rounded-lg border-2 border-dashed border-gray-300 bg-white overflow-hidden" style={{ touchAction: "none" }}>
+        <canvas
+          ref={canvasRef}
+          width={600}
+          height={200}
+          className="w-full cursor-crosshair"
+          onMouseDown={start}
+          onMouseMove={move}
+          onMouseUp={end}
+          onMouseLeave={end}
+          onTouchStart={start}
+          onTouchMove={move}
+          onTouchEnd={end}
+        />
+        {!hasSignature && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-gray-400 gap-2">
+            <PenLine className="h-4 w-4" />
+            Teikn signaturen din her
+          </div>
+        )}
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={clear} disabled={!hasSignature}>
+        <RotateCcw className="mr-1 h-3.5 w-3.5" />Slett og prøv igjen
+      </Button>
+    </div>
+  );
+}
+
+function SignerPage() {
+  const { token } = Route.useParams();
+  const [offerInfo, setOfferInfo] = useState<OfferInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [signerName, setSignerName] = useState("");
+  const [signatureDataUrl, setSignatureDataUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [signedInfo, setSignedInfo] = useState<{ offer_number: number; title: string } | null>(null);
+
+  useEffect(() => {
+    supabase.rpc("get_offer_by_token" as never, { p_token: token } as never)
+      .then(({ data, error: e }) => {
+        if (e) { setError(e.message); }
+        else { setOfferInfo(data as OfferInfo); }
+        setLoading(false);
+      });
+  }, [token]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!signerName.trim()) { alert("Skriv inn fullt navn"); return; }
+    if (!signatureDataUrl) { alert("Teikn signaturen din"); return; }
+    setSubmitting(true);
+    const { data, error: e } = await supabase.rpc("sign_offer" as never, {
+      p_token: token,
+      p_signer_name: signerName.trim(),
+    } as never);
+    if (e) { alert(e.message); setSubmitting(false); return; }
+    setSignedInfo(data as any);
+    setDone(true);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center text-gray-500">Laster…</div>
+      </div>
+    );
+  }
+
+  if (error || !offerInfo) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="max-w-sm text-center space-y-3">
+          <div className="text-4xl">🔒</div>
+          <h1 className="text-xl font-semibold text-gray-900">Ugyldig lenke</h1>
+          <p className="text-sm text-gray-500">{error ?? "Denne signeringslenken er ikke gyldig eller er allerede brukt."}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (offerInfo.used_at || offerInfo.status === "godkjent") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="max-w-sm text-center space-y-3">
+          <CheckCircle2 className="mx-auto h-14 w-14 text-green-500" />
+          <h1 className="text-xl font-semibold text-gray-900">Tilbud allerede signert</h1>
+          <p className="text-sm text-gray-500">Dette tilbudet er allerede signert. Lenken er engangslenkje og kan ikke brukes igjen.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (done) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="max-w-sm text-center space-y-4">
+          <CheckCircle2 className="mx-auto h-16 w-16 text-green-500" />
+          <h1 className="text-2xl font-bold text-gray-900">Takk for signeringen!</h1>
+          <p className="text-gray-600">
+            Tilbud #{signedInfo?.offer_number} – {signedInfo?.title} er no godkjent og signert av{" "}
+            <strong>{signerName}</strong>.
+          </p>
+          <p className="text-sm text-gray-400">Du kan lukke dette vinduet.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-10 px-4">
+      <div className="mx-auto max-w-xl space-y-6">
+        {/* Header */}
+        <div className="rounded-xl border bg-white shadow-sm p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Tilbud #{offerInfo.offer_number}</p>
+              <h1 className="text-xl font-bold text-gray-900">{offerInfo.title}</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Til: {offerInfo.customer_name}</p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm border-t pt-4">
+            <div>
+              <p className="text-xs text-gray-400 font-medium mb-0.5">Tilbudsdato</p>
+              <p className="font-medium text-gray-700">{fmtDate(offerInfo.offer_date)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 font-medium mb-0.5">Gyldig til</p>
+              <p className="font-medium text-gray-700">{fmtDate(offerInfo.valid_until)}</p>
+            </div>
+          </div>
+          {offerInfo.offer_text && (
+            <div className="mt-4 border-t pt-4">
+              <p className="text-xs text-gray-400 font-medium mb-1">Tilbudstekst</p>
+              <p className="text-sm text-gray-600 whitespace-pre-wrap">{offerInfo.offer_text}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Signeringsskjema */}
+        <form onSubmit={handleSubmit} className="rounded-xl border bg-white shadow-sm p-6 space-y-5">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Signer tilbudet</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Ved å signere aksepterer du tilbudet på vegne av {offerInfo.customer_name}.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="signer-name">Fullt navn *</Label>
+            <Input
+              id="signer-name"
+              placeholder="Skriv inn ditt fulle navn"
+              value={signerName}
+              onChange={(e) => setSignerName(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Signatur *</Label>
+            <SignatureCanvas onSign={setSignatureDataUrl} />
+          </div>
+
+          <Button type="submit" className="w-full" disabled={submitting || !signerName.trim() || !signatureDataUrl}>
+            {submitting ? "Signerer…" : "Godkjenn og signer tilbud"}
+          </Button>
+
+          <p className="text-xs text-gray-400 text-center">
+            Denne lenken er engangslenkje og vil ikkje virke etter signering.
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+}

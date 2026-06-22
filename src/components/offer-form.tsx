@@ -9,9 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2 } from "lucide-react";
 import { nok, num, fmtDate, toISODate, addDays, UNITS as FALLBACK_UNITS } from "@/lib/format";
-import { openOfferPdf } from "@/lib/pdf";
+import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -44,6 +44,7 @@ interface OfferState {
   project_number: string;
   admin_cost_pct: number;
   forbehold: string[];
+  status?: string;
 }
 
 function emptyOffer(adminPct: number, validityDays: number, defaultRef: string, defaultText = ""): OfferState {
@@ -262,10 +263,66 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     const id = await save();
     if (!id) return;
     if (!offer.customer_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(offer.customer_email)) { toast.error("Kunden mangler gyldig e-postadresse"); return; }
+
+    // Opprett signeringslenke og inkluder i e-posten
+    let signingLink = "";
+    if (tenantId) {
+      const { data: tokenData } = await supabase
+        .from("offer_signing_tokens" as never)
+        .insert({ offer_id: id, tenant_id: tenantId } as never)
+        .select("token")
+        .single();
+      if (tokenData) {
+        signingLink = `\n\nSigner tilbudet digitalt her:\n${window.location.origin}/signer/${(tokenData as any).token}`;
+      }
+    }
+
     const subject = `Tilbud nr. ${offer.offer_number ?? ""} – ${offer.title}`;
     const senderName = appSettings?.company_name ?? "Tilbudssystem";
-    const body = `Hei,\n\nVedlagt finner du tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.\n\nTilbudet er gyldig t.o.m. ${fmtDate(offer.valid_until)}.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
+    const body = `Hei,\n\nVedlagt finner du tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.\n\nTilbudet er gyldig t.o.m. ${fmtDate(offer.valid_until)}.${signingLink}\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
     window.location.href = `mailto:${encodeURIComponent(offer.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const handleSigningLink = async () => {
+    const id = await save();
+    if (!id) return;
+    if (!tenantId) { toast.error("Ingen tenant"); return; }
+    const { data: tokenData, error } = await supabase
+      .from("offer_signing_tokens" as never)
+      .insert({ offer_id: id, tenant_id: tenantId } as never)
+      .select("token")
+      .single();
+    if (error || !tokenData) { toast.error("Kunne ikke opprette signeringslenke"); return; }
+    const link = `${window.location.origin}/signer/${(tokenData as any).token}`;
+    await navigator.clipboard.writeText(link);
+    toast.success("Signeringslenke kopiert til utklippstavlen!");
+  };
+
+  const handleContract = async () => {
+    const id = await save();
+    if (!id) return;
+    const customerObj = (customers ?? []).find((c: any) => c.id === offer.customer_id);
+    const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === offer.our_ref);
+    const vatPct = appSettings?.vat_pct ?? 25;
+    const totalInclVat = total * (1 + vatPct / 100);
+    openContractPdf({
+      offer_number: offer.offer_number ?? 0,
+      title: offer.title,
+      offer_date: offer.offer_date,
+      customer_name: offer.customer_name,
+      customer_address: customerObj?.address ?? "",
+      customer_phone: customerObj?.phone ?? "",
+      project_number: offer.project_number,
+      offer_text: offer.offer_text,
+      total_incl_vat: totalInclVat,
+      company_name: appSettings?.company_name ?? "Tilbudssystem",
+      company_org_nr: "931 356 933",
+      ref_name: refObj?.name ?? offer.our_ref,
+      ref_signature: refObj?.signature ?? "",
+      forbehold: (offer.forbehold ?? []).map((f: any) =>
+        typeof f === "string" ? { title: f, description: "" } : f
+      ),
+    });
   };
 
   if (isEdit && !initialized) return <div className="text-muted-foreground">Laster…</div>;
@@ -279,9 +336,17 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             {isEdit ? `Tilbud #${offer.offer_number ?? ""}` : "Nytt tilbud"}
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
+          {isEdit && offer.status === "startet" && (
+            <Button variant="outline" onClick={handleContract}>
+              <FileSignature className="mr-2 h-4 w-4" />Kontrakt PDF
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleSigningLink} title="Generer signeringslenke og kopier til utklippstavle">
+            <Link2 className="mr-2 h-4 w-4" />Signeringslenke
+          </Button>
           <Button variant="outline" onClick={handleEmail}><Mail className="mr-2 h-4 w-4" />Send på e-post</Button>
-          <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF</Button>
+          <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Last ned PDF</Button>
           <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre tilbud</Button>
         </div>
       </div>

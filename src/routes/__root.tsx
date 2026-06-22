@@ -86,7 +86,7 @@ function NoTenantPage({ email, signOut }: { email: string; signOut: () => void }
 function AppShell() {
   const { user, loading, roleLoading, hasTenant, signOut, branding } = useAuth();
   const path = useRouterState({ select: (r) => r.location.pathname });
-  const isPublic = path === "/login";
+  const isPublic = path === "/login" || path.startsWith("/signer");
 
   // Sett primærfarge basert på tenant-branding
   useEffect(() => {

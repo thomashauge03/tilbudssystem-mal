@@ -832,6 +832,8 @@ export interface ContractData {
   company_phone?: string;
   company_ceo?: string;
   ref_name?: string;
+  ref_position?: string;
+  ref_phone?: string;
   ref_signature?: string;
   customer_signed_name?: string;
   customer_signed_at?: string;
@@ -992,6 +994,8 @@ ${forbeholdHtml}
       ${d.ref_signature
         ? `<img src="${d.ref_signature}" alt="Signatur" class="sig-img" />`
         : `<div style="height:18mm;border-bottom:1px dashed #aaa;margin-bottom:2mm;"></div>`}
+      ${d.ref_position ? `<div style="font-size:9pt;color:#555;margin-bottom:1mm;">${escapeHtml(d.ref_position)}</div>` : ""}
+      ${d.ref_phone ? `<div style="font-size:9pt;color:#555;margin-bottom:2mm;">Tlf. ${escapeHtml(d.ref_phone)}</div>` : ""}
       <div class="sig-line">Dato: ${dateFmt(d.offer_date)}</div>
       <div class="sig-line">Navn: ${escapeHtml(d.ref_name ?? d.company_ceo ?? "_______________________")}</div>
     </div>

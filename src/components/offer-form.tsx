@@ -349,6 +349,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       logo_url: appSettings?.logo_url ?? "",
       company_org_nr: "931 356 933",
       ref_name: refObj?.name ?? offer.our_ref,
+      ref_position: refObj?.position ?? "",
+      ref_phone: refObj?.phone ?? "",
       ref_signature: refObj?.signature ?? "",
       customer_signed_name: customerSignedName,
       customer_signed_at: customerSignedAt,

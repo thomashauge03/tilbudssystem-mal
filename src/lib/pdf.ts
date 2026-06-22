@@ -137,9 +137,11 @@ export function openOfferPdf(
   const maxDescMm = Math.max(18, PAGE_MM - FIXED_MM - estForbeholdMm - (LINES_PAGE_1 * LINE_MM) - 8);
   const LINES_PER_PAGE = 22;
 
-  // Éi-siders tilbud: ingen forbehold, kort tekst, få linjer
-  const SHORT_LINE_LIMIT = 4;
-  const SHORT_TEXT_LIMIT = 300;
+  // Éi-siders tilbud: ingen forbehold, kort tekst, få linjer.
+  // Avslutningsblokka (summar + vilkår + signatur) er tung, så grensene er
+  // stramme for å unngå at botnen renn over på side 2.
+  const SHORT_LINE_LIMIT = 3;
+  const SHORT_TEXT_LIMIT = 240;
   const isSinglePage =
     included.length <= SHORT_LINE_LIMIT &&
     textLen < SHORT_TEXT_LIMIT &&
@@ -718,6 +720,8 @@ export function openOfferPdf(
     }
     .page:last-child { page-break-after: auto; break-after: auto; }
     tbody tr { page-break-inside: avoid; break-inside: avoid; }
+    .info-grid    { page-break-inside: avoid; break-inside: avoid; }
+    .project      { page-break-inside: avoid; break-inside: avoid; }
     .bottom-push  { page-break-inside: avoid; break-inside: avoid; }
     .totals-wrap { page-break-inside: avoid; break-inside: avoid; }
     .conditions   { page-break-inside: avoid; break-inside: avoid; }
@@ -733,7 +737,7 @@ ${pagesHtml}
 (function() {
   var PX_MM = 96 / 25.4;
   var PAGE_MM = 297;
-  var BUFFER_MM = 35; // tryggheitsmarginen (skjerm-px vs utskrift-mm er ikkje eksakt)
+  var BUFFER_MM = 44; // tryggheitsmarginen (skjerm-px vs utskrift-mm er ikkje eksakt)
 
   function mm(el) { return el ? el.getBoundingClientRect().height / PX_MM : 0; }
 
@@ -893,9 +897,13 @@ export function openContractPdf(d: ContractData) {
   .sig-line { border-top: 1px solid #111; padding-top: 3mm; font-size: 9pt; color: #555; }
   .sig-line + .sig-line { margin-top: 8mm; }
   .sig-img { max-height: 18mm; max-width: 60mm; width: auto; display: block; margin-bottom: 2mm; }
+  .sec { break-inside: avoid; page-break-inside: avoid; }
   @media print {
     body { font-size: 10pt; }
     .cover { min-height: auto; height: 257mm; }
+    /* Hald overskrift saman med teksten under, og unngå at avsnitt/seksjonar delast */
+    h3 { break-after: avoid; page-break-after: avoid; }
+    .sec, p, ul, li, table.bp, .parties, .sig-section { break-inside: avoid; page-break-inside: avoid; }
   }
 </style>
 </head>
@@ -924,6 +932,7 @@ export function openContractPdf(d: ContractData) {
 <!-- AVTALETEKST -->
 <div class="content">
 
+<div class="sec">
 <h3>1. Partene</h3>
 <div class="parties">
   <div class="party-box">
@@ -940,41 +949,64 @@ export function openContractPdf(d: ContractData) {
     ${d.customer_phone ? "Tlf. " + escapeHtml(d.customer_phone) : ""}</p>
   </div>
 </div>
+</div>
 
+<div class="sec">
 <h3>2. Kontraktsgrunnlag</h3>
 <p>Kontrakten bygger på tilbud nr. ${escapeHtml(String(d.offer_number))} datert ${dateFmt(d.offer_date)}. Tilbudet med beskrivelser, mengder, illustrasjoner og forbehold utgjør vedlegg 1 til denne kontrakten. Ved motstrid går denne kontrakten foran tilbudet.</p>
+</div>
 
+<div class="sec">
 <h3>3. Arbeidets omfang</h3>
 <p>Entreprenøren skal utføre ${d.offer_text ? escapeHtml(d.offer_text) : escapeHtml(d.title)}. Arbeidene utføres etter god fagmessig standard.</p>
+</div>
 
+<div class="sec">
 <h3>4. Kontraktssum</h3>
 <p><strong>${nokFmt(d.total_incl_vat)}&nbsp;inkl. mva</strong></p>
+</div>
 
+<div class="sec">
 <h3>5. Betalingsplan</h3>
 <p>Betalingsplan avtalast mellom partane. Betalingsfrist er 14 dager fra fakturadato.</p>
+</div>
 
+<div class="sec">
 <h3>6. Manglende betaling</h3>
 <p>Ved manglende betaling har entreprenøren rett til å stanse arbeidene umiddelbart. Entreprenøren kan kreve forsinkelsesrenter, dekning av merkostnader og nødvendig fristforlengelse som følge av betalingsmislighold.</p>
+</div>
 
+<div class="sec">
 <h3>7. Tilleggsarbeider</h3>
 <p>Arbeider utenfor kontraktens omfang anses som tilleggsarbeider. Tilleggsarbeider skal varsles så langt det er praktisk mulig før utførelse og faktureres etter avtale eller etter medgått tid, maskinbruk, materialer og underentreprenørkostnader.</p>
+</div>
 
+<div class="sec">
 <h3>8. Fremdrift og fristforlengelse</h3>
 <p>Entreprenøren har rett til fristforlengelse ved værforhold, naturhendelser, leveranseproblemer, offentlige pålegg, forhold hos kunden eller andre forhold utenfor entreprenørens kontroll.</p>
+</div>
 
+<div class="sec">
 <h3>9. Forbehold</h3>
 <ul>
 ${forbeholdHtml}
 </ul>
+</div>
 
+<div class="sec">
 <h3>10. Reklamasjon</h3>
 <p>Eventuelle mangler skal meldes skriftlig innen rimelig tid. Entreprenøren skal gis mulighet til å undersøke og eventuelt utbedre forholdet før andre engasjeres.</p>
+</div>
 
+<div class="sec">
 <h3>11. Eiendomsforbehold</h3>
 <p>Leverte materialer og utført arbeid forblir entreprenørens eiendom inntil fullt oppgjør er mottatt i den grad loven tillater dette.</p>
+</div>
 
+<div class="sec">
 <h3>12. Tvister</h3>
 <p>Tvister skal først søkes løst ved forhandlinger. Dersom dette ikke fører frem, skal tvisten avgjøres av de ordinære domstoler med Agder tingrett som avtalt verneting. Norsk rett gjelder.</p>
+</div>
 
 <h3>13. Signaturer</h3>
 <div class="sig-section">

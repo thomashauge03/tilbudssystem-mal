@@ -864,10 +864,23 @@ export function openContractPdf(d: ContractData) {
 <meta charset="utf-8"/>
 <title>Entreprisekontrakt – ${escapeHtml(d.company_name)}</title>
 <style>
-  @page { size: A4; margin: 20mm 18mm; }
+  @page { size: A4; margin: 0; }
   * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11pt; line-height: 1.5; margin: 0; }
-  .cover { page-break-after: always; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 257mm; text-align: center; gap: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11pt; line-height: 1.5; margin: 0; background: #ECECE7; }
+
+  /* A4-ark: skjerm viser dei som separate sider med skugge */
+  .sheet {
+    width: 210mm; min-height: 297mm;
+    background: #fff; margin: 8mm auto;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 18px 50px rgba(20,20,20,.16);
+    position: relative; overflow: hidden;
+  }
+  .sheet-body { padding: 20mm 18mm; }
+  .cover-sheet { padding: 20mm 18mm; display: flex; }
+  /* Kjelda som skriptet måler ut frå – usynleg, men med rett innhaldsbreidde */
+  #flow { position: absolute; left: -9999px; top: 0; width: 174mm; visibility: hidden; }
+
+  .cover { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 257mm; text-align: center; gap: 0; }
   .cover img { height: 36mm; width: auto; margin-bottom: 16mm; }
   .cover h1 { font-size: 18pt; font-weight: 900; letter-spacing: 0.04em; margin: 0 0 2mm 0; }
   .cover h2 { font-size: 15pt; font-weight: 700; letter-spacing: 0.06em; margin: 0 0 16mm 0; }
@@ -899,7 +912,13 @@ export function openContractPdf(d: ContractData) {
   .sig-img { max-height: 18mm; max-width: 60mm; width: auto; display: block; margin-bottom: 2mm; }
   .sec { break-inside: avoid; page-break-inside: avoid; }
   @media print {
-    body { font-size: 10pt; }
+    body { font-size: 10pt; background: #fff; }
+    .sheet {
+      width: 210mm; height: 297mm; min-height: 297mm;
+      margin: 0; box-shadow: none;
+      page-break-after: always; break-after: page;
+    }
+    .sheet:last-child { page-break-after: auto; break-after: auto; }
     .cover { min-height: auto; height: 257mm; }
     /* Hald overskrift saman med teksten under, og unngå at avsnitt/seksjonar delast */
     h3 { break-after: avoid; page-break-after: avoid; }
@@ -909,28 +928,33 @@ export function openContractPdf(d: ContractData) {
 </head>
 <body>
 
-<!-- FORSIDE -->
-<div class="cover">
-  <img src="${logoUrl}" alt="${escapeHtml(d.company_name)}" onerror="this.style.display='none'" />
-  <h1>${escapeHtml(d.company_name).toUpperCase()}</h1>
-  <h2>ENTREPRISEKONTRAKT</h2>
+<!-- Sider vert bygd her av pagineringsskriptet -->
+<div id="pages">
+  <!-- FORSIDE -->
+  <div class="sheet cover-sheet">
+    <div class="cover">
+      <img src="${logoUrl}" alt="${escapeHtml(d.company_name)}" onerror="this.style.display='none'" />
+      <h1>${escapeHtml(d.company_name).toUpperCase()}</h1>
+      <h2>ENTREPRISEKONTRAKT</h2>
 
-  <div class="proj-label">Prosjekt nr.:</div>
-  <div class="proj-line">${escapeHtml(d.project_number ?? "")}&nbsp;</div>
+      <div class="proj-label">Prosjekt nr.:</div>
+      <div class="proj-line">${escapeHtml(d.project_number ?? "")}&nbsp;</div>
 
-  ${d.title ? `<div class="desc">${escapeHtml(d.title)}</div>` : ""}
-  ${d.customer_address ? `<div class="addr">${escapeHtml(d.customer_address)}</div>` : ""}
+      ${d.title ? `<div class="desc">${escapeHtml(d.title)}</div>` : ""}
+      ${d.customer_address ? `<div class="addr">${escapeHtml(d.customer_address)}</div>` : ""}
 
-  <div class="kunde-label">KUNDE</div>
-  <div class="kunde-name">${escapeHtml(d.customer_name)}</div>
-  <div class="kunde-info">
-    ${d.customer_address ? escapeHtml(d.customer_address) + "<br/>" : ""}
-    ${d.customer_phone ? "Tlf. " + escapeHtml(d.customer_phone) : ""}
+      <div class="kunde-label">KUNDE</div>
+      <div class="kunde-name">${escapeHtml(d.customer_name)}</div>
+      <div class="kunde-info">
+        ${d.customer_address ? escapeHtml(d.customer_address) + "<br/>" : ""}
+        ${d.customer_phone ? "Tlf. " + escapeHtml(d.customer_phone) : ""}
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- AVTALETEKST -->
-<div class="content">
+<!-- AVTALETEKST (kjelde – vert flytta inn i sider av skriptet) -->
+<div id="flow">
 
 <div class="sec">
 <h3>1. Partene</h3>
@@ -1008,6 +1032,7 @@ ${forbeholdHtml}
 <p>Tvister skal først søkes løst ved forhandlinger. Dersom dette ikke fører frem, skal tvisten avgjøres av de ordinære domstoler med Agder tingrett som avtalt verneting. Norsk rett gjelder.</p>
 </div>
 
+<div class="sec">
 <h3>13. Signaturer</h3>
 <div class="sig-section">
   <div class="sig-grid">
@@ -1033,10 +1058,69 @@ ${forbeholdHtml}
     </div>
   </div>
 </div>
+</div>
 
 </div>
 
-<script>window.onload = () => { setTimeout(() => window.print(), 200); };</script>
+<script>
+(function () {
+  var PX_MM = 96 / 25.4;
+  // A4 innhaldshøgde = 297mm - topp/botn marg (20mm + 20mm) = 257mm.
+  // Litt slingringsmonn for måleavvik skjerm-px vs utskrift.
+  var CONTENT_MM = 252;
+
+  function mm(el) {
+    var cs = window.getComputedStyle(el);
+    var marg = (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+    return (el.getBoundingClientRect().height + marg) / PX_MM;
+  }
+
+  function paginate() {
+    var flow = document.getElementById('flow');
+    if (!flow) return;
+    var blocks = Array.from(flow.children);
+    var pagesHost = document.getElementById('pages');
+
+    var sheet = null;
+    var sheetBody = null;
+    var used = 0;
+
+    function newSheet() {
+      sheet = document.createElement('div');
+      sheet.className = 'sheet content-sheet';
+      sheetBody = document.createElement('div');
+      sheetBody.className = 'sheet-body';
+      sheet.appendChild(sheetBody);
+      pagesHost.appendChild(sheet);
+      used = 0;
+    }
+
+    newSheet();
+    blocks.forEach(function (block) {
+      sheetBody.appendChild(block);
+      var h = mm(block);
+      // Får ikkje plass på denne sida → flytt til ny side (med mindre sida er tom)
+      if (used + h > CONTENT_MM && used > 0) {
+        newSheet();
+        sheetBody.appendChild(block);
+        h = mm(block);
+      }
+      used += h;
+    });
+
+    flow.remove();
+  }
+
+  window.onload = function () {
+    var ready = (typeof document.fonts !== 'undefined' && document.fonts.ready)
+      ? document.fonts.ready : Promise.resolve();
+    ready.then(function () {
+      paginate();
+      setTimeout(function () { window.print(); }, 300);
+    });
+  };
+})();
+</script>
 </body>
 </html>`;
 

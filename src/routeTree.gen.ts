@@ -12,11 +12,15 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProsjekterRouteImport } from './routes/prosjekter'
+import { Route as PotensielleKunderRouteImport } from './routes/potensielle-kunder'
+import { Route as OrdreRouteImport } from './routes/ordre'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as KunderRouteImport } from './routes/kunder'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AdmkostRouteImport } from './routes/admkost'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SignerTokenRouteImport } from './routes/signer.$token'
 import { Route as TilbudIndexRouteImport } from './routes/tilbud.index'
 import { Route as EndringsmeldingerIndexRouteImport } from './routes/endringsmeldinger.index'
 import { Route as TilbudNyRouteImport } from './routes/tilbud.ny'
@@ -27,6 +31,26 @@ import { Route as EndringsmeldingerIdRouteImport } from './routes/endringsmeldin
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PotensielleKunderRoute = PotensielleKunderRouteImport.update({
+  id: '/potensielle-kunder',
+  path: '/potensielle-kunder',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdreRoute = OrdreRouteImport.update({
+  id: '/ordre',
+  path: '/ordre',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignerTokenRoute = SignerTokenRouteImport.update({
+  id: '/signer/$token',
+  path: '/signer/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -98,12 +122,16 @@ const EndringsmeldingerIdRoute = EndringsmeldingerIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admkost': typeof AdmkostRoute
+  '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
+  '/ordre': typeof OrdreRoute
+  '/potensielle-kunder': typeof PotensielleKunderRoute
   '/prosjekter': typeof ProsjekterRoute
   '/settings': typeof SettingsRoute
   '/status': typeof StatusRoute
+  '/signer/$token': typeof SignerTokenRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
   '/tilbud/$id': typeof TilbudIdRoute
@@ -114,12 +142,16 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admkost': typeof AdmkostRoute
+  '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
+  '/ordre': typeof OrdreRoute
+  '/potensielle-kunder': typeof PotensielleKunderRoute
   '/prosjekter': typeof ProsjekterRoute
   '/settings': typeof SettingsRoute
   '/status': typeof StatusRoute
+  '/signer/$token': typeof SignerTokenRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
   '/tilbud/$id': typeof TilbudIdRoute
@@ -131,12 +163,16 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admkost': typeof AdmkostRoute
+  '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
+  '/ordre': typeof OrdreRoute
+  '/potensielle-kunder': typeof PotensielleKunderRoute
   '/prosjekter': typeof ProsjekterRoute
   '/settings': typeof SettingsRoute
   '/status': typeof StatusRoute
+  '/signer/$token': typeof SignerTokenRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
   '/tilbud/$id': typeof TilbudIdRoute
@@ -149,12 +185,16 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admkost'
+    | '/admin'
     | '/dashboard'
     | '/kunder'
     | '/login'
+    | '/ordre'
+    | '/potensielle-kunder'
     | '/prosjekter'
     | '/settings'
     | '/status'
+    | '/signer/$token'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
     | '/tilbud/$id'
@@ -165,12 +205,16 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admkost'
+    | '/admin'
     | '/dashboard'
     | '/kunder'
     | '/login'
+    | '/ordre'
+    | '/potensielle-kunder'
     | '/prosjekter'
     | '/settings'
     | '/status'
+    | '/signer/$token'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
     | '/tilbud/$id'
@@ -181,12 +225,16 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admkost'
+    | '/admin'
     | '/dashboard'
     | '/kunder'
     | '/login'
+    | '/ordre'
+    | '/potensielle-kunder'
     | '/prosjekter'
     | '/settings'
     | '/status'
+    | '/signer/$token'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
     | '/tilbud/$id'
@@ -198,12 +246,16 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdmkostRoute: typeof AdmkostRoute
+  AdminRoute: typeof AdminRoute
   DashboardRoute: typeof DashboardRoute
   KunderRoute: typeof KunderRoute
   LoginRoute: typeof LoginRoute
+  OrdreRoute: typeof OrdreRoute
+  PotensielleKunderRoute: typeof PotensielleKunderRoute
   ProsjekterRoute: typeof ProsjekterRoute
   SettingsRoute: typeof SettingsRoute
   StatusRoute: typeof StatusRoute
+  SignerTokenRoute: typeof SignerTokenRoute
   EndringsmeldingerIdRoute: typeof EndringsmeldingerIdRoute
   EndringsmeldingerNyRoute: typeof EndringsmeldingerNyRoute
   TilbudIdRoute: typeof TilbudIdRoute
@@ -214,6 +266,34 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/ordre': {
+      id: '/ordre'
+      path: '/ordre'
+      fullPath: '/ordre'
+      preLoaderRoute: typeof OrdreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/potensielle-kunder': {
+      id: '/potensielle-kunder'
+      path: '/potensielle-kunder'
+      fullPath: '/potensielle-kunder'
+      preLoaderRoute: typeof PotensielleKunderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signer/$token': {
+      id: '/signer/$token'
+      path: '/signer/$token'
+      fullPath: '/signer/$token'
+      preLoaderRoute: typeof SignerTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/status': {
       id: '/status'
       path: '/status'
@@ -318,12 +398,16 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdmkostRoute: AdmkostRoute,
+  AdminRoute: AdminRoute,
   DashboardRoute: DashboardRoute,
   KunderRoute: KunderRoute,
   LoginRoute: LoginRoute,
+  OrdreRoute: OrdreRoute,
+  PotensielleKunderRoute: PotensielleKunderRoute,
   ProsjekterRoute: ProsjekterRoute,
   SettingsRoute: SettingsRoute,
   StatusRoute: StatusRoute,
+  SignerTokenRoute: SignerTokenRoute,
   EndringsmeldingerIdRoute: EndringsmeldingerIdRoute,
   EndringsmeldingerNyRoute: EndringsmeldingerNyRoute,
   TilbudIdRoute: TilbudIdRoute,

@@ -126,6 +126,7 @@ function SignerPage() {
   const [signerName, setSignerName] = useState("");
   const [signatureDataUrl, setSignatureDataUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [accepted, setAccepted] = useState(false);
   const [done, setDone] = useState(false);
   const [signedInfo, setSignedInfo] = useState<{ offer_number: number; title: string } | null>(null);
 
@@ -142,6 +143,7 @@ function SignerPage() {
     e.preventDefault();
     if (!signerName.trim()) { alert("Skriv inn fullt navn"); return; }
     if (!signatureDataUrl) { alert("Teikn signaturen din"); return; }
+    if (!accepted) { alert("Du må bekrefte at du aksepterer tilbudet før du kan signere"); return; }
     setSubmitting(true);
     const { data, error: signErr } = await supabase.rpc("sign_offer" as never, {
       p_token: token,
@@ -256,7 +258,22 @@ function SignerPage() {
             <SignatureCanvas onSign={setSignatureDataUrl} />
           </div>
 
-          <Button type="submit" className="w-full" disabled={submitting || !signerName.trim() || !signatureDataUrl}>
+          {/* Bekreftelse — må hakast av før innsending */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-gray-50 p-3.5">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(e) => setAccepted(e.target.checked)}
+              className="mt-0.5 h-5 w-5 flex-shrink-0 accent-gray-900"
+            />
+            <span className="text-sm leading-snug text-gray-600">
+              Jeg bekrefter at jeg har lest og forstått tilbud #{offerInfo.offer_number} – {offerInfo.title},
+              og at jeg på vegne av {offerInfo.customer_name} <strong className="text-gray-900">aksepterer
+              tilbudet og inngår en bindende avtale</strong> i samsvar med de oppgitte vilkårene.
+            </span>
+          </label>
+
+          <Button type="submit" className="w-full" disabled={submitting || !signerName.trim() || !signatureDataUrl || !accepted}>
             {submitting ? "Signerer…" : "Godkjenn og signer tilbud"}
           </Button>
 

@@ -94,7 +94,7 @@ function CustomersPage() {
         <Input placeholder="Søk…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
       </div>
 
-      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
         <table className="w-full">
           <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
             <tr>

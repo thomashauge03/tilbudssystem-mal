@@ -392,7 +392,7 @@ function StatusPage() {
       {/* Tilbud */}
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Tilbud</h2>
-        <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
@@ -484,7 +484,7 @@ function StatusPage() {
       {filter !== "active" && (
         <section className="space-y-2">
           <h2 className="text-lg font-semibold">Endringsmeldinger</h2>
-          <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+          <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>

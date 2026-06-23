@@ -178,7 +178,7 @@ function ProsjekterPage() {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
         <table className="w-full">
           <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
             <tr>

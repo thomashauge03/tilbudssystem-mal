@@ -192,12 +192,12 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild><Link to="/endringsmeldinger"><ArrowLeft className="mr-1 h-4 w-4" />Tilbake</Link></Button>
           <h1 className="text-2xl font-bold">{isEdit ? `Endringsmelding ${a.amendment_number}` : "Ny endringsmelding"}</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button variant="outline" onClick={handleEmail}><Mail className="mr-2 h-4 w-4" />Send på e-post</Button>
           <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF</Button>
           <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre</Button>
@@ -276,7 +276,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Prisoverslag</h2>
               <Button size="sm" variant="outline" onClick={addLine}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
             </div>
-            <table className="w-full text-sm">
+            <table className="hidden w-full text-sm md:table">
               <thead className="border-b text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-2 py-2 text-left">Beskrivelse</th>
@@ -325,6 +325,55 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
                 })}
               </tbody>
             </table>
+
+            {/* Mobil: kvar linje som eit kort med stabla felt */}
+            <div className="space-y-3 md:hidden">
+              {lines.length === 0 ? (
+                <p className="px-2 py-6 text-center text-muted-foreground">Ingen linjer ennå.</p>
+              ) : lines.map((l, i) => {
+                const isCustomUnit = !!l.unit && !units.includes(l.unit);
+                return (
+                  <div key={i} className="space-y-3 rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Linje {i + 1}</span>
+                      <Button size="icon" variant="ghost" onClick={() => removeLine(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Beskrivelse</Label>
+                      <Input value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Antall</Label>
+                        <Input type="number" step="1" className="no-spinner" value={l.quantity} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Enhet</Label>
+                        <Select value={isCustomUnit ? "__annet__" : l.unit} onValueChange={(v) => updLine(i, { unit: v === "__annet__" ? "" : v })}>
+                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {units.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                            <SelectItem value="__annet__">Annet…</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {isCustomUnit && (
+                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv eining…" value={l.unit} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Pris/enhet</Label>
+                        <Input type="number" step="1" className="no-spinner" value={l.unit_price} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Sum</Label>
+                        <div className="flex h-9 items-center justify-end px-1 font-medium">{nok(Number(l.quantity || 0) * Number(l.unit_price || 0))}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
             <div className="mt-4 ml-auto max-w-sm border-t pt-4">
               <div className="flex justify-between text-lg font-bold"><span>Total eks. mva</span><span className="text-primary">{nok(subtotal)}</span></div>
             </div>

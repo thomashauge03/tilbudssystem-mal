@@ -365,14 +365,14 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild><Link to="/tilbud"><ArrowLeft className="mr-1 h-4 w-4" />Tilbake</Link></Button>
           <h1 className="text-2xl font-bold">
             {isEdit ? `Tilbud #${offer.offer_number ?? ""}` : "Nytt tilbud"}
           </h1>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
+        <div className="flex gap-2 flex-wrap lg:justify-end">
           {isEdit && (
             <Button variant="outline" onClick={handleContract}>
               <FileSignature className="mr-2 h-4 w-4" />Kontrakt PDF
@@ -546,7 +546,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tilbudslinjer</h2>
               <Button size="sm" variant="outline" onClick={addLine}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
             </div>
-            <table className="w-full text-sm">
+            <table className="hidden w-full text-sm md:table">
               <thead className="border-b text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="w-8 px-1 py-2"></th>
@@ -612,6 +612,62 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 })}
               </tbody>
             </table>
+
+            {/* Mobil: kvar linje som eit kort med stabla felt */}
+            <div className="space-y-3 md:hidden">
+              {lines.length === 0 ? (
+                <p className="px-2 py-6 text-center text-muted-foreground">Ingen linjer. Klikk "Ny linje" for å starte.</p>
+              ) : lines.map((l, i) => {
+                const isCustomUnit = !!l.unit && !units.includes(l.unit);
+                return (
+                  <div key={i} className="space-y-3 rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-sm font-medium">
+                        <Checkbox checked={l.included} onCheckedChange={(v) => updLine(i, { included: !!v })} />
+                        Inkluder i tilbud
+                      </label>
+                      <Button size="icon" variant="ghost" onClick={() => removeLine(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Beskrivelse</Label>
+                      <Input value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} placeholder="Beskrivelse" />
+                      <Input className="h-8 text-xs text-muted-foreground" value={l.comment} onChange={(e) => updLine(i, { comment: e.target.value })} placeholder="Kommentar (valgfritt)…" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Antall</Label>
+                        <Input type="number" step="1" className="no-spinner" value={l.quantity} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Enhet</Label>
+                        <Select value={isCustomUnit ? "__annet__" : l.unit} onValueChange={(v) => updLine(i, { unit: v === "__annet__" ? "" : v })}>
+                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {units.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                            <SelectItem value="__annet__">Annet…</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {isCustomUnit && (
+                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv eining…" value={l.unit} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Pris/enhet</Label>
+                        <Input type="number" step="1" className="no-spinner" value={l.unit_price} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Rabatt %</Label>
+                        <Input type="number" step="0.1" min="0" max="100" className="no-spinner" value={l.discount_pct || ""} placeholder="0" onChange={(e) => updLine(i, { discount_pct: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                      </div>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 text-sm">
+                      <span className="text-muted-foreground">Sum eks. mva</span>
+                      <span className="font-semibold">{nok(lineSum(l))}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
             <div className="mt-4 ml-auto max-w-sm space-y-2 border-t pt-4">
               {admin > 0 && (

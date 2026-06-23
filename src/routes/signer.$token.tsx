@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, PenLine, RotateCcw } from "lucide-react";
+import { CheckCircle2, FileText, PenLine, RotateCcw } from "lucide-react";
+import { openOfferPdf } from "@/lib/pdf";
 
 export const Route = createFileRoute("/signer/$token")({
   component: SignerPage,
@@ -129,6 +130,7 @@ function SignerPage() {
   const [accepted, setAccepted] = useState(false);
   const [done, setDone] = useState(false);
   const [signedInfo, setSignedInfo] = useState<{ offer_number: number; title: string } | null>(null);
+  const [loadingPdf, setLoadingPdf] = useState(false);
 
   useEffect(() => {
     supabase.rpc("get_offer_by_token" as never, { p_token: token } as never)
@@ -138,6 +140,29 @@ function SignerPage() {
         setLoading(false);
       });
   }, [token]);
+
+  const handleViewPdf = async () => {
+    if (!offerInfo) return;
+    setLoadingPdf(true);
+    try {
+      const { data } = await supabase.rpc("get_offer_pdf_by_token" as never, { p_token: token } as never);
+      if (!data) return;
+      const d = data as any;
+      const lines = d.lines ?? [];
+      const settings = d.settings ?? {};
+      const offer = d.offer ?? {};
+      const subtotal = lines
+        .filter((l: any) => l.included !== false)
+        .reduce((s: number, l: any) => {
+          const gross = Number(l.quantity) * Number(l.unit_price);
+          return s + gross * (1 - (Number(l.discount_pct) || 0) / 100);
+        }, 0);
+      const admin = subtotal * ((Number(offer.admin_cost_pct) || 0) / 100);
+      openOfferPdf(offer, lines, { subtotal, admin, total: subtotal + admin }, settings);
+    } finally {
+      setLoadingPdf(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -214,6 +239,10 @@ function SignerPage() {
               <h1 className="text-xl font-bold text-gray-900">{offerInfo.title}</h1>
               <p className="text-sm text-gray-500 mt-0.5">Til: {offerInfo.customer_name}</p>
             </div>
+            <Button type="button" variant="outline" size="sm" onClick={handleViewPdf} disabled={loadingPdf} className="flex-shrink-0">
+              <FileText className="mr-1.5 h-4 w-4" />
+              {loadingPdf ? "Laster…" : "Sjå tilbod"}
+            </Button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm border-t pt-4">
             <div>

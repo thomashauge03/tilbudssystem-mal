@@ -409,7 +409,7 @@ function AdminPageContent() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Admin</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Admin</h1>
           <p className="mt-1 text-sm text-muted-foreground">Administrer kunder og brukertilganger</p>
         </div>
         <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -419,12 +419,12 @@ function AdminPageContent() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b">
+      <div className="flex gap-1 border-b overflow-x-auto" style={{ scrollbarWidth: "none" }}>
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            className={`flex flex-shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
               tab === id
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -553,7 +553,7 @@ function AdminPageContent() {
             ) : userPagination.paged.map(u => {
               const linked = getTenantForUser(u.id);
               return (
-                <div key={u.id} className="flex items-center justify-between px-6 py-3 hover:bg-muted/30 transition-colors">
+                <div key={u.id} className="flex flex-col gap-2 px-6 py-3 hover:bg-muted/30 transition-colors sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3 min-w-0">
                     {u.confirmed_at
                       ? <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
@@ -566,7 +566,7 @@ function AdminPageContent() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap pl-7 sm:ml-4 sm:pl-0">
                     {linked?.tenant ? (
                       <>
                         <span className="rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-medium">
@@ -623,7 +623,7 @@ function AdminPageContent() {
               <h2 className="text-sm font-semibold">Opprett ny kunde</h2>
             </div>
             <div className="p-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Firmanavn</Label>
                   <Input placeholder="T.d. TT Anlegg" value={newName} onChange={(e) => handleNameChange(e.target.value)} />
@@ -662,12 +662,12 @@ function AdminPageContent() {
                 const users = tenantUsers.filter(tu => tu.tenant_id === tenant.id);
                 return (
                   <div key={tenant.id} className="px-6 py-4 hover:bg-muted/20 transition-colors">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="font-semibold text-sm">{tenant.name}</p>
                         <p className="text-xs text-muted-foreground font-mono">{tenant.slug}</p>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-xs text-muted-foreground">
                           {users.length} bruker{users.length !== 1 ? "e" : ""}
                         </span>
@@ -980,7 +980,7 @@ function AdminPageContent() {
                   </div>
 
                   {/* Firmanavn og tagline */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Firmanavn</Label>
                       <Input

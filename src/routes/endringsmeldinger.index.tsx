@@ -38,7 +38,7 @@ function AmendmentsList() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Endringsmeldinger</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Endringsmeldinger</h1>
           <p className="mt-1 text-sm text-muted-foreground">{rows.length} meldinger</p>
         </div>
         <Button asChild><Link to="/endringsmeldinger/ny"><Plus className="mr-2 h-4 w-4" />Ny endringsmelding</Link></Button>

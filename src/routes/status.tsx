@@ -39,7 +39,7 @@ function SummaryCard({ label, value, sub }: { label: string; value: string; sub?
   return (
     <div className="rounded-xl border bg-card p-6 shadow-sm">
       <p className="text-sm font-medium text-muted-foreground">{label}</p>
-      <p className="mt-2 text-3xl font-bold tracking-tight">{value}</p>
+      <p className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{value}</p>
       {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
     </div>
   );
@@ -346,7 +346,7 @@ function StatusPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Status</h1>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Status</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Oversikt over faktureringsgrad per tilbud og endringsmelding
         </p>

@@ -87,21 +87,21 @@ function OrdrePage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Ordre</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ordre</h1>
           <p className="mt-1 text-sm text-muted-foreground">{rows.length} godkjente tilbud</p>
         </div>
       </div>
 
       {/* Sammendrag */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
         {[
           { label: "Total ordreverdi", value: nok(totals.total) },
           { label: "Fakturert", value: nok(totals.invoiced) },
           { label: "Gjenstår", value: nok(Math.max(0, totals.total - totals.invoiced)) },
         ].map((c) => (
-          <div key={c.label} className="rounded-xl border bg-card p-5 shadow-sm">
+          <div key={c.label} className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
             <p className="text-sm text-muted-foreground">{c.label}</p>
-            <p className="mt-1 text-2xl font-bold tracking-tight">{c.value}</p>
+            <p className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{c.value}</p>
           </div>
         ))}
       </div>

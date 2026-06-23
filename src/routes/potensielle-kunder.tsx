@@ -342,7 +342,7 @@ function PotensielleKunderPage() {
     <div className="space-y-5">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Potensielle kunder</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Potensielle kunder</h1>
           <p className="mt-1 text-sm text-muted-foreground">{leads.length} forespørslar totalt</p>
         </div>
         <Button onClick={() => setEditingId("new")}>

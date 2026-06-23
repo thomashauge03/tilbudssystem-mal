@@ -139,11 +139,13 @@ function DonutChart({
   label,
   centerVal,
   centerSub,
+  valueFormatter = (v) => String(v),
 }: {
   data: { name: string; value: number; color: string }[];
   label: string;
   centerVal: string;
   centerSub: string;
+  valueFormatter?: (v: number) => string;
 }) {
   const filtered = data.filter((d) => d.value > 0);
   return (
@@ -166,10 +168,12 @@ function DonutChart({
                 <Cell key={i} fill={entry.color} />
               ))}
             </Pie>
-            <Tooltip
-              formatter={(v: any, name: string) => [nok(v), name]}
-              contentStyle={{ fontSize: 12, borderRadius: 8 }}
-            />
+            {filtered.length > 0 && (
+              <Tooltip
+                formatter={(v: any, name: string) => [valueFormatter(Number(v)), name]}
+                contentStyle={{ fontSize: 12, borderRadius: 8 }}
+              />
+            )}
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -240,6 +244,7 @@ function Dashboard() {
             label="Fakturert av total"
             centerVal={isLoading ? "…" : `${fakturertPct.toFixed(0)} %`}
             centerSub="fakturert"
+            valueFormatter={(v) => nok(v)}
           />
           <div className="mt-4 w-full space-y-2">
             <div className="flex justify-between text-xs"><span className="text-muted-foreground">Fakturert</span><span className="font-medium text-emerald-600">{isLoading ? "…" : nok(d?.totalFakturert ?? 0)}</span></div>
@@ -254,6 +259,7 @@ function Dashboard() {
             label="Tilbud etter status"
             centerVal={isLoading ? "…" : String(d?.totalOffers ?? 0)}
             centerSub="tilbud totalt"
+            valueFormatter={(v) => `${v} tilbud`}
           />
           <div className="mt-4 w-full space-y-1.5 text-xs">
             {[

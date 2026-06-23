@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useDashboard } from "@/routes/dashboard";
 import {
   CircleDollarSign, CheckCircle2, TrendingUp, FileText,
-  ClipboardEdit, AlertTriangle, PenLine, FileCheck,
+  ClipboardEdit, AlertTriangle, PenLine, FileCheck, Monitor,
 } from "lucide-react";
 
 export const Route = createFileRoute("/mobil")({
@@ -62,6 +62,13 @@ function MobileDashboard() {
           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
         />
         <span className="text-sm font-bold truncate">{branding?.company_name || "Dashboard"}</span>
+        <Link
+          to="/"
+          className="ml-auto flex flex-shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium active:bg-accent/40"
+        >
+          <Monitor className="h-3.5 w-3.5" />
+          Full visning
+        </Link>
       </header>
 
       <main className="mx-auto max-w-md space-y-4 px-3 py-4">

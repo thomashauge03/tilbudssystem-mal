@@ -478,7 +478,6 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   <SelectItem value="utkast">Utkast</SelectItem>
                   <SelectItem value="sendt">Sendt</SelectItem>
                   <SelectItem value="godkjent">Godkjent</SelectItem>
-                  <SelectItem value="startet">Startet</SelectItem>
                   <SelectItem value="avslått">Avslått</SelectItem>
                 </SelectContent>
               </Select>

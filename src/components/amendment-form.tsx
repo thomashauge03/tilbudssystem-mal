@@ -74,7 +74,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
         .from("offers")
         .select("id, offer_number, title, customer_name, project_number, status")
         .eq("tenant_id", tenantId!)
-        .in("status", ["godkjent", "startet"])
+        .in("status", ["godkjent"])
         .order("offer_number", { ascending: false })
         .limit(200);
       return data ?? [];

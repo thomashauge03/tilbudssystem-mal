@@ -14,6 +14,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProsjekterRouteImport } from './routes/prosjekter'
 import { Route as PotensielleKunderRouteImport } from './routes/potensielle-kunder'
 import { Route as OrdreRouteImport } from './routes/ordre'
+import { Route as MobilRouteImport } from './routes/mobil'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as KunderRouteImport } from './routes/kunder'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -51,6 +52,11 @@ const PotensielleKunderRoute = PotensielleKunderRouteImport.update({
 const OrdreRoute = OrdreRouteImport.update({
   id: '/ordre',
   path: '/ordre',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MobilRoute = MobilRouteImport.update({
+  id: '/mobil',
+  path: '/mobil',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -126,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
+  '/mobil': typeof MobilRoute
   '/ordre': typeof OrdreRoute
   '/potensielle-kunder': typeof PotensielleKunderRoute
   '/prosjekter': typeof ProsjekterRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
+  '/mobil': typeof MobilRoute
   '/ordre': typeof OrdreRoute
   '/potensielle-kunder': typeof PotensielleKunderRoute
   '/prosjekter': typeof ProsjekterRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
+  '/mobil': typeof MobilRoute
   '/ordre': typeof OrdreRoute
   '/potensielle-kunder': typeof PotensielleKunderRoute
   '/prosjekter': typeof ProsjekterRoute
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/kunder'
     | '/login'
+    | '/mobil'
     | '/ordre'
     | '/potensielle-kunder'
     | '/prosjekter'
@@ -209,6 +219,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/kunder'
     | '/login'
+    | '/mobil'
     | '/ordre'
     | '/potensielle-kunder'
     | '/prosjekter'
@@ -229,6 +240,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/kunder'
     | '/login'
+    | '/mobil'
     | '/ordre'
     | '/potensielle-kunder'
     | '/prosjekter'
@@ -250,6 +262,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   KunderRoute: typeof KunderRoute
   LoginRoute: typeof LoginRoute
+  MobilRoute: typeof MobilRoute
   OrdreRoute: typeof OrdreRoute
   PotensielleKunderRoute: typeof PotensielleKunderRoute
   ProsjekterRoute: typeof ProsjekterRoute
@@ -299,6 +312,13 @@ declare module '@tanstack/react-router' {
       path: '/ordre'
       fullPath: '/ordre'
       preLoaderRoute: typeof OrdreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mobil': {
+      id: '/mobil'
+      path: '/mobil'
+      fullPath: '/mobil'
+      preLoaderRoute: typeof MobilRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -402,6 +422,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   KunderRoute: KunderRoute,
   LoginRoute: LoginRoute,
+  MobilRoute: MobilRoute,
   OrdreRoute: OrdreRoute,
   PotensielleKunderRoute: PotensielleKunderRoute,
   ProsjekterRoute: ProsjekterRoute,

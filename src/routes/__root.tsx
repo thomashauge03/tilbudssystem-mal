@@ -153,6 +153,9 @@ function AppShell() {
     return <NoTenantPage email={user?.email ?? ""} signOut={signOut} />;
   }
 
+  // Mobil-dashbord: full skjerm utan desktop-nav
+  if (path.startsWith("/mobil")) return <Outlet />;
+
   return (
     <div className="min-h-screen bg-background">
       <AppNav />

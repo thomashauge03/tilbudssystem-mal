@@ -22,7 +22,7 @@ function offerTotal(lines: any[], adminCostPct: number) {
   return base + base * (Number(adminCostPct ?? 0) / 100);
 }
 
-function useDashboard() {
+export function useDashboard() {
   return useQuery({
     queryKey: ["dashboard"],
     queryFn: async () => {

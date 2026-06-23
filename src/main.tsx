@@ -27,3 +27,10 @@ ReactDOM.createRoot(root).render(
     </QueryClientProvider>
   </StrictMode>
 );
+
+// Registrer service worker for PWA (installerbar på iOS/Android)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}

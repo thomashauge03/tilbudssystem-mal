@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Moon, Sun, Monitor, Settings, ChevronDown } from "lucide-react";
+import { LogOut, Moon, Sun, Monitor, Settings, ChevronDown, Smartphone } from "lucide-react";
 
 const BASE_LINKS = [
   { to: "/", label: "Dashboard", exact: true },
@@ -180,6 +180,12 @@ export function AppNav() {
 
             {/* Innstillingar */}
             <DropdownMenuGroup>
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link to="/mobil" className="flex items-center">
+                  <Smartphone className="mr-2 h-4 w-4" />
+                  Mobilvisning
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild className="cursor-pointer">
                 <Link to="/settings" className="flex items-center">
                   <Settings className="mr-2 h-4 w-4" />

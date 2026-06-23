@@ -13,6 +13,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Plus, Search, Trash2, PenLine, FileCheck } from "lucide-react";
+import { useAppSettings } from "@/hooks/use-app-settings";
 
 const STATUSES = ["utkast", "sendt", "godkjent", "avvist"] as const;
 type OfferStatus = typeof STATUSES[number];
@@ -64,6 +65,10 @@ function OffersList() {
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const queryClient = useQueryClient();
+  const { data: appSettings } = useAppSettings();
+  const signedRefs = new Set(
+    (appSettings?.our_refs ?? []).filter((r) => r.signature).map((r) => r.name)
+  );
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -198,19 +203,31 @@ function OffersList() {
                   <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()} title={o.customer_signed_at ? `Signert av kunde` : "Ikkje signert av kunde"}>
                     <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.customer_signed_at ? "bg-green-500" : "bg-red-400"}`} />
                   </td>
-                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      title={o.contract_signed ? "Kontrakt signert" : "Kontrakt ikkje signert — klikk for å endre"}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
-                        queryClient.invalidateQueries({ queryKey: ["offers"] });
-                      }}
-                      className="inline-flex items-center justify-center"
-                    >
-                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.contract_signed ? "bg-green-500" : "bg-red-400"}`} />
-                    </button>
-                  </td>
+                  {(() => {
+                    const autoSigned = !!o.customer_signed_at && signedRefs.has(o.our_ref);
+                    const contractGreen = o.contract_signed || autoSigned;
+                    return (
+                      <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          title={
+                            contractGreen
+                              ? autoSigned
+                                ? "Kontrakt signert (vår referanse + kunde)"
+                                : "Kontrakt signert"
+                              : "Kontrakt ikkje signert — klikk for å endre"
+                          }
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
+                            queryClient.invalidateQueries({ queryKey: ["offers"] });
+                          }}
+                          className="inline-flex items-center justify-center"
+                        >
+                          <span className={`inline-block h-2.5 w-2.5 rounded-full ${contractGreen ? "bg-green-500" : "bg-red-400"}`} />
+                        </button>
+                      </td>
+                    );
+                  })()}
                   <td className="px-4 py-3 text-right font-medium">{nok(sumOf(o))}</td>
                   <td className="px-4 py-3 text-right">
                     <button

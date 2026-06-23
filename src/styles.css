@@ -406,3 +406,35 @@
   body { background: white; }
   .no-print { display: none !important; }
 }
+
+/* ── Mobil: hindre at sida vert breiare enn skjermen (slepp å zoome ut) ── */
+@media (max-width: 768px) {
+  html, body { max-width: 100%; overflow-x: hidden; }
+
+  /* Toppmenyen: smalare padding og horisontal scroll på fanene */
+  .hm-topnav {
+    padding: 0 12px;
+    gap: 0;
+  }
+  .hm-brand { padding-right: 12px; flex-shrink: 0; }
+  .hm-brand img { height: 26px; }
+  .hm-nav-divider { display: none; }
+
+  .hm-tabs {
+    margin-left: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;            /* Firefox */
+    scroll-snap-type: x proximity;
+  }
+  .hm-tabs::-webkit-scrollbar { display: none; }  /* Chrome/Safari */
+  .hm-tab { padding: 0 12px; scroll-snap-align: start; }
+
+  .hm-nav-right { flex-shrink: 0; margin-left: 8px; }
+
+  /* Hovudinnhald: mindre sidepadding så korta fyller breidda */
+  main.mx-auto { padding-left: 16px !important; padding-right: 16px !important; }
+}

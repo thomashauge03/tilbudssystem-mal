@@ -143,13 +143,10 @@ function SignerPage() {
 
   const handleViewPdf = async () => {
     if (!offerInfo) return;
-    const win = window.open("", "_blank", "width=1000,height=1200");
-    if (!win) return;
-    win.document.write("<html><body style='font-family:sans-serif;padding:2rem;color:#555'>Laster tilbud…</body></html>");
     setLoadingPdf(true);
     try {
       const { data } = await supabase.rpc("get_offer_pdf_by_token" as never, { p_token: token } as never);
-      if (!data) { win.close(); return; }
+      if (!data) { alert("Kunne ikke laste tilbudet."); return; }
       const d = data as any;
       const lines = d.lines ?? [];
       const settings = d.settings ?? {};
@@ -161,7 +158,7 @@ function SignerPage() {
           return s + gross * (1 - (Number(l.discount_pct) || 0) / 100);
         }, 0);
       const admin = subtotal * ((Number(offer.admin_cost_pct) || 0) / 100);
-      openOfferPdf(offer, lines, { subtotal, admin, total: subtotal + admin }, settings, win);
+      openOfferPdf(offer, lines, { subtotal, admin, total: subtotal + admin }, settings);
     } finally {
       setLoadingPdf(false);
     }

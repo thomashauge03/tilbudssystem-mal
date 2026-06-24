@@ -4,8 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, FileText, PenLine, RotateCcw } from "lucide-react";
-import { openOfferPdf } from "@/lib/pdf";
+import { CheckCircle2, FileText, FileSignature, PenLine, RotateCcw } from "lucide-react";
+import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 
 export const Route = createFileRoute("/signer/$token")({
   component: SignerPage,
@@ -131,6 +131,7 @@ function SignerPage() {
   const [done, setDone] = useState(false);
   const [signedInfo, setSignedInfo] = useState<{ offer_number: number; title: string } | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
+  const [loadingContract, setLoadingContract] = useState(false);
 
   useEffect(() => {
     supabase.rpc("get_offer_by_token" as never, { p_token: token } as never)
@@ -161,6 +162,53 @@ function SignerPage() {
       openOfferPdf(offer, lines, { subtotal, admin, total: subtotal + admin }, settings);
     } finally {
       setLoadingPdf(false);
+    }
+  };
+
+  const handleViewContract = async () => {
+    if (!offerInfo) return;
+    setLoadingContract(true);
+    try {
+      const { data } = await supabase.rpc("get_offer_pdf_by_token" as never, { p_token: token } as never);
+      if (!data) { alert("Kunne ikke laste kontrakten."); return; }
+      const d = data as any;
+      const lines = (d.lines ?? []).filter((l: any) => l.included !== false);
+      const settings = d.settings ?? {};
+      const offer = d.offer ?? {};
+      const subtotal = lines.reduce((s: number, l: any) => {
+        const gross = Number(l.quantity) * Number(l.unit_price);
+        return s + gross * (1 - (Number(l.discount_pct) || 0) / 100);
+      }, 0);
+      const admin = subtotal * ((Number(offer.admin_cost_pct) || 0) / 100);
+      const total = subtotal + admin;
+      const vatPct = Number(settings.vat_pct ?? 25);
+      const totalInclVat = total * (1 + vatPct / 100);
+
+      const ourRefs: any[] = settings.our_refs ?? [];
+      const refObj = ourRefs.find((r: any) => r.name === offer.our_ref) ?? ourRefs[0] ?? {};
+
+      openContractPdf({
+        offer_number: offer.offer_number,
+        title: offer.title,
+        offer_date: offer.offer_date,
+        customer_name: offer.customer_name,
+        project_number: offer.project_number,
+        offer_text: offer.offer_text,
+        total_incl_vat: totalInclVat,
+        company_name: settings.company_name,
+        company_address: settings.company_address,
+        company_phone: settings.company_phone,
+        logo_url: settings.logo_url,
+        ref_name: refObj.name,
+        ref_position: refObj.position,
+        ref_phone: refObj.phone,
+        ref_signature: refObj.signature,
+        forbehold: (settings.forbehold ?? []).map((f: any) =>
+          typeof f === "string" ? { title: f, description: "" } : f
+        ),
+      });
+    } finally {
+      setLoadingContract(false);
     }
   };
 
@@ -239,10 +287,16 @@ function SignerPage() {
               <h1 className="text-xl font-bold text-gray-900">{offerInfo.title}</h1>
               <p className="text-sm text-gray-500 mt-0.5">Til: {offerInfo.customer_name}</p>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={handleViewPdf} disabled={loadingPdf} className="flex-shrink-0">
-              <FileText className="mr-1.5 h-4 w-4" />
-              {loadingPdf ? "Laster…" : "Se tilbud"}
-            </Button>
+            <div className="flex flex-col gap-2 flex-shrink-0">
+              <Button type="button" variant="outline" size="sm" onClick={handleViewPdf} disabled={loadingPdf}>
+                <FileText className="mr-1.5 h-4 w-4" />
+                {loadingPdf ? "Laster…" : "Se tilbud"}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={handleViewContract} disabled={loadingContract}>
+                <FileSignature className="mr-1.5 h-4 w-4" />
+                {loadingContract ? "Laster…" : "Se kontrakt"}
+              </Button>
+            </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm border-t pt-4">
             <div>

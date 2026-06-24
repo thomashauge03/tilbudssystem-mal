@@ -386,7 +386,8 @@ function AdminPageContent() {
     const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
     if (error) { toast.error(error.message); setLogoUploading(false); return; }
     const { data } = supabase.storage.from("logos").getPublicUrl(path);
-    setTilpassSettings(s => ({ ...s, logo_url: data.publicUrl }));
+    const urlWithBust = `${data.publicUrl}?t=${Date.now()}`;
+    setTilpassSettings(s => ({ ...s, logo_url: urlWithBust }));
     setLogoUploading(false);
     toast.success("Logo lastet opp!");
   };

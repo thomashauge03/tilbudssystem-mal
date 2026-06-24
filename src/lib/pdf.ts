@@ -99,6 +99,7 @@ export function openOfferPdf(
   lines: OfferLine[],
   totals: OfferTotals,
   settings: OfferPdfSettings,
+  targetWin?: Window | null,
 ) {
   const logoUrl = settings.logo_url || (window.location.origin + "/logo.png");
   const included = lines.filter((l) => l.included);
@@ -813,7 +814,7 @@ ${pagesHtml}
 </body>
 </html>`;
 
-  const win = window.open("", "_blank", "width=1000,height=1200");
+  const win = targetWin ?? window.open("", "_blank", "width=1000,height=1200");
   if (!win) return;
   win.document.write(html);
   win.document.close();

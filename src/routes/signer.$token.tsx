@@ -143,10 +143,13 @@ function SignerPage() {
 
   const handleViewPdf = async () => {
     if (!offerInfo) return;
+    const win = window.open("", "_blank", "width=1000,height=1200");
+    if (!win) return;
+    win.document.write("<html><body style='font-family:sans-serif;padding:2rem;color:#555'>Laster tilbud…</body></html>");
     setLoadingPdf(true);
     try {
       const { data } = await supabase.rpc("get_offer_pdf_by_token" as never, { p_token: token } as never);
-      if (!data) return;
+      if (!data) { win.close(); return; }
       const d = data as any;
       const lines = d.lines ?? [];
       const settings = d.settings ?? {};
@@ -158,7 +161,7 @@ function SignerPage() {
           return s + gross * (1 - (Number(l.discount_pct) || 0) / 100);
         }, 0);
       const admin = subtotal * ((Number(offer.admin_cost_pct) || 0) / 100);
-      openOfferPdf(offer, lines, { subtotal, admin, total: subtotal + admin }, settings);
+      openOfferPdf(offer, lines, { subtotal, admin, total: subtotal + admin }, settings, win);
     } finally {
       setLoadingPdf(false);
     }
@@ -241,7 +244,7 @@ function SignerPage() {
             </div>
             <Button type="button" variant="outline" size="sm" onClick={handleViewPdf} disabled={loadingPdf} className="flex-shrink-0">
               <FileText className="mr-1.5 h-4 w-4" />
-              {loadingPdf ? "Laster…" : "Sjå tilbod"}
+              {loadingPdf ? "Laster…" : "Se tilbud"}
             </Button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm border-t pt-4">

@@ -135,7 +135,7 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
     onChange(refs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
   const handleSignatureUpload = (i: number, file: File) => {
-    if (file.size > 200 * 1024) { alert("Signaturbildet er for stort (maks 200 KB)"); return; }
+    if (file.size > 2 * 1024 * 1024) { alert("Signaturbildet er for stort (maks 2 MB)"); return; }
     const reader = new FileReader();
     reader.onload = (e) => upd(i, { signature: e.target?.result as string });
     reader.readAsDataURL(file);

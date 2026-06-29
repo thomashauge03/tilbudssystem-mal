@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink } from "lucide-react";
 import { nok, num, fmtDate, toISODate, addDays, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
@@ -45,6 +45,7 @@ interface OfferState {
   admin_cost_pct: number;
   forbehold: string[];
   status?: string;
+  attachment_urls: Array<{ name: string; url: string }>;
 }
 
 function emptyOffer(adminPct: number, validityDays: number, defaultRef: string, defaultText = ""): OfferState {
@@ -52,7 +53,7 @@ function emptyOffer(adminPct: number, validityDays: number, defaultRef: string, 
   return {
     title: "", project_id: null, customer_id: null, customer_name: "", customer_email: "",
     offer_text: defaultText, offer_date: toISODate(today), valid_until: toISODate(addDays(today, validityDays)),
-    their_ref: "", our_ref: defaultRef, project_number: "", admin_cost_pct: adminPct, forbehold: [],
+    their_ref: "", our_ref: defaultRef, project_number: "", admin_cost_pct: adminPct, forbehold: [], attachment_urls: [],
   };
 }
 
@@ -120,7 +121,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     }
     if (isEdit && loaded && !initialized) {
       const lo = loaded.offer as any;
-      setOffer({ ...lo, forbehold: Array.isArray(lo.forbehold) ? lo.forbehold : [] });
+      setOffer({ ...lo, forbehold: Array.isArray(lo.forbehold) ? lo.forbehold : [], attachment_urls: Array.isArray(lo.attachment_urls) ? lo.attachment_urls : [] });
       setLines(loaded.lines.length ? loaded.lines : []);
       setInitialized(true);
     }
@@ -195,6 +196,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       project_number: offer.project_number || null,
       admin_cost_pct: Number(offer.admin_cost_pct || 0),
       forbehold: offer.forbehold ?? [],
+      attachment_urls: offer.attachment_urls ?? [],
       ...(isEdit && offer.status ? { status: offer.status } : {}),
     };
 
@@ -538,6 +540,56 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           <div className="space-y-2">
             <Label>Adm.påslag (%)</Label>
             <Input type="number" step="0.1" value={offer.admin_cost_pct} onChange={(e) => set("admin_cost_pct", Number(e.target.value))} />
+          </div>
+
+          {/* Vedlegg */}
+          <div className="space-y-2">
+            <Label>Vedlegg (PDF)</Label>
+            <div className="space-y-2">
+              {(offer.attachment_urls ?? []).map((att, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate">{att.name}</span>
+                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const path = att.url.split("/offer-attachments/")[1]?.split("?")[0];
+                      if (path) await supabase.storage.from("offer-attachments").remove([path]);
+                      set("attachment_urls", (offer.attachment_urls ?? []).filter((_, idx) => idx !== i));
+                    }}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  multiple
+                  className="hidden"
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    e.target.value = "";
+                    for (const file of files) {
+                      if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} er for stor (maks 20 MB)`); continue; }
+                      const path = `${tenantId}/${offerId ?? "ny"}/${Date.now()}_${file.name}`;
+                      const { error } = await supabase.storage.from("offer-attachments").upload(path, file, { upsert: true });
+                      if (error) { toast.error(error.message); continue; }
+                      const { data } = supabase.storage.from("offer-attachments").getPublicUrl(path);
+                      set("attachment_urls", [...(offer.attachment_urls ?? []), { name: file.name, url: data.publicUrl }]);
+                    }
+                  }}
+                />
+                <Button type="button" variant="outline" size="sm" asChild>
+                  <span><Paperclip className="mr-1.5 h-3.5 w-3.5" />Last opp PDF</span>
+                </Button>
+              </label>
+            </div>
           </div>
         </div>
 

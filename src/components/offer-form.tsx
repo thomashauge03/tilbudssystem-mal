@@ -9,7 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink, ChevronsUpDown, Check } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { nok, num, fmtDate, toISODate, addDays, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
@@ -113,6 +115,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const [lines, setLines] = useState<Line[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [forbeholdOpen, setForbeholdOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [customerOpen, setCustomerOpen] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentOfferIdRef = useRef<string | undefined>(offerId);
@@ -445,34 +449,76 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           </div>
           <div className="space-y-2">
             <Label>Prosjekt</Label>
-            <Select value={offer.project_id ?? "__none"} onValueChange={pickProject}>
-              <SelectTrigger><SelectValue placeholder="Knytt til prosjekt…" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">— Ikkje knytt til prosjekt —</SelectItem>
-                {(projects ?? []).map((p: any) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    <span className="flex items-center justify-between gap-4 w-full">
-                      <span>{p.name}</span>
-                      {p.project_number && <span className="text-xs text-muted-foreground tabular-nums">#{p.project_number}</span>}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={projectOpen} onOpenChange={setProjectOpen}>
+              <PopoverTrigger asChild>
+                <button type="button" className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent/30 transition-colors">
+                  <span className={offer.project_id ? "" : "text-muted-foreground"}>
+                    {offer.project_id
+                      ? (() => { const p = (projects ?? []).find((x: any) => x.id === offer.project_id); return p ? `${p.name}${p.project_number ? ` · #${p.project_number}` : ""}` : "Knytt til prosjekt…"; })()
+                      : "— Ikkje knytt til prosjekt —"}
+                  </span>
+                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[320px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Søk prosjekt…" />
+                  <CommandList>
+                    <CommandEmpty>Ingen prosjekt funne.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem value="__none" onSelect={() => { pickProject("__none"); setProjectOpen(false); }}>
+                        <span className="text-muted-foreground">— Ikkje knytt til prosjekt —</span>
+                      </CommandItem>
+                      {(projects ?? []).map((p: any) => (
+                        <CommandItem key={p.id} value={`${p.name} ${p.project_number ?? ""}`} onSelect={() => { pickProject(p.id); setProjectOpen(false); }}>
+                          <Check className={`mr-2 h-4 w-4 ${offer.project_id === p.id ? "opacity-100" : "opacity-0"}`} />
+                          <span className="flex-1">{p.name}</span>
+                          {p.project_number && <span className="ml-3 text-xs text-muted-foreground tabular-nums">#{p.project_number}</span>}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="space-y-2">
             <Label>Kunde</Label>
-            {/* M5: show loading/error states for customer list */}
             {customersError ? (
               <p className="text-xs text-destructive">Kunne ikke laste kunder</p>
             ) : (
-              <Select value={offer.customer_id ?? "__none"} onValueChange={pickCustomer} disabled={customersLoading}>
-                <SelectTrigger><SelectValue placeholder={customersLoading ? "Laster kunder…" : "Velg fra kunderegister…"} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">— Skriv inn manuelt —</SelectItem>
-                  {(customers ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
+                <PopoverTrigger asChild>
+                  <button type="button" disabled={customersLoading} className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent/30 transition-colors disabled:opacity-50">
+                    <span className={offer.customer_id ? "" : "text-muted-foreground"}>
+                      {customersLoading ? "Laster kunder…" : offer.customer_id
+                        ? (customers ?? []).find((c) => c.id === offer.customer_id)?.name ?? "Velg fra kunderegister…"
+                        : "— Skriv inn manuelt —"}
+                    </span>
+                    <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[320px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Søk kunde…" />
+                    <CommandList>
+                      <CommandEmpty>Ingen kunder funne.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem value="__none" onSelect={() => { pickCustomer("__none"); setCustomerOpen(false); }}>
+                          <span className="text-muted-foreground">— Skriv inn manuelt —</span>
+                        </CommandItem>
+                        {(customers ?? []).map((c) => (
+                          <CommandItem key={c.id} value={`${c.name} ${c.email ?? ""}`} onSelect={() => { pickCustomer(c.id); setCustomerOpen(false); }}>
+                            <Check className={`mr-2 h-4 w-4 ${offer.customer_id === c.id ? "opacity-100" : "opacity-0"}`} />
+                            <span className="flex-1">{c.name}</span>
+                            {c.email && <span className="ml-2 text-xs text-muted-foreground truncate max-w-[120px]">{c.email}</span>}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             )}
           </div>
           <div className="space-y-2">

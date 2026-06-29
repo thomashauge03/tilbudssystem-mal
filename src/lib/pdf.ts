@@ -938,9 +938,6 @@ export function openContractPdf(d: ContractData) {
       <h1>${escapeHtml(d.company_name).toUpperCase()}</h1>
       <h2>ENTREPRISEKONTRAKT</h2>
 
-      <div class="proj-label">Prosjekt nr.:</div>
-      <div class="proj-line">${escapeHtml(d.project_number ?? "")}&nbsp;</div>
-
       ${d.title ? `<div class="desc">${escapeHtml(d.title)}</div>` : ""}
       ${d.customer_address ? `<div class="addr">${escapeHtml(d.customer_address)}</div>` : ""}
 

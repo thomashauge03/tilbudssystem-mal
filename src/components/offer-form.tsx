@@ -172,7 +172,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   const set = <K extends keyof OfferState>(k: K, v: OfferState[K]) => setOffer((p) => ({ ...p, [k]: v }));
 
-  const addLine = () => setLines((p) => [...p, { sort_order: p.length, included: true, description: "", comment: "", quantity: 1, unit: "stk", unit_price: 0, discount_pct: 0 }]);
+  const addLine = () => setLines((p) => [...p, { sort_order: p.length, included: true, description: "", comment: "", quantity: 1, unit: "", unit_price: 0, discount_pct: 0 }]);
   const removeLine = (i: number) => setLines((p) => p.filter((_, idx) => idx !== i));
   const updLine = (i: number, patch: Partial<Line>) => setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l));
 

@@ -91,7 +91,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     queryFn: async () => {
       const { data } = await supabase
         .from("projects")
-        .select("id, name, customer_id, status")
+        .select("id, name, project_number, customer_id, status")
         .eq("status", "aktiv")
         .order("name");
       return data ?? [];

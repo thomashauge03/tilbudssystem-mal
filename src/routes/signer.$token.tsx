@@ -196,6 +196,7 @@ function SignerPage() {
         offer_text: offer.offer_text,
         total_incl_vat: totalInclVat,
         company_name: settings.company_name,
+        company_org_nr: settings.company_org_nr ?? "",
         company_address: settings.company_address,
         company_phone: settings.company_phone,
         logo_url: settings.logo_url,

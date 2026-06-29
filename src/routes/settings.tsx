@@ -229,6 +229,7 @@ function SettingsPage() {
   const [validityDays, setValidityDays] = useState(DEFAULT_SETTINGS.offer_validity_days);
   const [ourRefs, setOurRefs] = useState<OurRef[]>(DEFAULT_SETTINGS.our_refs);
   const [companyName, setCompanyName] = useState(DEFAULT_SETTINGS.company_name);
+  const [companyOrgNr, setCompanyOrgNr] = useState(DEFAULT_SETTINGS.company_org_nr);
   const [companyTagline, setCompanyTagline] = useState(DEFAULT_SETTINGS.company_tagline);
   const [units, setUnits] = useState<string[]>(DEFAULT_SETTINGS.units);
   const [forbehold, setForbehold] = useState<Forbehold[]>(DEFAULT_SETTINGS.forbehold);
@@ -246,6 +247,7 @@ function SettingsPage() {
     setValidityDays(saved.offer_validity_days);
     setOurRefs(saved.our_refs);
     setCompanyName(saved.company_name);
+    setCompanyOrgNr(saved.company_org_nr ?? "");
     setCompanyTagline(saved.company_tagline);
     setUnits(saved.units);
     setForbehold(saved.forbehold);
@@ -268,6 +270,7 @@ function SettingsPage() {
       offer_validity_days: validityDays,
       our_refs: ourRefs,
       company_name: companyName,
+      company_org_nr: companyOrgNr,
       company_tagline: companyTagline,
       units,
       forbehold,
@@ -451,6 +454,10 @@ function SettingsPage() {
         <div className="space-y-2">
           <Label>Firmanamn</Label>
           <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} className="max-w-xs" />
+        </div>
+        <div className="space-y-2">
+          <Label>Organisasjonsnummer</Label>
+          <Input value={companyOrgNr} onChange={(e) => setCompanyOrgNr(e.target.value)} placeholder="000 000 000" className="max-w-xs" />
         </div>
         <div className="space-y-2">
           <Label>Tagline / undertittel</Label>

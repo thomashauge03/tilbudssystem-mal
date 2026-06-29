@@ -30,6 +30,7 @@ export interface AppSettings {
   email_subject_template: string;
   vat_pct: number;
   closing_page_offset_mm: number;
+  company_org_nr: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -46,6 +47,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   email_subject_template: "Tilbud #{nr} – {tittel}",
   vat_pct: 25,
   closing_page_offset_mm: 90,
+  company_org_nr: "",
 };
 
 function parseOurRefs(v: unknown): OurRef[] {

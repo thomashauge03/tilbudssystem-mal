@@ -382,7 +382,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       total_incl_vat: totalInclVat,
       company_name: appSettings?.company_name ?? "Tilbudssystem",
       logo_url: appSettings?.logo_url ?? "",
-      company_org_nr: "931 356 933",
+      company_org_nr: appSettings?.company_org_nr ?? "",
       ref_name: refObj?.name ?? offer.our_ref,
       ref_position: refObj?.position ?? "",
       ref_phone: refObj?.phone ?? "",

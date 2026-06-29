@@ -177,7 +177,6 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const updLine = (i: number, patch: Partial<Line>) => setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l));
 
   const pickCustomer = (id: string) => {
-    if (id === "__none") { set("customer_id", null); return; }
     const c = (customers ?? []).find((x) => x.id === id);
     if (c) { set("customer_id", c.id); set("customer_name", c.name); set("customer_email", c.email ?? ""); }
   };
@@ -203,7 +202,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   const save = async (): Promise<string | null> => {
     if (!offer.title.trim()) { toast.error("Overskrift er påkrevd"); return null; }
-    if (!offer.customer_name.trim()) { toast.error("Kundenavn er påkrevd"); return null; }
+    if (!offer.customer_id) { toast.error("Velg ein kunde frå kunderegisteret"); return null; }
 
     const payload = {
       title: offer.title,
@@ -486,8 +485,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   <button type="button" disabled={customersLoading} className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent/30 transition-colors disabled:opacity-50">
                     <span className={offer.customer_id ? "" : "text-muted-foreground"}>
                       {customersLoading ? "Laster kunder…" : offer.customer_id
-                        ? (customers ?? []).find((c) => c.id === offer.customer_id)?.name ?? "Velg fra kunderegister…"
-                        : "— Skriv inn manuelt —"}
+                        ? (customers ?? []).find((c) => c.id === offer.customer_id)?.name ?? "Velg kunde…"
+                        : "Velg kunde…"}
                     </span>
                     <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
                   </button>
@@ -498,9 +497,6 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                     <CommandList>
                       <CommandEmpty>Ingen kunder funne.</CommandEmpty>
                       <CommandGroup>
-                        <CommandItem value="__none" onSelect={() => { pickCustomer("__none"); setCustomerOpen(false); }}>
-                          <span className="text-muted-foreground">— Skriv inn manuelt —</span>
-                        </CommandItem>
                         {(customers ?? []).map((c) => (
                           <CommandItem key={c.id} value={`${c.name} ${c.email ?? ""}`} onSelect={() => { pickCustomer(c.id); setCustomerOpen(false); }}>
                             <Check className={`mr-2 h-4 w-4 ${offer.customer_id === c.id ? "opacity-100" : "opacity-0"}`} />
@@ -515,10 +511,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               </Popover>
             )}
           </div>
-          <div className="space-y-2">
-            <Label>Kundenavn *</Label>
-            <Input value={offer.customer_name} onChange={(e) => set("customer_name", e.target.value)} />
-          </div>
+          {offer.customer_name && (
+            <div className="space-y-2">
+              <Label>Kundenavn</Label>
+              <Input value={offer.customer_name} readOnly className="bg-muted/50 cursor-default" />
+            </div>
+          )}
           <div className="space-y-2">
             <Label>E-post kunde</Label>
             <Input type="email" value={offer.customer_email} onChange={(e) => set("customer_email", e.target.value)} />

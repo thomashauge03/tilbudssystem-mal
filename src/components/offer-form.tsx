@@ -117,13 +117,22 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const [forbeholdOpen, setForbeholdOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentOfferIdRef = useRef<string | undefined>(offerId);
-  const isSavingRef = useRef(false);
+  const DRAFT_KEY = `offer-draft-${offerId ?? "new"}`;
 
   useEffect(() => {
     if (!isEdit && !initialized && adminCost !== undefined && appSettings !== undefined) {
+      // Gjenopprett utkast frå localStorage om det finst
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        try {
+          const { offer: o, lines: l } = JSON.parse(saved);
+          setOffer(o);
+          setLines(l ?? []);
+          setInitialized(true);
+          return;
+        } catch { localStorage.removeItem(DRAFT_KEY); }
+      }
       setOffer(emptyOffer(adminCost, appSettings.offer_validity_days, appSettings.our_refs[0]?.name ?? "", appSettings.default_offer_text));
       setInitialized(true);
     }
@@ -136,28 +145,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // L3: appSettings added to deps — it's read for offer_validity_days, our_refs, and default_offer_text
   }, [isEdit, loaded, adminCost, initialized, appSettings]);
 
-  // Auto-lagring: debounce 2s etter kvar endring, krev minst ein tittel
+  // Lagre skjematilstand i localStorage ved kvar endring (berre for nye tilbod)
   useEffect(() => {
-    if (!initialized || !offer.title.trim()) return;
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    setAutoSaveStatus("idle");
-    autoSaveTimer.current = setTimeout(async () => {
-      if (isSavingRef.current) return;
-      isSavingRef.current = true;
-      setAutoSaveStatus("saving");
-      const id = await save(true);
-      if (id) {
-        currentOfferIdRef.current = id;
-        setAutoSaveStatus("saved");
-        setTimeout(() => setAutoSaveStatus("idle"), 2500);
-      } else {
-        setAutoSaveStatus("idle");
-      }
-      isSavingRef.current = false;
-    }, 2000);
-    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offer, lines, initialized]);
+    if (!initialized || isEdit) return;
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ offer, lines }));
+  }, [offer, lines, initialized, isEdit]);
 
   const lineSum = (l: Line) => {
     const gross = Number(l.quantity || 0) * Number(l.unit_price || 0);
@@ -209,9 +201,9 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     });
   };
 
-  const save = async (silent = false): Promise<string | null> => {
-    if (!offer.title.trim()) { if (!silent) toast.error("Overskrift er påkrevd"); return null; }
-    if (!offer.customer_name.trim()) { if (!silent) toast.error("Kundenavn er påkrevd"); return null; }
+  const save = async (): Promise<string | null> => {
+    if (!offer.title.trim()) { toast.error("Overskrift er påkrevd"); return null; }
+    if (!offer.customer_name.trim()) { toast.error("Kundenavn er påkrevd"); return null; }
 
     const payload = {
       title: offer.title,
@@ -235,11 +227,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     const editing = isEdit || !!currentOfferIdRef.current;
     if (editing && id) {
       const { error } = await supabase.from("offers").update(payload).eq("id", id);
-      if (error) { if (!silent) toast.error(error.message); return null; }
+      if (error) { toast.error(error.message); return null; }
       await supabase.from("offer_lines").delete().eq("offer_id", id);
     } else {
       const { data, error } = await supabase.from("offers").insert({ ...payload, status: "utkast", tenant_id: tenantId }).select("id").single();
-      if (error) { if (!silent) toast.error(error.message); return null; }
+      if (error) { toast.error(error.message); return null; }
       id = data.id;
       currentOfferIdRef.current = id;
     }
@@ -264,14 +256,14 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     qc.invalidateQueries({ queryKey: ["offers"] });
     qc.invalidateQueries({ queryKey: ["offer", id] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
-    if (!silent) toast.success("Tilbud lagret");
+    toast.success("Tilbud lagret");
+    localStorage.removeItem(DRAFT_KEY);
     return id!;
   };
 
   const handleSave = async () => {
     const id = await save();
-    if (id && !isEdit && !currentOfferIdRef.current) navigate({ to: "/tilbud/$id", params: { id } });
-    else if (id && !isEdit) navigate({ to: "/tilbud/$id", params: { id } });
+    if (id && !isEdit) navigate({ to: "/tilbud/$id", params: { id } });
   };
 
   const handlePdf = async () => {
@@ -411,13 +403,9 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild><Link to="/tilbud"><ArrowLeft className="mr-1 h-4 w-4" />Tilbake</Link></Button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">
-              {isEdit ? `Tilbud #${offer.offer_number ?? ""}` : "Nytt tilbud"}
-            </h1>
-            {autoSaveStatus === "saving" && <span className="text-xs text-muted-foreground animate-pulse">Lagrer…</span>}
-            {autoSaveStatus === "saved" && <span className="text-xs text-green-600">✓ Lagret</span>}
-          </div>
+          <h1 className="text-2xl font-bold">
+            {isEdit ? `Tilbud #${offer.offer_number ?? ""}` : "Nytt tilbud"}
+          </h1>
         </div>
         <div className="flex gap-2 flex-wrap lg:justify-end">
           {isEdit && (

@@ -148,7 +148,7 @@ function OrdrePage() {
                   className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
                   onClick={() => (window.location.href = `/tilbud/${o.id}`)}
                 >
-                  <td className="px-4 py-3 font-mono text-sm text-primary">#{o.offer_number}</td>
+                  <td className="px-4 py-3 tabular-nums text-sm text-primary">#{o.offer_number}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[ordreStatus]}`}>
                       {ordreStatus}

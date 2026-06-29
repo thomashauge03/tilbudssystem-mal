@@ -74,7 +74,7 @@ function AmendmentsList() {
               <tr key={a.id}
                 className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
                 onClick={() => (window.location.href = `/endringsmeldinger/${a.id}`)}>
-                <td className="px-4 py-3 font-mono text-sm text-primary">{a.amendment_number}</td>
+                <td className="px-4 py-3 tabular-nums text-sm text-primary">{a.amendment_number}</td>
                 <td className="px-4 py-3">{a.project_ref ?? "—"}</td>
                 <td className="px-4 py-3">{a.internal_description ?? "—"}</td>
                 <td className="px-4 py-3 text-sm">{fmtDate(a.notified_date)}</td>

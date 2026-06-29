@@ -129,7 +129,7 @@ function MobileDashboard() {
               <p className="px-3 py-5 text-center text-xs text-muted-foreground">Ingen tilbud enno</p>
             ) : offers.map((o: any) => (
               <Link key={o.id} to="/tilbud/$id" params={{ id: o.id }} className="flex items-center gap-2 px-3 py-2.5 active:bg-accent/40">
-                <span className="w-12 flex-shrink-0 font-mono text-xs text-muted-foreground">#{o.offer_number}</span>
+                <span className="w-12 flex-shrink-0 tabular-nums text-xs text-muted-foreground">#{o.offer_number}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{o.title}</p>
                   <p className="truncate text-xs text-muted-foreground">{o.customer_name ?? "—"}</p>

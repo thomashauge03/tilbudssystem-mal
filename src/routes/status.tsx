@@ -162,7 +162,7 @@ function PaymentsPanel({
                   >
                     {p.paid && <Check className="h-3 w-3" />}
                   </button>
-                  <span className="w-24 flex-shrink-0 font-mono text-xs text-muted-foreground">
+                  <span className="w-24 flex-shrink-0 tabular-nums text-xs text-muted-foreground">
                     {p.invoice_date ? fmtDate(p.invoice_date) : "—"}
                   </span>
                   <span className={`flex-1 ${p.paid ? "text-muted-foreground line-through" : ""}`}>
@@ -427,7 +427,7 @@ function StatusPage() {
                   return (
                     <Fragment key={o.id}>
                       <tr className={`border-b ${i % 2 === 1 ? "bg-muted/20" : ""} ${isExpanded ? "bg-primary/5" : ""}`}>
-                        <td className="px-4 py-3 font-mono">
+                        <td className="px-4 py-3 tabular-nums">
                           <Link to="/tilbud/$id" params={{ id: o.id }} className="text-primary hover:underline">
                             #{o.offer_number}
                           </Link>
@@ -518,7 +518,7 @@ function StatusPage() {
                     return (
                       <Fragment key={a.id}>
                         <tr className={`border-b ${i % 2 === 1 ? "bg-muted/20" : ""} ${isExpanded ? "bg-primary/5" : ""}`}>
-                          <td className="px-4 py-3 font-mono">
+                          <td className="px-4 py-3 tabular-nums">
                             <Link to="/endringsmeldinger/$id" params={{ id: a.id }} className="text-primary hover:underline">
                               {a.amendment_number}
                             </Link>

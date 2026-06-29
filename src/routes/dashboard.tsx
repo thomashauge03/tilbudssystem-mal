@@ -326,7 +326,7 @@ function Dashboard() {
             const barColor = pct >= 100 ? "#16a34a" : pct > 0 ? "#f59e0b" : "#e5e7eb";
             return (
               <Link key={o.id} to="/tilbud/$id" params={{ id: o.id }} className="flex items-center gap-4 px-6 py-3.5 hover:bg-accent/30 transition-colors">
-                <div className="w-14 flex-shrink-0 font-mono text-sm text-muted-foreground">#{o.offer_number}</div>
+                <div className="w-14 flex-shrink-0 tabular-nums text-sm text-muted-foreground">#{o.offer_number}</div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-sm">{o.title}</p>
                   <p className="text-xs text-muted-foreground">{o.customer_name ?? "—"}</p>

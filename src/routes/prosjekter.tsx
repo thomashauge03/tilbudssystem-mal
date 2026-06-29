@@ -207,7 +207,7 @@ function ProsjekterPage() {
                 <td className="px-4 py-3">
                   <div className="font-medium">{p.name}</div>
                   {p.project_number && (
-                    <div className="text-xs text-muted-foreground font-mono mt-0.5">#{p.project_number}</div>
+                    <div className="text-xs text-muted-foreground tabular-nums mt-0.5">#{p.project_number}</div>
                   )}
                 </td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{p.customer_display}</td>

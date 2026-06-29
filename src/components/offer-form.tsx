@@ -136,6 +136,13 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     () => lines.filter((l) => l.included).reduce((s, l) => s + lineSum(l), 0),
     [lines]
   );
+  const totalDiscount = useMemo(
+    () => lines.filter((l) => l.included && Number(l.discount_pct) > 0).reduce((s, l) => {
+      const gross = Number(l.quantity || 0) * Number(l.unit_price || 0);
+      return s + gross * (Number(l.discount_pct) / 100);
+    }, 0),
+    [lines]
+  );
   const admin = subtotal * (Number(offer.admin_cost_pct || 0) / 100);
   const total = subtotal + admin;
 
@@ -675,6 +682,9 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               )}
               {admin > 0 && (
                 <div className="flex justify-between text-sm"><span className="text-muted-foreground">Adm.påslag ({num(offer.admin_cost_pct)} %)</span><span className="font-medium">{nok(admin)}</span></div>
+              )}
+              {totalDiscount > 0 && (
+                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Rabatt gitt</span><span className="font-medium text-green-600">− {nok(totalDiscount)}</span></div>
               )}
               <div className="flex justify-between border-t pt-2 text-lg font-bold"><span>Totalt</span><span className="text-primary">{nok(total)}</span></div>
             </div>

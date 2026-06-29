@@ -816,6 +816,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <div className="flex justify-between text-sm"><span className="text-muted-foreground">Rabatt gitt</span><span className="font-medium text-green-600">− {nok(totalDiscount)}</span></div>
               )}
               <div className="flex justify-between border-t pt-2 text-lg font-bold"><span>Totalt</span><span className="text-primary">{nok(total)}</span></div>
+              <Button className="w-full mt-2" onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre tilbud</Button>
             </div>
           </div>
         </div>

@@ -451,7 +451,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <SelectItem value="__none">— Ikkje knytt til prosjekt —</SelectItem>
                 {(projects ?? []).map((p: any) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.name}{p.project_number ? ` (#${p.project_number})` : ""}
+                    <span className="flex items-center justify-between gap-4 w-full">
+                      <span>{p.name}</span>
+                      {p.project_number && <span className="text-xs text-muted-foreground tabular-nums">#{p.project_number}</span>}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>

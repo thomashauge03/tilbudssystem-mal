@@ -452,12 +452,18 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <Popover open={projectOpen} onOpenChange={setProjectOpen}>
               <PopoverTrigger asChild>
                 <button type="button" className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent/30 transition-colors">
-                  <span className={offer.project_id ? "" : "text-muted-foreground"}>
-                    {offer.project_id
-                      ? (() => { const p = (projects ?? []).find((x: any) => x.id === offer.project_id); return p ? `${p.name}${p.project_number ? ` · #${p.project_number}` : ""}` : "Knytt til prosjekt…"; })()
-                      : "— Ikkje knytt til prosjekt —"}
-                  </span>
-                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                  {(() => {
+                    const p = offer.project_id ? (projects ?? []).find((x: any) => x.id === offer.project_id) : null;
+                    return p ? (
+                      <span className="flex flex-1 items-center justify-between mr-2 min-w-0">
+                        <span className="truncate">{p.name}</span>
+                        {p.project_number && <span className="ml-3 flex-shrink-0 text-xs text-muted-foreground tabular-nums">#{p.project_number}</span>}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">— Ikkje knytt til prosjekt —</span>
+                    );
+                  })()}
+                  <ChevronsUpDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-[320px] p-0" align="start">

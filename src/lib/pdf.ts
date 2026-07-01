@@ -448,7 +448,7 @@ export function openOfferPdf(
 <title>Tilbud – ${escapeHtml(settings.company_name)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <style>
   :root {
     --ink:        #0A0A0A;
@@ -499,7 +499,7 @@ export function openOfferPdf(
   .top-meta {
     display: flex;
     justify-content: space-between;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Roboto Mono', monospace;
     font-size: 7pt;
     letter-spacing: 0.2em;
     color: var(--slate-700);
@@ -542,13 +542,13 @@ export function openOfferPdf(
   .doc-meta .num-pill {
     display: inline-flex; align-items: baseline; gap: 8px;
     border: 1.5px solid var(--ink); padding: 4px 12px;
-    font-family: 'JetBrains Mono', monospace; font-size: 9pt; font-weight: 500; margin-bottom: 6mm;
+    font-family: 'Roboto Mono', monospace; font-size: 9pt; font-weight: 500; margin-bottom: 6mm;
   }
   .doc-meta .num-pill .lbl { font-size: 7pt; letter-spacing: 0.18em; text-transform: uppercase; color: var(--slate-600); }
   .doc-meta .num-pill .v { font-weight: 700; color: var(--ink); }
   .meta-grid { display: grid; grid-template-columns: auto auto; gap: 3px 16px; margin: 0; justify-content: end; }
   .meta-grid dt { color: var(--slate-700); text-transform: uppercase; letter-spacing: 0.14em; font-size: 7.5pt; font-weight: 700; text-align: right; }
-  .meta-grid dd { margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 9pt; font-weight: 600; color: var(--ink); text-align: right; }
+  .meta-grid dd { margin: 0; font-family: 'Roboto Mono', monospace; font-size: 9pt; font-weight: 600; color: var(--ink); text-align: right; }
 
   .body { padding: 4mm 18mm 0 18mm; flex: 1; display: flex; flex-direction: column; }
 
@@ -685,7 +685,7 @@ export function openOfferPdf(
   .cont-meta {
     display: flex;
     justify-content: space-between;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Roboto Mono', monospace;
     font-size: 7.5pt;
     letter-spacing: 0.1em;
     color: var(--slate-600);
@@ -695,7 +695,7 @@ export function openOfferPdf(
   .carry {
     display: flex;
     justify-content: space-between;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Roboto Mono', monospace;
     font-size: 8.5pt;
     font-weight: 600;
     color: var(--slate-600);

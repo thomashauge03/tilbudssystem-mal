@@ -122,8 +122,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   useEffect(() => {
     if (!isEdit && !initialized && adminCost !== undefined && appSettings !== undefined) {
-      // Gjenopprett utkast frå localStorage om det finst
-      const saved = localStorage.getItem(DRAFT_KEY);
+      // Gjenopprett utkast frå sessionStorage om det finst (berre same fane/økt)
+      const saved = sessionStorage.getItem(DRAFT_KEY);
       if (saved) {
         try {
           const { offer: o, lines: l } = JSON.parse(saved);
@@ -131,7 +131,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           setLines(l ?? []);
           setInitialized(true);
           return;
-        } catch { localStorage.removeItem(DRAFT_KEY); }
+        } catch { sessionStorage.removeItem(DRAFT_KEY); }
       }
       setOffer(emptyOffer(adminCost, appSettings.offer_validity_days, appSettings.our_refs[0]?.name ?? "", appSettings.default_offer_text));
       setInitialized(true);
@@ -145,10 +145,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // L3: appSettings added to deps — it's read for offer_validity_days, our_refs, and default_offer_text
   }, [isEdit, loaded, adminCost, initialized, appSettings]);
 
-  // Lagre skjematilstand i localStorage ved kvar endring (berre for nye tilbod)
+  // Lagre skjematilstand i sessionStorage ved kvar endring (berre for nye tilbod)
   useEffect(() => {
     if (!initialized || isEdit) return;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ offer, lines }));
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ offer, lines }));
   }, [offer, lines, initialized, isEdit]);
 
   const lineSum = (l: Line) => {
@@ -256,7 +256,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     qc.invalidateQueries({ queryKey: ["offer", id] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
     toast.success("Tilbud lagret");
-    localStorage.removeItem(DRAFT_KEY);
+    sessionStorage.removeItem(DRAFT_KEY);
     return id!;
   };
 

@@ -84,11 +84,31 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
   const [a, setA] = useState<AState>(() => empty());
   const [lines, setLines] = useState<ALine[]>([]);
   const [init, setInit] = useState(false);
+  const DRAFT_KEY = `amendment-draft-${amendmentId ?? "new"}`;
 
   useEffect(() => {
-    if (!isEdit && !init) { setA(empty()); setInit(true); }
+    if (!isEdit && !init) {
+      // Gjenopprett utkast frå sessionStorage om det finst (berre same fane/økt)
+      const saved = sessionStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        try {
+          const { a: sa, lines: sl } = JSON.parse(saved);
+          setA(sa);
+          setLines(sl ?? []);
+          setInit(true);
+          return;
+        } catch { sessionStorage.removeItem(DRAFT_KEY); }
+      }
+      setA(empty()); setInit(true);
+    }
     if (isEdit && loaded && !init) { setA(loaded.amendment as any); setLines(loaded.lines); setInit(true); }
   }, [isEdit, loaded, init]);
+
+  // Lagre skjematilstand i sessionStorage ved kvar endring (berre for nye endringsmeldingar)
+  useEffect(() => {
+    if (!init || isEdit) return;
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ a, lines }));
+  }, [a, lines, init, isEdit]);
 
   const subtotal = useMemo(() => lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0), [lines]);
   const set = <K extends keyof AState>(k: K, v: AState[K]) => setA((p) => ({ ...p, [k]: v }));
@@ -174,6 +194,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
     qc.invalidateQueries({ queryKey: ["amendment", id] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
     toast.success("Endringsmelding lagret");
+    sessionStorage.removeItem(DRAFT_KEY);
     return id!;
   };
 

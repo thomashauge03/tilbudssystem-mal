@@ -116,17 +116,31 @@ function StatusPicker({ lead, onUpdate }: { lead: Lead; onUpdate: (id: string, s
   );
 }
 
-function EditRow({ lead, refs, onSave, onCancel }: {
+function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
   lead: Partial<Lead>;
   refs: string[];
+  draftKey: string;
   onSave: (data: Omit<Lead, "id" | "created_at" | "status_changed_at">) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [form, setForm] = useState<Omit<Lead, "id" | "created_at" | "status_changed_at">>({
-    ...EMPTY_LEAD, ...lead,
+  const [form, setForm] = useState<Omit<Lead, "id" | "created_at" | "status_changed_at">>(() => {
+    // Gjenopprett utkast frå sessionStorage om det finst (berre same fane/økt)
+    const saved = sessionStorage.getItem(draftKey);
+    if (saved) {
+      try { return JSON.parse(saved); } catch { sessionStorage.removeItem(draftKey); }
+    }
+    return { ...EMPTY_LEAD, ...lead };
   });
   const f = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
+
+  // Lagre skjematilstand i sessionStorage ved kvar endring
+  useEffect(() => {
+    sessionStorage.setItem(draftKey, JSON.stringify(form));
+  }, [form, draftKey]);
+
+  const handleSave = () => { sessionStorage.removeItem(draftKey); onSave(form); };
+  const handleCancel = () => { sessionStorage.removeItem(draftKey); onCancel(); };
 
   return (
     <tr className="bg-muted/30 border-y-2 border-primary/20">
@@ -176,10 +190,10 @@ function EditRow({ lead, refs, onSave, onCancel }: {
       </td>
       <td className="px-2 py-2 whitespace-nowrap">
         <div className="flex gap-1">
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onSave(form)}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSave}>
             <Check className="h-4 w-4 text-green-600" />
           </Button>
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onCancel}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCancel}>
             <X className="h-4 w-4 text-muted-foreground" />
           </Button>
         </div>
@@ -401,6 +415,7 @@ function PotensielleKunderPage() {
               <EditRow
                 lead={EMPTY_LEAD}
                 refs={refs}
+                draftKey="lead-draft-new"
                 onSave={(data) => save("new", data)}
                 onCancel={() => setEditingId(null)}
               />
@@ -418,6 +433,7 @@ function PotensielleKunderPage() {
                   key={lead.id}
                   lead={lead}
                   refs={refs}
+                  draftKey={`lead-draft-${lead.id}`}
                   onSave={(data) => save(lead.id, data)}
                   onCancel={() => setEditingId(null)}
                 />

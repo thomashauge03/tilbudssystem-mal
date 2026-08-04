@@ -194,6 +194,31 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     setDragOverIndex(null);
   };
 
+  const [uploading, setUploading] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
+
+  // Last opp ei liste med filer til vedleggs-bøtta
+  const uploadFiles = async (files: File[]) => {
+    const pdfs = files.filter((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
+    if (files.length && !pdfs.length) { toast.error("Berre PDF-filer kan leggast ved"); return; }
+    if (!pdfs.length) return;
+    setUploading(true);
+    try {
+      for (const file of pdfs) {
+        if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} er for stor (maks 20 MB)`); continue; }
+        const path = `${tenantId}/${offerId ?? "ny"}/${Date.now()}_${file.name}`;
+        const { error } = await supabase.storage.from("offer-attachments").upload(path, file, { upsert: true });
+        if (error) { toast.error(error.message); continue; }
+        const { data } = supabase.storage.from("offer-attachments").getPublicUrl(path);
+        // funksjonell oppdatering slik at fleire filer i same slepp ikkje overskriv kvarandre
+        setOffer((p) => ({ ...p, attachment_urls: [...(p.attachment_urls ?? []), { name: file.name, url: data.publicUrl }] }));
+        toast.success(`${file.name} lagt til`);
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const pickCustomer = (id: string) => {
     const c = (customers ?? []).find((x) => x.id === id);
     if (c) { set("customer_id", c.id); set("customer_name", c.name); set("customer_email", c.email ?? ""); }
@@ -640,7 +665,19 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <Label>Vedlegg (PDF)</Label>
             <div className="space-y-2">
               {(offer.attachment_urls ?? []).map((att, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                <div
+                  key={i}
+                  draggable
+                  title="Dra filen ut i e-posten for å legge den ved"
+                  onDragStart={(e) => {
+                    // DownloadURL lar nettlesaren levere sjølve fila til t.d. Outlook/utforskaren
+                    e.dataTransfer.setData("DownloadURL", `application/pdf:${att.name}:${att.url}`);
+                    e.dataTransfer.setData("text/uri-list", att.url);
+                    e.dataTransfer.setData("text/plain", att.url);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  className="flex cursor-grab items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm active:cursor-grabbing"
+                >
                   <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                   <span className="flex-1 truncate">{att.name}</span>
                   <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
@@ -659,28 +696,45 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   </button>
                 </div>
               ))}
-              <label className="cursor-pointer">
+              {/* Slepp-sone: dra PDF rett hit frå e-post eller utforskaren, eller lim inn med Ctrl+V */}
+              <label
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropActive(true); }}
+                onDragEnter={(e) => { e.preventDefault(); setDropActive(true); }}
+                onDragLeave={(e) => { if (e.currentTarget === e.target) setDropActive(false); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDropActive(false);
+                  void uploadFiles(Array.from(e.dataTransfer.files ?? []));
+                }}
+                onPaste={(e) => {
+                  const files = Array.from(e.clipboardData?.files ?? []);
+                  if (files.length) { e.preventDefault(); void uploadFiles(files); }
+                }}
+                tabIndex={0}
+                className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-3 py-5 text-center text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring ${
+                  dropActive ? "border-primary bg-primary/10 text-primary" : "border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50 hover:bg-muted/40"
+                }`}
+              >
                 <input
                   type="file"
                   accept="application/pdf"
                   multiple
                   className="hidden"
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const files = Array.from(e.target.files ?? []);
                     e.target.value = "";
-                    for (const file of files) {
-                      if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} er for stor (maks 20 MB)`); continue; }
-                      const path = `${tenantId}/${offerId ?? "ny"}/${Date.now()}_${file.name}`;
-                      const { error } = await supabase.storage.from("offer-attachments").upload(path, file, { upsert: true });
-                      if (error) { toast.error(error.message); continue; }
-                      const { data } = supabase.storage.from("offer-attachments").getPublicUrl(path);
-                      set("attachment_urls", [...(offer.attachment_urls ?? []), { name: file.name, url: data.publicUrl }]);
-                    }
+                    void uploadFiles(files);
                   }}
                 />
-                <Button type="button" variant="outline" size="sm" asChild>
-                  <span><Paperclip className="mr-1.5 h-3.5 w-3.5" />Last opp PDF</span>
-                </Button>
+                <Paperclip className="h-5 w-5" />
+                {uploading ? (
+                  <span className="font-medium">Lastar opp…</span>
+                ) : (
+                  <>
+                    <span className="font-medium">Slepp PDF her</span>
+                    <span>eller klikk for å velje fil · Ctrl+V limer inn</span>
+                  </>
+                )}
               </label>
             </div>
           </div>

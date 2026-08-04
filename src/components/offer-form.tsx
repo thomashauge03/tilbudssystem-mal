@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { nok, num, fmtDate, toISODate, addDays, UNITS as FALLBACK_UNITS } from "@/lib/format";
@@ -175,6 +175,24 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const addLine = () => setLines((p) => [...p, { sort_order: p.length, included: true, description: "", comment: "", quantity: 1, unit: units[0] ?? "", unit_price: 0, discount_pct: 0 }]);
   const removeLine = (i: number) => setLines((p) => p.filter((_, idx) => idx !== i));
   const updLine = (i: number, patch: Partial<Line>) => setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+
+  // Flytt ei linje frå ein posisjon til ein annan og oppdater sort_order
+  const moveLine = (from: number, to: number) =>
+    setLines((p) => {
+      if (from === to || to < 0 || to >= p.length) return p;
+      const next = [...p];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next.map((l, idx) => ({ ...l, sort_order: idx }));
+    });
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dropOn = (i: number) => {
+    if (dragIndex !== null) moveLine(dragIndex, i);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
 
   const pickCustomer = (id: string) => {
     const c = (customers ?? []).find((x) => x.id === id);
@@ -683,6 +701,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <table className="hidden w-full text-sm md:table">
               <thead className="border-b text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
+                  <th className="w-6 px-1 py-2"></th>
                   <th className="w-8 px-1 py-2"></th>
                   <th className="px-2 py-2 text-left">Beskrivelse</th>
                   <th className="w-20 px-2 py-2 text-right">Antall</th>
@@ -690,16 +709,30 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   <th className="w-32 px-2 py-2 text-right">Pris/enhet</th>
                   <th className="w-20 px-2 py-2 text-right">Rabatt %</th>
                   <th className="w-32 px-2 py-2 text-right">Sum eks. mva</th>
-                  <th className="w-8 px-1 py-2"></th>
+                  <th className="w-24 px-1 py-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {lines.length === 0 ? (
-                  <tr><td colSpan={8} className="px-2 py-6 text-center text-muted-foreground">Ingen linjer. Klikk "Ny linje" for å starte.</td></tr>
+                  <tr><td colSpan={9} className="px-2 py-6 text-center text-muted-foreground">Ingen linjer. Klikk "Ny linje" for å starte.</td></tr>
                 ) : lines.map((l, i) => {
                   const isCustomUnit = !!l.unit && !units.includes(l.unit);
                   return (
-                    <tr key={i} className="border-b align-top">
+                    <tr
+                      key={i}
+                      className={`border-b align-top transition-colors ${dragIndex === i ? "opacity-40" : ""} ${dragOverIndex === i && dragIndex !== i ? "bg-accent/40" : ""}`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
+                      onDrop={(e) => { e.preventDefault(); dropOn(i); }}
+                    >
+                      <td
+                        className="px-1 pt-3.5"
+                        draggable
+                        onDragStart={() => setDragIndex(i)}
+                        onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                        title="Dra for å flytte linja"
+                      >
+                        <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />
+                      </td>
                       <td className="px-1 pt-3"><Checkbox checked={l.included} onCheckedChange={(v) => updLine(i, { included: !!v })} /></td>
                       <td className="px-2 py-2">
                         <Input value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} placeholder="Beskrivelse" />
@@ -740,7 +773,19 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                           <div className="text-xs text-muted-foreground line-through">{nok(Number(l.quantity || 0) * Number(l.unit_price || 0))}</div>
                         )}
                       </td>
-                      <td className="px-1 py-2"><Button size="icon" variant="ghost" onClick={() => removeLine(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button></td>
+                      <td className="px-1 py-2">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <div className="flex flex-col">
+                            <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett linje"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -760,7 +805,15 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                         <Checkbox checked={l.included} onCheckedChange={(v) => updLine(i, { included: !!v })} />
                         Inkluder i tilbud
                       </label>
-                      <Button size="icon" variant="ghost" onClick={() => removeLine(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                      <div className="flex items-center gap-0.5">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett linje"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Beskrivelse</Label>
@@ -814,8 +867,21 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <div className="flex justify-between text-sm"><span className="text-muted-foreground">Rabatt gitt</span><span className="font-medium text-green-600">− {nok(totalDiscount)}</span></div>
               )}
               <div className="flex justify-between border-t pt-2 text-lg font-bold"><span>Totalt eks. mva</span><span className="text-primary">{nok(total)}</span></div>
-              <Button className="w-full mt-2" onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre tilbud</Button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Handlingslinje som alltid ligg i botn — nyttig på lange tilbod */}
+      <div className="sticky bottom-0 z-20 -mx-4 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm">
+            <span className="text-muted-foreground">Totalt eks. mva </span>
+            <span className="font-bold text-primary">{nok(total)}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Last ned PDF</Button>
+            <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre tilbud</Button>
           </div>
         </div>
       </div>

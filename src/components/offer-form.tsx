@@ -197,6 +197,20 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const [uploading, setUploading] = useState(false);
   const [dropActive, setDropActive] = useState(false);
 
+  // Nedlasta vedlegg som File-objekt, slik at drag-ut kan levere sjølve fila
+  const attachmentFiles = useRef<Map<string, File>>(new Map());
+  const prefetchAttachment = async (att: { name: string; url: string }) => {
+    if (attachmentFiles.current.has(att.url)) return;
+    try {
+      const res = await fetch(att.url);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      attachmentFiles.current.set(att.url, new File([blob], att.name, { type: "application/pdf" }));
+    } catch {
+      // stille — drag fell tilbake på DownloadURL/lenke
+    }
+  };
+
   // Last opp ei liste med filer til vedleggs-bøtta
   const uploadFiles = async (files: File[]) => {
     const pdfs = files.filter((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
@@ -669,7 +683,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   key={i}
                   draggable
                   title="Dra filen ut i e-posten for å legge den ved"
+                  onMouseEnter={() => void prefetchAttachment(att)}
+                  onPointerDown={() => void prefetchAttachment(att)}
                   onDragStart={(e) => {
+                    // Har vi fila nedlasta, legg vi ho rett på draget — då blir ho verkeleg vedlegg
+                    const file = attachmentFiles.current.get(att.url);
+                    if (file) { try { e.dataTransfer.items.add(file); } catch { /* ignorer */ } }
                     // DownloadURL lar nettlesaren levere sjølve fila til t.d. Outlook/utforskaren
                     e.dataTransfer.setData("DownloadURL", `application/pdf:${att.name}:${att.url}`);
                     e.dataTransfer.setData("text/uri-list", att.url);

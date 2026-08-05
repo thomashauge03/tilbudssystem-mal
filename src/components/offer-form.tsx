@@ -199,17 +199,25 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   // Nedlasta vedlegg som File-objekt, slik at drag-ut kan levere sjølve fila
   const attachmentFiles = useRef<Map<string, File>>(new Map());
+  const [filesReady, setFilesReady] = useState<Record<string, boolean>>({});
   const prefetchAttachment = async (att: { name: string; url: string }) => {
     if (attachmentFiles.current.has(att.url)) return;
     try {
       const res = await fetch(att.url);
-      if (!res.ok) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       attachmentFiles.current.set(att.url, new File([blob], att.name, { type: "application/pdf" }));
-    } catch {
-      // stille — drag fell tilbake på DownloadURL/lenke
+      setFilesReady((p) => ({ ...p, [att.url]: true }));
+    } catch (err) {
+      // Utan fila kan vi berre tilby lenke. Logg slik at CORS-feil er synleg.
+      console.warn("Kunne ikkje hente vedlegg for drag-ut:", att.name, err);
     }
   };
+
+  // Hent vedlegga med ein gong dei finst, så draget er klart når brukaren treng det
+  useEffect(() => {
+    for (const att of offer.attachment_urls ?? []) void prefetchAttachment(att);
+  }, [offer.attachment_urls]);
 
   // Last opp ei liste med filer til vedleggs-bøtta
   const uploadFiles = async (files: File[]) => {
@@ -682,22 +690,26 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <div
                   key={i}
                   draggable
-                  title="Dra filen ut i e-posten for å legge den ved"
+                  title={filesReady[att.url] ? "Dra filen ut i e-posten for å legge den ved" : "Førebur fila for drag… (dreg du no blir det ei lenke)"}
                   onMouseEnter={() => void prefetchAttachment(att)}
                   onPointerDown={() => void prefetchAttachment(att)}
                   onDragStart={(e) => {
-                    // Har vi fila nedlasta, legg vi ho rett på draget — då blir ho verkeleg vedlegg
                     const file = attachmentFiles.current.get(att.url);
-                    if (file) { try { e.dataTransfer.items.add(file); } catch { /* ignorer */ } }
-                    // DownloadURL lar nettlesaren levere sjølve fila til t.d. Outlook/utforskaren
+                    // DownloadURL lar Outlook/utforskaren hente sjølve fila
                     e.dataTransfer.setData("DownloadURL", `application/pdf:${att.name}:${att.url}`);
-                    e.dataTransfer.setData("text/uri-list", att.url);
-                    e.dataTransfer.setData("text/plain", att.url);
+                    if (file) {
+                      // Med fila på draget blir ho eit ekte vedlegg. Vi set IKKJE lenkeformata
+                      // her — då vel mottakaren ofte lenka framfor fila.
+                      try { e.dataTransfer.items.add(file); } catch { /* ignorer */ }
+                    } else {
+                      e.dataTransfer.setData("text/uri-list", att.url);
+                      e.dataTransfer.setData("text/plain", att.url);
+                    }
                     e.dataTransfer.effectAllowed = "copy";
                   }}
                   className="flex cursor-grab items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm active:cursor-grabbing"
                 >
-                  <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                  <Paperclip className={`h-3.5 w-3.5 flex-shrink-0 ${filesReady[att.url] ? "text-muted-foreground" : "animate-pulse text-muted-foreground/40"}`} />
                   <span className="flex-1 truncate">{att.name}</span>
                   <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
                     <ExternalLink className="h-3.5 w-3.5" />

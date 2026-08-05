@@ -934,6 +934,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <span className="font-bold text-primary">{nok(total)}</span>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={addLine}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>
             <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Last ned PDF</Button>
             <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre tilbud</Button>
           </div>

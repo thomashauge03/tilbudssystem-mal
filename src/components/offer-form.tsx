@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, Download } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { nok, num, fmtDate, toISODate, addDays, UNITS as FALLBACK_UNITS } from "@/lib/format";
@@ -197,27 +197,21 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const [uploading, setUploading] = useState(false);
   const [dropActive, setDropActive] = useState(false);
 
-  // Nedlasta vedlegg som File-objekt, slik at drag-ut kan levere sjølve fila
-  const attachmentFiles = useRef<Map<string, File>>(new Map());
-  const [filesReady, setFilesReady] = useState<Record<string, boolean>>({});
-  const prefetchAttachment = async (att: { name: string; url: string }) => {
-    if (attachmentFiles.current.has(att.url)) return;
+  // Last ned eit vedlegg til maskina (naudsynt for webmail — sjå kommentar ved drag-ut)
+  const downloadAttachment = async (att: { name: string; url: string }) => {
     try {
       const res = await fetch(att.url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      attachmentFiles.current.set(att.url, new File([blob], att.name, { type: "application/pdf" }));
-      setFilesReady((p) => ({ ...p, [att.url]: true }));
-    } catch (err) {
-      // Utan fila kan vi berre tilby lenke. Logg slik at CORS-feil er synleg.
-      console.warn("Kunne ikkje hente vedlegg for drag-ut:", att.name, err);
+      const blobUrl = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = att.name;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(att.url, "_blank", "noopener");
     }
   };
-
-  // Hent vedlegga med ein gong dei finst, så draget er klart når brukaren treng det
-  useEffect(() => {
-    for (const att of offer.attachment_urls ?? []) void prefetchAttachment(att);
-  }, [offer.attachment_urls]);
 
   // Last opp ei liste med filer til vedleggs-bøtta
   const uploadFiles = async (files: File[]) => {
@@ -690,28 +684,28 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <div
                   key={i}
                   draggable
-                  title={filesReady[att.url] ? "Dra filen ut i e-posten for å legge den ved" : "Førebur fila for drag… (dreg du no blir det ei lenke)"}
-                  onMouseEnter={() => void prefetchAttachment(att)}
-                  onPointerDown={() => void prefetchAttachment(att)}
+                  title="Dra til skrivebordet eller Outlook-programmet. Webmail (Gmail o.l.) kan ikkje ta imot fila — bruk nedlastingsknappen."
                   onDragStart={(e) => {
-                    const file = attachmentFiles.current.get(att.url);
-                    // DownloadURL lar Outlook/utforskaren hente sjølve fila
+                    // Berre DownloadURL: nettlesaren hentar då fila og leverer ho som ei ekte
+                    // fil til mottakarar UTANFOR nettlesaren (utforskaren, Outlook-programmet).
+                    // Ei nettside kan ikkje levere ei fil til ei anna nettside via drag, og set vi
+                    // text/plain eller text/uri-list her, limer webmail inn namn/lenke i staden.
                     e.dataTransfer.setData("DownloadURL", `application/pdf:${att.name}:${att.url}`);
-                    if (file) {
-                      // Med fila på draget blir ho eit ekte vedlegg. Vi set IKKJE lenkeformata
-                      // her — då vel mottakaren ofte lenka framfor fila.
-                      try { e.dataTransfer.items.add(file); } catch { /* ignorer */ }
-                    } else {
-                      e.dataTransfer.setData("text/uri-list", att.url);
-                      e.dataTransfer.setData("text/plain", att.url);
-                    }
                     e.dataTransfer.effectAllowed = "copy";
                   }}
                   className="flex cursor-grab items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm active:cursor-grabbing"
                 >
-                  <Paperclip className={`h-3.5 w-3.5 flex-shrink-0 ${filesReady[att.url] ? "text-muted-foreground" : "animate-pulse text-muted-foreground/40"}`} />
+                  <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                   <span className="flex-1 truncate">{att.name}</span>
-                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
+                  <button
+                    type="button"
+                    onClick={() => void downloadAttachment(att)}
+                    title="Last ned – dra deretter fila frå nedlastingane inn i e-posten"
+                    className="text-muted-foreground hover:text-primary"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                  <a href={att.url} target="_blank" rel="noopener noreferrer" title="Opne i ny fane" className="text-muted-foreground hover:text-primary">
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                   <button

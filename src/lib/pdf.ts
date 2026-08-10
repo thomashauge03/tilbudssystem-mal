@@ -73,6 +73,7 @@ interface OfferPdfSettings {
   ref_signature?: string; // base64 dataURL
   forbehold?: Array<{ title: string; description: string }>;
   closing_page_offset_mm?: number;
+  company_org_nr?: string;
 }
 
 interface OfferTotals {
@@ -101,7 +102,9 @@ export function openOfferPdf(
   settings: OfferPdfSettings,
   targetWin?: Window | null,
 ) {
-  const logoUrl = settings.logo_url || (window.location.origin + "/logo.png");
+  // Ingen fallback til /logo.png — den er Techauge sin, og ville hamna i andre
+  // firma sine tilbod når innstillingane ikkje var lasta enno.
+  const logoUrl = settings.logo_url || "";
   const included = lines.filter((l) => l.included);
   const vat = totals.total * (settings.vat_pct / 100);
   const totalInclVat = totals.total + vat;
@@ -268,7 +271,7 @@ export function openOfferPdf(
           </div>
           <div class="mast-row">
             <div class="brand">
-              <img src="${logoUrl}" alt="${escapeHtml(settings.company_name)}" onerror="this.style.display='none'" />
+              ${logoUrl ? `<img src="${logoUrl}" alt="${escapeHtml(settings.company_name)}" onerror="this.style.display='none'" />` : ""}
               <div>
                 <p class="company">${escapeHtml(settings.company_name)}</p>
                 ${settings.company_tagline
@@ -392,17 +395,18 @@ export function openOfferPdf(
           <div>
             <div class="ft-label">Selskap</div>
             <div class="ft-v">${escapeHtml(settings.company_name)}</div>
-            <div class="ft-v" style="color:var(--slate-500);font-size:7.5pt;">Tommy Hauge — Daglig leder</div>
+            ${offer.our_ref ? `<div class="ft-v" style="color:var(--slate-500);font-size:7.5pt;">${escapeHtml(offer.our_ref)}${settings.ref_position ? ` — ${escapeHtml(settings.ref_position)}` : ""}</div>` : ""}
           </div>
-          <div>
+          ${settings.company_org_nr ? `<div>
             <div class="ft-label">Organisasjon</div>
-            <div class="ft-v">Org.nr. 931 356 933</div>
-          </div>
+            <div class="ft-v">Org.nr. ${escapeHtml(settings.company_org_nr)}</div>
+          </div>` : "<div></div>"}
           <div>
             <div class="ft-label">Kontakt</div>
-            <div class="ft-v">Tommy Hauge</div>
-            <div class="ft-v">Daglig leder</div>
-            <div class="ft-v">+47 907 45 200</div>
+            ${offer.our_ref ? `<div class="ft-v">${escapeHtml(offer.our_ref)}</div>` : ""}
+            ${settings.ref_position ? `<div class="ft-v">${escapeHtml(settings.ref_position)}</div>` : ""}
+            ${settings.ref_phone ? `<div class="ft-v">${escapeHtml(settings.ref_phone)}</div>` : ""}
+            ${settings.ref_email ? `<div class="ft-v">${escapeHtml(settings.ref_email)}</div>` : ""}
           </div>
         </div>
       </footer>` : "";
@@ -963,7 +967,8 @@ export interface ContractData {
 }
 
 export function openContractPdf(d: ContractData) {
-  const logoUrl = d.logo_url || (window.location.origin + "/logo.png");
+  // Sjå kommentaren i openOfferPdf — ingen fallback til Techauge-logoen
+  const logoUrl = d.logo_url || "";
   const nokFmt = (n: number) =>
     new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " kr";
   const dateFmt = (s: string) =>
@@ -1050,7 +1055,7 @@ export function openContractPdf(d: ContractData) {
   <!-- FORSIDE -->
   <div class="sheet cover-sheet">
     <div class="cover">
-      <img src="${logoUrl}" alt="${escapeHtml(d.company_name)}" onerror="this.style.display='none'" />
+      ${logoUrl ? `<img src="${logoUrl}" alt="${escapeHtml(d.company_name)}" onerror="this.style.display='none'" />` : ""}
       <h1>${escapeHtml(d.company_name).toUpperCase()}</h1>
       <h2>ENTREPRISEKONTRAKT</h2>
 

@@ -84,20 +84,24 @@ export function AppNav() {
     <header className="hm-topnav no-print">
       {/* Brand */}
       <Link to="/" className="hm-brand">
-        <img
-          src={branding?.logo_url || "/logo.png"}
-          alt={branding?.company_name || "Techauge"}
-          className="hm-logo"
-          style={{ height: "36px", width: "auto" }}
-          onError={(e) => {
-            const img = e.currentTarget as HTMLImageElement;
-            img.style.display = "none";
-            const fallback = img.nextElementSibling as HTMLElement | null;
-            if (fallback) fallback.style.display = "flex";
-          }}
-        />
-        <div className="hm-brand-text" style={{ display: "none" }}>
-          <span>{branding?.company_name || "Techauge"}</span>
+        {/* Vis berre tenanten sin eigen logo. /logo.png er Techauge sin, og
+            blei tidlegare vist til alle firma medan brandinga lasta. */}
+        {branding?.logo_url && (
+          <img
+            src={branding.logo_url}
+            alt={branding.company_name || ""}
+            className="hm-logo"
+            style={{ height: "36px", width: "auto" }}
+            onError={(e) => {
+              const img = e.currentTarget as HTMLImageElement;
+              img.style.display = "none";
+              const fallback = img.nextElementSibling as HTMLElement | null;
+              if (fallback) fallback.style.display = "flex";
+            }}
+          />
+        )}
+        <div className="hm-brand-text" style={{ display: branding?.logo_url ? "none" : "flex" }}>
+          <span>{branding?.company_name || ""}</span>
         </div>
       </Link>
 

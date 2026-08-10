@@ -339,7 +339,16 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (id && !isEdit) navigate({ to: "/tilbud/$id", params: { id } });
   };
 
+  // Utan innstillingane blir firmanamn/logo tomme i PDF-en. Betre å vente enn
+  // å produsere eit dokument med feil (eller manglande) merkevare.
+  const settingsReady = !!appSettings;
+  const requireSettings = () => {
+    if (!settingsReady) { toast.error("Firmainnstillingane er ikkje lasta enno – prøv igjen om eit augeblink"); return false; }
+    return true;
+  };
+
   const handlePdf = async () => {
+    if (!requireSettings()) return;
     const id = await save();
     if (!id) return;
     const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === offer.our_ref);
@@ -354,9 +363,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       lines,
       { subtotal, admin, total },
       {
-        company_name: appSettings?.company_name ?? "Tilbudssystem",
+        company_name: appSettings?.company_name ?? "",
         company_tagline: appSettings?.company_tagline ?? "",
         logo_url: appSettings?.logo_url ?? "",
+        company_org_nr: appSettings?.company_org_nr ?? "",
         payment_terms: appSettings?.payment_terms ?? "30 dager netto",
         vat_pct: appSettings?.vat_pct ?? 25,
         ref_phone: refObj?.phone ?? "",
@@ -370,6 +380,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   };
 
   const handleEmail = async () => {
+    if (!requireSettings()) return;
     const id = await save();
     if (!id) return;
     if (!offer.customer_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(offer.customer_email)) { toast.error("Kunden mangler gyldig e-postadresse"); return; }
@@ -418,6 +429,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   };
 
   const handleContract = async () => {
+    if (!requireSettings()) return;
     const id = await save();
     if (!id) return;
     const customerObj = (customers ?? []).find((c: any) => c.id === offer.customer_id);

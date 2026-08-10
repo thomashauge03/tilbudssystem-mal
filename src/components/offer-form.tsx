@@ -59,6 +59,21 @@ function emptyOffer(adminPct: number, validityDays: number, defaultRef: string, 
   };
 }
 
+// offers.forbehold og offers.attachment_urls kan kome tilbake som JSON-streng
+// (kolonnen er text i skjemaet) eller som ekte array (jsonb). Tol begge.
+function asArray<T>(v: unknown): T[] {
+  if (Array.isArray(v)) return v as T[];
+  if (typeof v === "string" && v.trim()) {
+    try {
+      const parsed = JSON.parse(v);
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function OfferForm({ offerId }: { offerId?: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -138,7 +153,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     }
     if (isEdit && loaded && !initialized) {
       const lo = loaded.offer as any;
-      setOffer({ ...lo, forbehold: Array.isArray(lo.forbehold) ? lo.forbehold : [], attachment_urls: Array.isArray(lo.attachment_urls) ? lo.attachment_urls : [] });
+      setOffer({ ...lo, forbehold: asArray(lo.forbehold), attachment_urls: asArray(lo.attachment_urls) });
       setLines(loaded.lines.length ? loaded.lines : []);
       setInitialized(true);
     }

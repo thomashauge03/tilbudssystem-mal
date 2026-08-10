@@ -173,7 +173,7 @@ export function openOfferPdf(
     const discountCell = hasDiscount
       ? `<td class="num discount-cell">${fmtNum(l.discount_pct ?? 0)}&nbsp;%</td>`
       : `<td class="num discount-cell"></td>`;
-    return `<tr>
+    return `<tr data-sum="${net}">
       ${descCell}
       <td class="num">${fmtNum(l.quantity)}</td>
       <td class="num">${escapeHtml(l.unit)}</td>
@@ -320,19 +320,18 @@ export function openOfferPdf(
         ${offer.offer_text ? `<p class="desc">${escapeHtml(offer.offer_text)}</p>` : ""}
       </div>` : "";
 
-    const carryIn = !isFirst && cumulativeBefore > 0
-      ? `<div class="carry carry-in">
+    // Carry-radene ligg alltid i DOM-en, men kan vere skjulte. Køyreskriptet slår
+    // dei av og på og reknar ut beløpa på nytt etter at sider er delte/slåtte saman.
+    const carryHidden = (hide: boolean) => hide ? ` style="display:none"` : "";
+    const carryIn = `<div class="carry carry-in"${carryHidden(isFirst || cumulativeBefore <= 0)}>
           <span>Overført frå forrige side</span>
           <span>${fmtNok(cumulativeBefore)}</span>
-         </div>`
-      : "";
+         </div>`;
 
-    const carryOut = !isLast
-      ? `<div class="carry carry-out">
+    const carryOut = `<div class="carry carry-out"${carryHidden(isLast)}>
           <span>Overføres til neste side</span>
           <span>${fmtNok(cumulativeAfter)}</span>
-         </div>`
-      : "";
+         </div>`;
 
     const hasAdmin = totals.admin > 0;
     const totalsBlock = isLast ? `
@@ -448,7 +447,7 @@ export function openOfferPdf(
 <title>Tilbud – ${escapeHtml(settings.company_name)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 <style>
   :root {
     --ink:        #0A0A0A;
@@ -499,7 +498,7 @@ export function openOfferPdf(
   .top-meta {
     display: flex;
     justify-content: space-between;
-    font-family: 'Roboto Mono', monospace;
+    font-family: 'Archivo', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 7pt;
     letter-spacing: 0.2em;
     color: var(--slate-700);
@@ -542,13 +541,13 @@ export function openOfferPdf(
   .doc-meta .num-pill {
     display: inline-flex; align-items: baseline; gap: 8px;
     border: 1.5px solid var(--ink); padding: 4px 12px;
-    font-family: 'Roboto Mono', monospace; font-size: 9pt; font-weight: 500; margin-bottom: 6mm;
+    font-family: 'Archivo', sans-serif; font-variant-numeric: tabular-nums; font-size: 9pt; font-weight: 500; margin-bottom: 6mm;
   }
   .doc-meta .num-pill .lbl { font-size: 7pt; letter-spacing: 0.18em; text-transform: uppercase; color: var(--slate-600); }
   .doc-meta .num-pill .v { font-weight: 700; color: var(--ink); }
   .meta-grid { display: grid; grid-template-columns: auto auto; gap: 3px 16px; margin: 0; justify-content: end; }
   .meta-grid dt { color: var(--slate-700); text-transform: uppercase; letter-spacing: 0.14em; font-size: 7.5pt; font-weight: 700; text-align: right; }
-  .meta-grid dd { margin: 0; font-family: 'Roboto Mono', monospace; font-size: 9pt; font-weight: 600; color: var(--ink); text-align: right; }
+  .meta-grid dd { margin: 0; font-family: 'Archivo', sans-serif; font-variant-numeric: tabular-nums; font-size: 9pt; font-weight: 600; color: var(--ink); text-align: right; }
 
   .body { padding: 4mm 18mm 0 18mm; flex: 1; display: flex; flex-direction: column; }
 
@@ -685,7 +684,7 @@ export function openOfferPdf(
   .cont-meta {
     display: flex;
     justify-content: space-between;
-    font-family: 'Roboto Mono', monospace;
+    font-family: 'Archivo', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 7.5pt;
     letter-spacing: 0.1em;
     color: var(--slate-600);
@@ -695,7 +694,7 @@ export function openOfferPdf(
   .carry {
     display: flex;
     justify-content: space-between;
-    font-family: 'Roboto Mono', monospace;
+    font-family: 'Archivo', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 8.5pt;
     font-weight: 600;
     color: var(--slate-600);
@@ -734,13 +733,31 @@ export function openOfferPdf(
 </head>
 <body>
 ${pagesHtml}
+<template id="cont-page-tpl"><main class="page page-lines">
+  <header class="cont-header">
+    <div class="cont-meta">
+      <span>${escapeHtml(settings.company_name)} — Tilbud ${offer.offer_number ?? "—"}</span>
+      <span>Side <span class="page-num"></span></span>
+    </div>
+  </header>
+  <section class="body">
+    <div class="carry carry-in"><span>Overført frå forrige side</span><span></span></div>
+    ${tableHtml([])}
+    <div class="carry carry-out"><span>Overføres til neste side</span><span></span></div>
+  </section>
+</main></template>
 <script>
 (function() {
   var PX_MM = 96 / 25.4;
   var PAGE_MM = 297;
   var BUFFER_MM = 44; // tryggheitsmarginen (skjerm-px vs utskrift-mm er ikkje eksakt)
+  var SPLIT_BUFFER_MM = 16; // luft i botn før vi flyttar rader til ny side
 
   function mm(el) { return el ? el.getBoundingClientRect().height / PX_MM : 0; }
+
+  function fmtNok(n) {
+    return new Intl.NumberFormat('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + ' kr';
+  }
 
   function bodyContentMm(page) {
     return Array.from(page.querySelector('.body').children)
@@ -787,6 +804,102 @@ ${pagesHtml}
     return false;
   }
 
+  // Pakk alle tilbodslinjer på nytt ut frå faktisk høgde. Serversida deler på
+  // fast radtal (22), så høge rader (lang beskrivelse + kommentar) rann over.
+  // Her fyller vi kvar side til ho er full, og lagar nye sider etter behov.
+  function reflowLines() {
+    var linePages = Array.from(document.querySelectorAll('.page'))
+      .filter(function(p) { return p.querySelector('table.items tbody'); });
+    if (!linePages.length) return;
+
+    var allRows = [];
+    var push = null, fill = null;
+    linePages.forEach(function(p) {
+      Array.from(p.querySelectorAll('tbody tr[data-sum]')).forEach(function(r) { allRows.push(r); });
+      push = p.querySelector('.bottom-push') || push;
+      fill = p.querySelector('.flex-fill') || fill;
+    });
+    if (!allRows.length) return;
+
+    linePages.forEach(function(p) { p.querySelector('tbody').innerHTML = ''; });
+
+    // bodyContentMm tel ikkje med summar-blokka, så den må trekkjast frå plassen
+    function availFor(page) {
+      return PAGE_MM
+        - mm(page.querySelector('.masthead, .cont-header'))
+        - mm(page.querySelector('footer'))
+        - mm(page.querySelector('.bottom-push'))
+        - SPLIT_BUFFER_MM;
+    }
+
+    var tpl = document.getElementById('cont-page-tpl');
+    var current = linePages[0];
+    var used = [current];
+
+    allRows.forEach(function(row) {
+      var tb = current.querySelector('tbody');
+      tb.appendChild(row);
+      // Passar ho ikkje, opne ny side — men aldri legg igjen ei tom side
+      if (bodyContentMm(current) > availFor(current) && tb.querySelectorAll('tr[data-sum]').length > 1) {
+        tb.removeChild(row);
+        var np = tpl.content.firstElementChild.cloneNode(true);
+        np.querySelector('tbody').innerHTML = '';
+        current.parentNode.insertBefore(np, current.nextSibling);
+        current = np;
+        used.push(np);
+        current.querySelector('tbody').appendChild(row);
+      }
+    });
+
+    // Summar/vilkår høyrer heime på den siste linjesida
+    function placeBottom(page) {
+      var sec = page.querySelector('.body');
+      if (fill) sec.appendChild(fill);
+      sec.appendChild(push);
+    }
+    if (push) {
+      var lastPage = used[used.length - 1];
+      placeBottom(lastPage);
+      // Summane tek plass — skyv rader vidare om sida no renn over
+      var tb = lastPage.querySelector('tbody');
+      while (tb.querySelectorAll('tr[data-sum]').length > 1 && bodyContentMm(lastPage) > availFor(lastPage)) {
+        var rows = tb.querySelectorAll('tr[data-sum]');
+        var np = tpl.content.firstElementChild.cloneNode(true);
+        np.querySelector('tbody').innerHTML = '';
+        np.querySelector('tbody').appendChild(rows[rows.length - 1]);
+        lastPage.parentNode.insertBefore(np, lastPage.nextSibling);
+        placeBottom(np);
+        used.push(np);
+        lastPage = np;
+        tb = np.querySelector('tbody');
+      }
+    }
+
+    linePages.forEach(function(p) { if (used.indexOf(p) === -1) p.remove(); });
+  }
+
+  // Beløpa i "overført/overføres" må reknast på nytt når rader har flytta seg
+  function recalcCarries() {
+    var linePages = Array.from(document.querySelectorAll('.page'))
+      .filter(function(p) { return p.querySelector('table.items tbody tr[data-sum]'); });
+    var cum = 0;
+    linePages.forEach(function(page, idx) {
+      var sum = Array.from(page.querySelectorAll('tbody tr[data-sum]'))
+        .reduce(function(s, r) { return s + (parseFloat(r.getAttribute('data-sum')) || 0); }, 0);
+      var cin = page.querySelector('.carry-in');
+      var cout = page.querySelector('.carry-out');
+      if (cin) {
+        cin.style.display = (idx === 0 || cum <= 0) ? 'none' : '';
+        cin.lastElementChild.textContent = fmtNok(cum);
+      }
+      cum += sum;
+      if (cout) {
+        cout.style.display = (idx === linePages.length - 1) ? 'none' : '';
+        cout.lastElementChild.textContent = fmtNok(cum);
+      }
+    });
+  }
+
   function updatePageNumbers() {
     var pages = Array.from(document.querySelectorAll('.page'));
     var total = pages.length;
@@ -803,8 +916,11 @@ ${pagesHtml}
       ? document.fonts.ready
       : Promise.resolve();
     ready.then(function() {
+      // Pakk linjene etter faktisk høgde, slå deretter saman sider som får plass i lag
+      reflowLines();
       var changed = true;
       while (changed) { changed = tryMerge(); }
+      recalcCarries();
       updatePageNumbers();
       setTimeout(function() { window.print(); }, 300);
     });

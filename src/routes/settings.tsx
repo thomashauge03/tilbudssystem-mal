@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, Save, Sun, Moon, Monitor, GripVertical, Upload, X, Building2, FileText, Calculator, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { THEME_STORAGE_KEY } from "@/lib/format";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -99,7 +100,7 @@ function ForbeholdList({ items, onChange }: { items: Forbehold[]; onChange: (ite
       {items.length > 0 && (
         <div className="grid grid-cols-[1fr_2fr_auto] gap-2 px-1">
           <p className="text-xs font-medium text-muted-foreground">Tittel</p>
-          <p className="text-xs font-medium text-muted-foreground">Beskriving</p>
+          <p className="text-xs font-medium text-muted-foreground">Beskrivelse</p>
           <div />
         </div>
       )}
@@ -108,12 +109,12 @@ function ForbeholdList({ items, onChange }: { items: Forbehold[]; onChange: (ite
           <Input
             value={item.title}
             onChange={(e) => upd(i, { title: e.target.value })}
-            placeholder="T.d. «Grunnforhold»"
+            placeholder="F.eks. «Grunnforhold»"
           />
           <Input
             value={item.description}
             onChange={(e) => upd(i, { description: e.target.value })}
-            placeholder="T.d. «Avvik kan medføre tillegg»"
+            placeholder="F.eks. «Avvik kan medføre tillegg»"
           />
           <Button size="icon" variant="ghost" onClick={() => onChange(items.filter((_, idx) => idx !== i))}>
             <Trash2 className="h-4 w-4 text-destructive" />
@@ -155,7 +156,7 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
               </div>
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground font-medium">Stilling / rolle</p>
-                <Input value={ref.position ?? ""} onChange={(e) => upd(i, { position: e.target.value || undefined })} placeholder="T.d. Daglig leder" />
+                <Input value={ref.position ?? ""} onChange={(e) => upd(i, { position: e.target.value || undefined })} placeholder="F.eks. Daglig leder" />
               </div>
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground font-medium">Telefon</p>
@@ -209,7 +210,7 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
                 <Button size="sm" variant="outline" asChild>
                   <span><Upload className="mr-1 h-3 w-3" />Last opp signatur</span>
                 </Button>
-                <span className="text-xs text-muted-foreground">PNG, JPG — helst kvit/gjennomsiktig bakgrunn</span>
+                <span className="text-xs text-muted-foreground">PNG, JPG — helst hvit/gjennomsiktig bakgrunn</span>
               </label>
             )}
           </div>
@@ -240,7 +241,7 @@ function SettingsPage() {
   const [vatPct, setVatPct] = useState(DEFAULT_SETTINGS.vat_pct);
   const [closingPageOffsetMm, setClosingPageOffsetMm] = useState(DEFAULT_SETTINGS.closing_page_offset_mm);
   const [theme, setThemeState] = useState<Theme>(() =>
-    (typeof window !== "undefined" ? (localStorage.getItem("hm-theme") as Theme) : null) ?? "light"
+    (typeof window !== "undefined" ? (localStorage.getItem(THEME_STORAGE_KEY) as Theme) : null) ?? "light"
   );
 
   useEffect(() => {
@@ -261,7 +262,7 @@ function SettingsPage() {
 
   const applyTheme = (t: Theme) => {
     setThemeState(t);
-    localStorage.setItem("hm-theme", t);
+    localStorage.setItem(THEME_STORAGE_KEY, t);
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     document.documentElement.classList.toggle("dark", t === "dark" || (t === "system" && prefersDark));
   };
@@ -281,7 +282,7 @@ function SettingsPage() {
     closing_page_offset_mm: closingPageOffsetMm,
   };
 
-  // Med fanene er endringar lett å gløyme att på ei fane du ikkje ser
+  // Med fanene er endringer lett å glemme igjen på en fane du ikke ser
   const dirty = !!saved && Object.keys(patch).some(
     (k) => JSON.stringify((patch as any)[k]) !== JSON.stringify((saved as any)[k] ?? DEFAULT_SETTINGS[k as keyof typeof DEFAULT_SETTINGS])
   );
@@ -296,31 +297,31 @@ function SettingsPage() {
     }
   };
 
-  if (isLoading) return <div className="text-muted-foreground">Laster innstillingar…</div>;
+  if (isLoading) return <div className="text-muted-foreground">Laster innstillinger…</div>;
 
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Innstillingar</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Konfigurer standardverdiar og preferansar</p>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Innstillinger</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Konfigurer standardverdier og preferanser</p>
       </div>
 
       <Tabs defaultValue="firma" className="space-y-6">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
           <TabsTrigger value="firma"><Building2 className="mr-1.5 h-4 w-4" />Firma</TabsTrigger>
-          <TabsTrigger value="tilbod"><FileText className="mr-1.5 h-4 w-4" />Tilbod</TabsTrigger>
+          <TabsTrigger value="tilbod"><FileText className="mr-1.5 h-4 w-4" />Tilbud</TabsTrigger>
           <TabsTrigger value="okonomi"><Calculator className="mr-1.5 h-4 w-4" />Økonomi</TabsTrigger>
-          <TabsTrigger value="utsjaanad"><Palette className="mr-1.5 h-4 w-4" />Utsjånad</TabsTrigger>
+          <TabsTrigger value="utsjaanad"><Palette className="mr-1.5 h-4 w-4" />Utseende</TabsTrigger>
         </TabsList>
 
       <TabsContent value="tilbod" className="space-y-6">
-      {/* Tilbud-standardar */}
+      {/* Tilbud-standarder */}
       <SectionCard
         title="Tilbud"
-        description="Standardverdiar som vert fylt inn automatisk på nye tilbud"
+        description="Standardverdier som blir fylt inn automatisk på nye tilbud"
       >
         <div className="space-y-2">
-          <Label>Gyldighetsperiode (dagar)</Label>
+          <Label>Gyldighetsperiode (dager)</Label>
           <div className="flex items-center gap-3">
             <Input
               type="number"
@@ -332,18 +333,18 @@ function SettingsPage() {
               onFocus={(e) => e.target.select()}
             />
             <span className="text-sm text-muted-foreground">
-              dagar → gyldig t.o.m. = <strong>i dag + {validityDays} d</strong>
+              dager → gyldig t.o.m. = <strong>i dag + {validityDays} d</strong>
             </span>
           </div>
         </div>
 
         <div className="space-y-2">
           <Label>Standard tilbudstekst</Label>
-          <p className="text-xs text-muted-foreground">Vert forhåndsutfylt i tekstfeltet på nye tilbud.</p>
+          <p className="text-xs text-muted-foreground">Blir forhåndsutfylt i tekstfeltet på nye tilbud.</p>
           <Textarea
             value={defaultOfferText}
             onChange={(e) => setDefaultOfferText(e.target.value)}
-            placeholder="T.d. «Vi viser til hyggelig samtale og sender herved vårt tilbud på…»"
+            placeholder="F.eks. «Vi viser til hyggelig samtale og sender herved vårt tilbud på…»"
             rows={4}
             className="max-w-lg"
           />
@@ -352,29 +353,29 @@ function SettingsPage() {
         <div className="space-y-2">
           <Label>«Vår referanse»-alternativ</Label>
           <p className="text-xs text-muted-foreground">
-            Namn, telefon og e-post vert henta automatisk inn i PDF-en basert på kven som er vald som referanse.
+            Navn, telefon og e-post blir hentet automatisk inn i PDF-en basert på hvem som er valgt som referanse.
           </p>
           <RefList refs={ourRefs} onChange={setOurRefs} />
         </div>
       </SectionCard>
 
-      {/* Einingar */}
+      {/* Enheter */}
       <SectionCard
-        title="Einingar"
-        description="Tilgjengelege einingar i nedtrekkslista på tilbudslinjer"
+        title="Enheter"
+        description="Tilgjengelige enheter i nedtrekkslisten på tilbudslinjer"
       >
-        <EditableList items={units} onChange={setUnits} placeholder="T.d. km, kg, dag…" minItems={1} />
-        <p className="text-xs text-muted-foreground">«Annet…» med fritekst er alltid tilgjengeleg i tillegg til lista.</p>
+        <EditableList items={units} onChange={setUnits} placeholder="F.eks. km, kg, dag…" minItems={1} />
+        <p className="text-xs text-muted-foreground">«Annet…» med fritekst er alltid tilgjengelig i tillegg til listen.</p>
       </SectionCard>
 
       {/* Forbehold */}
       <SectionCard
         title="Forbehold"
-        description="Faste forbehold som kan veljast per tilbud og visast på PDF"
+        description="Faste forbehold som kan velges per tilbud og vises på PDF"
       >
         <ForbeholdList items={forbehold} onChange={setForbehold} />
         <p className="text-xs text-muted-foreground">
-          Forbehold vert valde per tilbud og visast som liten tekst på PDF-en.
+          Forbehold velges per tilbud og vises som liten tekst på PDF-en.
         </p>
       </SectionCard>
       </TabsContent>
@@ -383,7 +384,7 @@ function SettingsPage() {
       {/* Økonomi */}
       <SectionCard
         title="Økonomi"
-        description="Standard satsar og vilkår som visast på PDF-ar"
+        description="Standard satser og vilkår som vises på PDF-er"
       >
         <div className="space-y-2">
           <Label>MVA-sats (%)</Label>
@@ -397,7 +398,7 @@ function SettingsPage() {
               className="w-24 no-spinner"
               onFocus={(e) => e.target.select()}
             />
-            <span className="text-sm text-muted-foreground">% MVA vert vist på tilbods-PDF</span>
+            <span className="text-sm text-muted-foreground">% MVA vises på tilbuds-PDF</span>
           </div>
           <div className="flex gap-2 mt-1">
             {[0, 12, 25].map((v) => (
@@ -417,18 +418,18 @@ function SettingsPage() {
         </div>
 
         <div className="space-y-2">
-          <Label>Betalingsbetingelsar</Label>
+          <Label>Betalingsbetingelser</Label>
           <Input
             value={paymentTerms}
             onChange={(e) => setPaymentTerms(e.target.value)}
-            placeholder="T.d. «30 dager netto»"
+            placeholder="F.eks. «30 dager netto»"
             className="max-w-xs"
           />
-          <p className="text-xs text-muted-foreground">Visast i botnen av tilbods-PDF.</p>
+          <p className="text-xs text-muted-foreground">Vises i bunnen av tilbuds-PDF.</p>
         </div>
 
         <div className="space-y-2">
-          <Label>Avstand frå topp på avslutningsside (mm)</Label>
+          <Label>Avstand fra topp på avslutningsside (mm)</Label>
           <div className="flex items-center gap-3">
             <Input
               type="number"
@@ -439,16 +440,16 @@ function SettingsPage() {
               className="w-24 no-spinner"
               onFocus={(e) => e.target.select()}
             />
-            <span className="text-sm text-muted-foreground">mm ned frå toppen (høgare = lenger ned)</span>
+            <span className="text-sm text-muted-foreground">mm ned fra toppen (høyere = lenger ned)</span>
           </div>
-          <p className="text-xs text-muted-foreground">Juster om totalar/signatur sit for høgt eller lågt på siste side i PDF.</p>
+          <p className="text-xs text-muted-foreground">Juster hvis totaler/signatur sitter for høyt eller lavt på siste side i PDF.</p>
         </div>
       </SectionCard>
 
       {/* E-post */}
       <SectionCard
         title="E-post"
-        description="Mal for emnefeltet når tilbud sendast på e-post"
+        description="Mal for emnefeltet når tilbud sendes på e-post"
       >
         <div className="space-y-2">
           <Label>Emne-mal</Label>
@@ -459,9 +460,9 @@ function SettingsPage() {
             className="max-w-sm"
           />
           <p className="text-xs text-muted-foreground">
-            Variablar: <code className="rounded bg-muted px-1">{"{nr}"}</code> = tilbudsnummer,{" "}
+            Variabler: <code className="rounded bg-muted px-1">{"{nr}"}</code> = tilbudsnummer,{" "}
             <code className="rounded bg-muted px-1">{"{tittel}"}</code> = tittel,{" "}
-            <code className="rounded bg-muted px-1">{"{kunde}"}</code> = kundenamn
+            <code className="rounded bg-muted px-1">{"{kunde}"}</code> = kundenavn
           </p>
         </div>
       </SectionCard>
@@ -471,10 +472,10 @@ function SettingsPage() {
       {/* Firma-info */}
       <SectionCard
         title="Firmainformasjon"
-        description="Visast i overskrift på genererte PDF-ar"
+        description="Vises i overskrift på genererte PDF-er"
       >
         <div className="space-y-2">
-          <Label>Firmanamn</Label>
+          <Label>Firmanavn</Label>
           <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} className="max-w-xs" />
         </div>
         <div className="space-y-2">
@@ -484,14 +485,14 @@ function SettingsPage() {
         <div className="space-y-2">
           <Label>Tagline / undertittel</Label>
           <Input value={companyTagline} onChange={(e) => setCompanyTagline(e.target.value)} className="max-w-sm" />
-          <p className="text-xs text-muted-foreground">T.d. «Anlegg · Veiarbeid · Asfaltering»</p>
+          <p className="text-xs text-muted-foreground">F.eks. «Anlegg · Veiarbeid · Asfaltering»</p>
         </div>
       </SectionCard>
       </TabsContent>
 
       <TabsContent value="utsjaanad" className="space-y-6">
-      {/* Utsjånad */}
-      <SectionCard title="Utsjånad" description="Visuelle preferansar for denne nettlesaren">
+      {/* Utseende */}
+      <SectionCard title="Utseende" description="Visuelle preferanser for denne nettleseren">
         <div className="space-y-2">
           <Label>Tema</Label>
           <div className="flex gap-2">
@@ -520,15 +521,15 @@ function SettingsPage() {
       </TabsContent>
       </Tabs>
 
-      {/* Fast lagre-linje. Lagrar alle faner, ikkje berre den du ser. */}
+      {/* Fast lagre-linje. Lagrer alle faner, ikke bare den du ser. */}
       <div className="sticky bottom-0 z-20 mt-6 border-t bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
-            {dirty ? "Du har ulagra endringar" : "Alt er lagra"}
+            {dirty ? "Du har ulagrede endringer" : "Alt er lagret"}
           </p>
           <Button onClick={handleSave} size="lg" disabled={!tenantId || saving}>
             <Save className="mr-2 h-4 w-4" />
-            {saving ? "Lagrar…" : "Lagre alle innstillingar"}
+            {saving ? "Lagrer…" : "Lagre alle innstillinger"}
           </Button>
         </div>
       </div>

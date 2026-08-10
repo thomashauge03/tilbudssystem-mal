@@ -39,7 +39,7 @@ function PasswordConfirmModal({ onConfirm, onCancel, title, description }: {
     if (e) {
       const next = attempts + 1;
       setAttempts(next);
-      if (next >= maxAttempts) { setError("For mange feil forsøk. Prøv igjen seinare."); onCancel(); return; }
+      if (next >= maxAttempts) { setError("For mange feil forsøk. Prøv igjen senere."); onCancel(); return; }
       setError(`Feil passord. Prøv igjen (${next}/${maxAttempts}).`);
       return;
     }

@@ -10,7 +10,7 @@ export interface Forbehold {
 
 export interface OurRef {
   name: string;
-  position?: string; // stilling, t.d. "Daglig leder"
+  position?: string; // stilling, f.eks. "Daglig leder"
   phone: string;
   email: string;
   signature?: string; // base64 dataURL
@@ -107,13 +107,13 @@ export function useSaveSettings() {
   const { tenantId } = useAuth();
   const qc = useQueryClient();
   return async (patch: Partial<Omit<AppSettings, "id">>) => {
-    if (!tenantId) { toast.error("Ingen tenant tilknytta"); return false; }
+    if (!tenantId) { toast.error("Ingen tenant tilknyttet"); return false; }
     const { error } = await supabase
       .from("app_settings")
       .upsert({ ...patch, tenant_id: tenantId }, { onConflict: "tenant_id" });
     if (error) { toast.error(error.message); return false; }
     qc.invalidateQueries({ queryKey: ["app-settings", tenantId] });
-    toast.success("Innstillingar lagra");
+    toast.success("Innstillinger lagret");
     return true;
   };
 }

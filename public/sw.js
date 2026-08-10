@@ -1,6 +1,6 @@
-// Minimal service worker – gjer appen installerbar (PWA) på iOS og Android.
-// Held seg unna caching av API/HTML for å unngå at brukaren ser utdaterte data;
-// nettverk-først, med fallback berre når ein er offline.
+// Minimal service worker – gjør appen installerbar (PWA) på iOS og Android.
+// Holder seg unna caching av API/HTML for å unngå at brukeren ser utdaterte data;
+// nettverk-først, med fallback bare når man er offline.
 const CACHE = "tilbud-shell-v2";
 
 self.addEventListener("install", (event) => {
@@ -22,13 +22,13 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
-  // Sider (navigasjonar) og API: ALLTID rett til nett — aldri server ein
-  // utdatert mellomlagra HTML-versjon. Dette unngår "lokalt lagret versjon".
+  // Sider (navigasjoner) og API: ALLTID rett til nett — aldri server en
+  // utdatert mellomlagret HTML-versjon. Dette unngår "lokalt lagret versjon".
   if (req.mode === "navigate" || !req.url.startsWith(self.location.origin)) {
-    return; // la nettlesaren handtere det normalt
+    return; // la nettleseren håndtere det normalt
   }
 
-  // Statiske ressursar (js/css/bilde): nettverk-først med cache som offline-fallback.
+  // Statiske ressurser (js/css/bilde): nettverk-først med cache som offline-fallback.
   event.respondWith(
     fetch(req)
       .then((res) => {

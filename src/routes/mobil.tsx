@@ -72,7 +72,7 @@ function MobileDashboard() {
       </header>
 
       <main className="mx-auto max-w-md space-y-4 px-3 py-4">
-        {/* Nøkkeltal */}
+        {/* Nøkkeltall */}
         <section className="grid grid-cols-2 gap-2.5">
           <StatTile icon={CircleDollarSign} label="Kontraktssum" value={isLoading ? "…" : nok(d?.totalKontraktssum ?? 0)} tone="bg-primary/10 text-primary" />
           <StatTile icon={CheckCircle2} label="Fakturert" value={isLoading ? "…" : nok(d?.totalFakturert ?? 0)} tone="bg-emerald-100 text-emerald-700" />
@@ -80,11 +80,11 @@ function MobileDashboard() {
           <StatTile icon={FileText} label="Åpne tilbud" value={isLoading ? "…" : String(d?.åpneCount ?? 0)} tone="bg-blue-100 text-blue-700" />
         </section>
 
-        {/* Endringsmeldingar */}
+        {/* Endringsmeldinger */}
         <Link to="/endringsmeldinger" className="flex items-center justify-between rounded-xl border bg-card p-3 active:bg-accent/40">
           <span className="flex items-center gap-2">
             <span className="rounded-lg bg-primary/10 p-1.5 text-primary"><ClipboardEdit className="h-4 w-4" /></span>
-            <span className="text-sm font-medium">Endringsmeldingar</span>
+            <span className="text-sm font-medium">Endringsmeldinger</span>
           </span>
           <span className="text-sm font-semibold">{isLoading ? "…" : `${d?.amendmentsCount ?? 0} · ${nok(d?.amendmentTotalSum ?? 0)}`}</span>
         </Link>
@@ -94,7 +94,7 @@ function MobileDashboard() {
           <div className="flex items-center gap-2 border-b px-3 py-2.5">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
             <h2 className="text-sm font-semibold">Utløper snart</h2>
-            <span className="ml-auto text-[11px] text-muted-foreground">Neste 14 dagar</span>
+            <span className="ml-auto text-[11px] text-muted-foreground">Neste 14 dager</span>
           </div>
           <div className="divide-y">
             {isLoading ? (
@@ -120,13 +120,13 @@ function MobileDashboard() {
           <div className="flex items-center gap-2 border-b px-3 py-2.5">
             <FileText className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold">Siste tilbud</h2>
-            <Link to="/tilbud" className="ml-auto text-[11px] font-medium text-primary">Sjå alle</Link>
+            <Link to="/tilbud" className="ml-auto text-[11px] font-medium text-primary">Se alle</Link>
           </div>
           <div className="divide-y">
             {!offers ? (
               <p className="px-3 py-5 text-center text-xs text-muted-foreground">Laster…</p>
             ) : offers.length === 0 ? (
-              <p className="px-3 py-5 text-center text-xs text-muted-foreground">Ingen tilbud enno</p>
+              <p className="px-3 py-5 text-center text-xs text-muted-foreground">Ingen tilbud ennå</p>
             ) : offers.map((o: any) => (
               <Link key={o.id} to="/tilbud/$id" params={{ id: o.id }} className="flex items-center gap-2 px-3 py-2.5 active:bg-accent/40">
                 <span className="w-12 flex-shrink-0 tabular-nums text-xs text-muted-foreground">#{o.offer_number}</span>
@@ -134,7 +134,7 @@ function MobileDashboard() {
                   <p className="truncate text-sm font-medium">{o.title}</p>
                   <p className="truncate text-xs text-muted-foreground">{o.customer_name ?? "—"}</p>
                 </div>
-                {/* Signeringsindikatorar */}
+                {/* Signeringsindikatorer */}
                 <span className="flex flex-shrink-0 items-center gap-1" title="Kunde / kontrakt signert">
                   <PenLine className={`h-3.5 w-3.5 ${o.customer_signed_at ? "text-green-600" : "text-muted-foreground/30"}`} />
                   <FileCheck className={`h-3.5 w-3.5 ${o.contract_signed || o.customer_signed_at ? "text-green-600" : "text-muted-foreground/30"}`} />

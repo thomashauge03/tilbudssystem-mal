@@ -105,7 +105,7 @@ function ProsjekterPage() {
   });
 
   const save = async (p: Project) => {
-    if (!p.name.trim()) { toast.error("Prosjektnamn er påkrevd"); return; }
+    if (!p.name.trim()) { toast.error("Prosjektnavn er påkrevd"); return; }
     const payload = {
       name: p.name,
       project_number: p.project_number || null,
@@ -119,7 +119,7 @@ function ProsjekterPage() {
       ? await supabase.from("projects").update(payload).eq("id", p.id)
       : await supabase.from("projects").insert({ ...payload, tenant_id: tenantId });
     if (error) { toast.error(error.message); return; }
-    toast.success(p.id ? "Prosjekt oppdatert" : "Prosjekt oppretta");
+    toast.success(p.id ? "Prosjekt oppdatert" : "Prosjekt opprettet");
     setOpen(false);
     setEdit(null);
     qc.invalidateQueries({ queryKey: ["projects"] });
@@ -146,8 +146,8 @@ function ProsjekterPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Prosjekt</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{rows.length} prosjekt</p>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Prosjekter</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{rows.length} prosjekter</p>
         </div>
         <Button onClick={openNew}>
           <Plus className="mr-2 h-4 w-4" />Nytt prosjekt
@@ -158,7 +158,7 @@ function ProsjekterPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Søk på namn, nummer, kunde…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+          <Input placeholder="Søk på navn, nummer, kunde…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
         </div>
         <div className="flex gap-1 rounded-lg border bg-muted/40 p-1">
           {(["all", "aktiv", "fullført", "pause"] as const).map((s) => (
@@ -199,7 +199,7 @@ function ProsjekterPage() {
               <tr>
                 <td colSpan={8} className="px-4 py-16 text-center">
                   <FolderOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
-                  <p className="text-muted-foreground">Ingen prosjekt funne</p>
+                  <p className="text-muted-foreground">Ingen prosjekter funnet</p>
                 </td>
               </tr>
             ) : rows.map((p: any, i: number) => (
@@ -243,12 +243,12 @@ function ProsjekterPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2 space-y-1">
-                  <Label>Prosjektnamn *</Label>
-                  <Input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="T.d. Vegarbeid Fv44" />
+                  <Label>Prosjektnavn *</Label>
+                  <Input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="F.eks. Veiarbeid Fv44" />
                 </div>
                 <div className="space-y-1">
                   <Label>Prosjektnummer</Label>
-                  <Input value={edit.project_number} onChange={(e) => setEdit({ ...edit, project_number: e.target.value })} placeholder="T.d. 2026-001" />
+                  <Input value={edit.project_number} onChange={(e) => setEdit({ ...edit, project_number: e.target.value })} placeholder="F.eks. 2026-001" />
                 </div>
                 <div className="space-y-1">
                   <Label>Startdato</Label>
@@ -259,7 +259,7 @@ function ProsjekterPage() {
               <div className="space-y-1">
                 <Label>Kunde</Label>
                 <Select value={edit.customer_id ?? "__none"} onValueChange={pickCustomer}>
-                  <SelectTrigger><SelectValue placeholder="Vel kunde…" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Velg kunde…" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none">— Ingen / manuell —</SelectItem>
                     {(customers ?? []).map((c: any) => (
@@ -271,8 +271,8 @@ function ProsjekterPage() {
 
               {!edit.customer_id && (
                 <div className="space-y-1">
-                  <Label>Kundenamn (manuelt)</Label>
-                  <Input value={edit.customer_name} onChange={(e) => setEdit({ ...edit, customer_name: e.target.value })} placeholder="Namn på kunde…" />
+                  <Label>Kundenavn (manuelt)</Label>
+                  <Input value={edit.customer_name} onChange={(e) => setEdit({ ...edit, customer_name: e.target.value })} placeholder="Navn på kunde…" />
                 </div>
               )}
 
@@ -289,8 +289,8 @@ function ProsjekterPage() {
               </div>
 
               <div className="space-y-1">
-                <Label>Beskriving</Label>
-                <Textarea rows={3} value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} placeholder="Kort beskriving av prosjektet…" />
+                <Label>Beskrivelse</Label>
+                <Textarea rows={3} value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} placeholder="Kort beskrivelse av prosjektet…" />
               </div>
             </div>
           )}

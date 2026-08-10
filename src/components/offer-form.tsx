@@ -59,8 +59,8 @@ function emptyOffer(adminPct: number, validityDays: number, defaultRef: string, 
   };
 }
 
-// offers.forbehold og offers.attachment_urls kan kome tilbake som JSON-streng
-// (kolonnen er text i skjemaet) eller som ekte array (jsonb). Tol begge.
+// offers.forbehold og offers.attachment_urls kan komme tilbake som JSON-streng
+// (kolonnen er text i skjemaet) eller som ekte array (jsonb). Tolk begge.
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
   if (typeof v === "string" && v.trim()) {
@@ -137,7 +137,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   useEffect(() => {
     if (!isEdit && !initialized && adminCost !== undefined && appSettings !== undefined) {
-      // Gjenopprett utkast frå sessionStorage om det finst (berre same fane/økt)
+      // Gjenopprett utkast fra sessionStorage hvis det finnes (bare samme fane/økt)
       const saved = sessionStorage.getItem(DRAFT_KEY);
       if (saved) {
         try {
@@ -160,7 +160,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // L3: appSettings added to deps — it's read for offer_validity_days, our_refs, and default_offer_text
   }, [isEdit, loaded, adminCost, initialized, appSettings]);
 
-  // Lagre skjematilstand i sessionStorage ved kvar endring (berre for nye tilbod)
+  // Lagre skjematilstand i sessionStorage ved hver endring (bare for nye tilbud)
   useEffect(() => {
     if (!initialized || isEdit) return;
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ offer, lines }));
@@ -191,7 +191,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const removeLine = (i: number) => setLines((p) => p.filter((_, idx) => idx !== i));
   const updLine = (i: number, patch: Partial<Line>) => setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l));
 
-  // Flytt ei linje frå ein posisjon til ein annan og oppdater sort_order
+  // Flytt en linje fra en posisjon til en annen og oppdater sort_order
   const moveLine = (from: number, to: number) =>
     setLines((p) => {
       if (from === to || to < 0 || to >= p.length) return p;
@@ -212,7 +212,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const [uploading, setUploading] = useState(false);
   const [dropActive, setDropActive] = useState(false);
 
-  // Last ned eit vedlegg til maskina (naudsynt for webmail — sjå kommentar ved drag-ut)
+  // Last ned et vedlegg til maskinen (nødvendig for webmail — se kommentar ved drag-ut)
   const downloadAttachment = async (att: { name: string; url: string }) => {
     try {
       const res = await fetch(att.url);
@@ -228,10 +228,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     }
   };
 
-  // Last opp ei liste med filer til vedleggs-bøtta
+  // Last opp en liste med filer til vedleggsbøtten
   const uploadFiles = async (files: File[]) => {
     const pdfs = files.filter((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
-    if (files.length && !pdfs.length) { toast.error("Berre PDF-filer kan leggast ved"); return; }
+    if (files.length && !pdfs.length) { toast.error("Bare PDF-filer kan legges ved"); return; }
     if (!pdfs.length) return;
     setUploading(true);
     try {
@@ -241,7 +241,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         const { error } = await supabase.storage.from("offer-attachments").upload(path, file, { upsert: true });
         if (error) { toast.error(error.message); continue; }
         const { data } = supabase.storage.from("offer-attachments").getPublicUrl(path);
-        // funksjonell oppdatering slik at fleire filer i same slepp ikkje overskriv kvarandre
+        // funksjonell oppdatering slik at flere filer i samme slipp ikke overskriver hverandre
         setOffer((p) => ({ ...p, attachment_urls: [...(p.attachment_urls ?? []), { name: file.name, url: data.publicUrl }] }));
         toast.success(`${file.name} lagt til`);
       }
@@ -276,7 +276,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   const save = async (): Promise<string | null> => {
     if (!offer.title.trim()) { toast.error("Overskrift er påkrevd"); return null; }
-    if (!offer.customer_id) { toast.error("Velg ein kunde frå kunderegisteret"); return null; }
+    if (!offer.customer_id) { toast.error("Velg en kunde fra kunderegisteret"); return null; }
 
     const payload = {
       title: offer.title,
@@ -339,11 +339,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (id && !isEdit) navigate({ to: "/tilbud/$id", params: { id } });
   };
 
-  // Utan innstillingane blir firmanamn/logo tomme i PDF-en. Betre å vente enn
-  // å produsere eit dokument med feil (eller manglande) merkevare.
+  // Uten innstillingene blir firmanavn/logo tomme i PDF-en. Bedre å vente enn
+  // å produsere et dokument med feil (eller manglende) merkevare.
   const settingsReady = !!appSettings;
   const requireSettings = () => {
-    if (!settingsReady) { toast.error("Firmainnstillingane er ikkje lasta enno – prøv igjen om eit augeblink"); return false; }
+    if (!settingsReady) { toast.error("Firmainnstillingene er ikke lastet ennå – prøv igjen om et øyeblikk"); return false; }
     return true;
   };
 
@@ -437,7 +437,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     const vatPct = appSettings?.vat_pct ?? 25;
     const totalInclVat = total * (1 + vatPct / 100);
 
-    // Hent kundesignatur frå signing tokens
+    // Hent kundesignatur fra signing tokens
     let customerSignedName: string | undefined;
     let customerSignature: string | undefined;
     const { data: tokenRows } = await supabase
@@ -533,7 +533,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                         {p.project_number && <span className="ml-3 flex-shrink-0 text-xs text-muted-foreground tabular-nums">#{p.project_number}</span>}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">— Ikkje knytt til prosjekt —</span>
+                      <span className="text-muted-foreground">— Ikke knyttet til prosjekt —</span>
                     );
                   })()}
                   <ChevronsUpDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -543,10 +543,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <Command>
                   <CommandInput placeholder="Søk prosjekt…" />
                   <CommandList>
-                    <CommandEmpty>Ingen prosjekt funne.</CommandEmpty>
+                    <CommandEmpty>Ingen prosjekter funnet.</CommandEmpty>
                     <CommandGroup>
                       <CommandItem value="__none" onSelect={() => { pickProject("__none"); setProjectOpen(false); }}>
-                        <span className="text-muted-foreground">— Ikkje knytt til prosjekt —</span>
+                        <span className="text-muted-foreground">— Ikke knyttet til prosjekt —</span>
                       </CommandItem>
                       {(projects ?? []).map((p: any) => (
                         <CommandItem key={p.id} value={`${p.name} ${p.project_number ?? ""}`} onSelect={() => { pickProject(p.id); setProjectOpen(false); }}>
@@ -581,7 +581,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   <Command>
                     <CommandInput placeholder="Søk kunde…" />
                     <CommandList>
-                      <CommandEmpty>Ingen kunder funne.</CommandEmpty>
+                      <CommandEmpty>Ingen kunder funnet.</CommandEmpty>
                       <CommandGroup>
                         {(customers ?? []).map((c) => (
                           <CommandItem key={c.id} value={`${c.name} ${c.email ?? ""}`} onSelect={() => { pickCustomer(c.id); setCustomerOpen(false); }}>
@@ -711,12 +711,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <div
                   key={i}
                   draggable
-                  title="Dra til skrivebordet eller Outlook-programmet. Webmail (Gmail o.l.) kan ikkje ta imot fila — bruk nedlastingsknappen."
+                  title="Dra til skrivebordet eller Outlook-programmet. Webmail (Gmail o.l.) kan ikke ta imot filen — bruk nedlastingsknappen."
                   onDragStart={(e) => {
-                    // Berre DownloadURL: nettlesaren hentar då fila og leverer ho som ei ekte
-                    // fil til mottakarar UTANFOR nettlesaren (utforskaren, Outlook-programmet).
-                    // Ei nettside kan ikkje levere ei fil til ei anna nettside via drag, og set vi
-                    // text/plain eller text/uri-list her, limer webmail inn namn/lenke i staden.
+                    // Bare DownloadURL: nettleseren henter da filen og leverer den som en ekte
+                    // fil til mottakere UTENFOR nettleseren (utforskeren, Outlook-programmet).
+                    // En nettside kan ikke levere en fil til en annen nettside via drag, og setter vi
+                    // text/plain eller text/uri-list her, limer webmail inn navn/lenke i stedet.
                     e.dataTransfer.setData("DownloadURL", `application/pdf:${att.name}:${att.url}`);
                     e.dataTransfer.effectAllowed = "copy";
                   }}
@@ -727,12 +727,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   <button
                     type="button"
                     onClick={() => void downloadAttachment(att)}
-                    title="Last ned – dra deretter fila frå nedlastingane inn i e-posten"
+                    title="Last ned – dra deretter filen fra nedlastingene inn i e-posten"
                     className="text-muted-foreground hover:text-primary"
                   >
                     <Download className="h-3.5 w-3.5" />
                   </button>
-                  <a href={att.url} target="_blank" rel="noopener noreferrer" title="Opne i ny fane" className="text-muted-foreground hover:text-primary">
+                  <a href={att.url} target="_blank" rel="noopener noreferrer" title="Åpne i ny fane" className="text-muted-foreground hover:text-primary">
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                   <button
@@ -748,7 +748,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   </button>
                 </div>
               ))}
-              {/* Slepp-sone: dra PDF rett hit frå e-post eller utforskaren, eller lim inn med Ctrl+V */}
+              {/* Slippsone: dra PDF rett hit fra e-post eller utforskeren, eller lim inn med Ctrl+V */}
               <label
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropActive(true); }}
                 onDragEnter={(e) => { e.preventDefault(); setDropActive(true); }}
@@ -780,11 +780,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 />
                 <Paperclip className="h-5 w-5" />
                 {uploading ? (
-                  <span className="font-medium">Lastar opp…</span>
+                  <span className="font-medium">Laster opp…</span>
                 ) : (
                   <>
-                    <span className="font-medium">Slepp PDF her</span>
-                    <span>eller klikk for å velje fil · Ctrl+V limer inn</span>
+                    <span className="font-medium">Slipp PDF her</span>
+                    <span>eller klikk for å velge fil · Ctrl+V limer inn</span>
                   </>
                 )}
               </label>
@@ -835,7 +835,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                         draggable
                         onDragStart={() => setDragIndex(i)}
                         onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
-                        title="Dra for å flytte linja"
+                        title="Dra for å flytte linjen"
                       >
                         <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />
                       </td>
@@ -864,7 +864,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                         {isCustomUnit && (
                           <Input
                             className="mt-1 h-8 text-sm"
-                            placeholder="Skriv eining…"
+                            placeholder="Skriv enhet…"
                             value={l.unit}
                             onChange={(e) => updLine(i, { unit: e.target.value })}
                             autoFocus
@@ -898,7 +898,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               </tbody>
             </table>
 
-            {/* Mobil: kvar linje som eit kort med stabla felt */}
+            {/* Mobil: hver linje som et kort med stablede felt */}
             <div className="space-y-3 md:hidden">
               {lines.length === 0 ? (
                 <p className="px-2 py-6 text-center text-muted-foreground">Ingen linjer. Klikk "Ny linje" for å starte.</p>
@@ -941,7 +941,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                           </SelectContent>
                         </Select>
                         {isCustomUnit && (
-                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv eining…" value={l.unit} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
+                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv enhet…" value={l.unit} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
                         )}
                       </div>
                       <div className="space-y-1.5">
@@ -978,7 +978,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         </div>
       </div>
 
-      {/* Handlingslinje som alltid ligg i botn — nyttig på lange tilbod */}
+      {/* Handlingslinje som alltid ligger i bunnen — nyttig på lange tilbud */}
       <div className="sticky bottom-0 z-20 -mx-4 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm">

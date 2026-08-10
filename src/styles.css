@@ -90,7 +90,7 @@
   --sidebar-ring: oklch(0.49 0.22 27);
 }
 
-/* Dark mode override — lysare for betre lesbarheit */
+/* Dark mode override — lysere for bedre lesbarhet */
 .dark {
   --background: oklch(0.19 0.004 80);
   --foreground: oklch(0.94 0.005 80);
@@ -150,11 +150,11 @@
   -moz-appearance: textfield;
 }
 
-/* Logo: fjern kvit boks på lys bakgrunn */
+/* Logo: fjern hvit boks på lys bakgrunn */
 .hm-logo {
   mix-blend-mode: multiply;
 }
-/* Logo: liten kvit pille i mørk modus */
+/* Logo: liten hvit pille i mørk modus */
 .dark .hm-logo {
   mix-blend-mode: normal;
   background: white;
@@ -407,11 +407,11 @@
   .no-print { display: none !important; }
 }
 
-/* ── Mobil: hindre at sida vert breiare enn skjermen (slepp å zoome ut) ── */
+/* ── Mobil: hindre at siden blir bredere enn skjermen (slipper å zoome ut) ── */
 @media (max-width: 768px) {
   html, body { max-width: 100%; overflow-x: hidden; }
 
-  /* Toppmenyen: smalare padding og horisontal scroll på fanene */
+  /* Toppmenyen: smalere padding og horisontal scroll på fanene */
   .hm-topnav {
     padding: 0 12px;
     gap: 0;
@@ -435,6 +435,6 @@
 
   .hm-nav-right { flex-shrink: 0; margin-left: 8px; }
 
-  /* Hovudinnhald: mindre sidepadding så korta fyller breidda */
+  /* Hovedinnhold: mindre sidepadding så kortene fyller bredden */
   main.mx-auto { padding-left: 16px !important; padding-right: 16px !important; }
 }

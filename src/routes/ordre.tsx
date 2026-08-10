@@ -159,7 +159,7 @@ function OrdrePage() {
                   <td className="px-4 py-3 text-sm text-muted-foreground">{fmtDate(o.offer_date)}</td>
                   <td className="px-4 py-3 text-sm">{o.our_ref ?? "—"}</td>
 
-                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()} title={o.customer_signed_at ? "Signert av kunde" : "Ikkje signert av kunde"}>
+                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()} title={o.customer_signed_at ? "Signert av kunde" : "Ikke signert av kunde"}>
                     <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.customer_signed_at ? "bg-green-500" : "bg-red-400"}`} />
                   </td>
                   {(() => {
@@ -173,7 +173,7 @@ function OrdrePage() {
                               ? autoSigned
                                 ? "Kontrakt signert (vår referanse + kunde)"
                                 : "Kontrakt signert"
-                              : "Kontrakt ikkje signert — klikk for å endre"
+                              : "Kontrakt ikke signert — klikk for å endre"
                           }
                           onClick={async (e) => {
                             e.stopPropagation();

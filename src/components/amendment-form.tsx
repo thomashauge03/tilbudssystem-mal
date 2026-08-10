@@ -88,7 +88,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
 
   useEffect(() => {
     if (!isEdit && !init) {
-      // Gjenopprett utkast frå sessionStorage om det finst (berre same fane/økt)
+      // Gjenopprett utkast fra sessionStorage om det finnes (bare samme fane/økt)
       const saved = sessionStorage.getItem(DRAFT_KEY);
       if (saved) {
         try {
@@ -104,7 +104,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
     if (isEdit && loaded && !init) { setA(loaded.amendment as any); setLines(loaded.lines); setInit(true); }
   }, [isEdit, loaded, init]);
 
-  // Lagre skjematilstand i sessionStorage ved kvar endring (berre for nye endringsmeldingar)
+  // Lagre skjematilstand i sessionStorage ved hver endring (bare for nye endringsmeldinger)
   useEffect(() => {
     if (!init || isEdit) return;
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ a, lines }));
@@ -141,7 +141,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
   const removeLine = (i: number) => setLines((p) => p.filter((_, idx) => idx !== i));
   const updLine = (i: number, patch: Partial<ALine>) => setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l));
 
-  // Generate amendment number: [project]-[seq]
+  // Generer endringsmeldingsnummer: [prosjekt]-[løpenummer]
   async function nextNumber(project: string): Promise<string> {
     const prefix = (project || "0").trim();
     const { data } = await supabase.from("amendments").select("amendment_number").like("amendment_number", `${prefix}-%`);
@@ -231,9 +231,9 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
           <div className="space-y-2">
             <Label>Knytt til tilbud</Label>
             <Select value={a.offer_id ?? "__none"} onValueChange={pickOffer}>
-              <SelectTrigger><SelectValue placeholder="Vel tilbud…" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Velg tilbud…" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none">— Ikkje knytt til tilbud —</SelectItem>
+                <SelectItem value="__none">— Ikke knyttet til tilbud —</SelectItem>
                 {(offers ?? []).map((o: any) => (
                   <SelectItem key={o.id} value={o.id}>
                     #{o.offer_number} – {o.title}{o.customer_name ? ` (${o.customer_name})` : ""}
@@ -245,9 +245,9 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
           <div className="space-y-2">
             <Label>Knytt til prosjekt</Label>
             <Select value={a.project_id ?? "__none"} onValueChange={pickProject}>
-              <SelectTrigger><SelectValue placeholder="Vel prosjekt…" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Velg prosjekt…" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none">— Ikkje knytt til prosjekt —</SelectItem>
+                <SelectItem value="__none">— Ikke knyttet til prosjekt —</SelectItem>
                 {(projects ?? []).map((p: any) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name}{p.project_number ? ` (#${p.project_number})` : ""}
@@ -331,7 +331,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
                         {isCustomUnit && (
                           <Input
                             className="mt-1 h-8 text-sm"
-                            placeholder="Skriv eining…"
+                            placeholder="Skriv enhet…"
                             value={l.unit}
                             onChange={(e) => updLine(i, { unit: e.target.value })}
                             autoFocus
@@ -347,7 +347,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
               </tbody>
             </table>
 
-            {/* Mobil: kvar linje som eit kort med stabla felt */}
+            {/* Mobil: hver linje som et kort med stablede felt */}
             <div className="space-y-3 md:hidden">
               {lines.length === 0 ? (
                 <p className="px-2 py-6 text-center text-muted-foreground">Ingen linjer ennå.</p>
@@ -378,7 +378,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
                           </SelectContent>
                         </Select>
                         {isCustomUnit && (
-                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv eining…" value={l.unit} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
+                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv enhet…" value={l.unit} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
                         )}
                       </div>
                       <div className="space-y-1.5">

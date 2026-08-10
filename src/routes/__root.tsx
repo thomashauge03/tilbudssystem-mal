@@ -95,7 +95,7 @@ function AppShell() {
     // H4: validate hex color before writing to CSS to prevent CSS injection
     const color = raw && /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : null;
     if (color) {
-      // Berekn luminans for å velje riktig tekstfarge (kvit/svart)
+      // Beregn luminans for å velge riktig tekstfarge (hvit/svart)
       const hex = color.replace("#", "");
       const r = parseInt(hex.slice(0, 2), 16) / 255;
       const g = parseInt(hex.slice(2, 4), 16) / 255;
@@ -153,7 +153,7 @@ function AppShell() {
     return <NoTenantPage email={user?.email ?? ""} signOut={signOut} />;
   }
 
-  // Mobil-dashbord: full skjerm utan desktop-nav
+  // Mobil-dashbord: full skjerm uten desktop-nav
   if (path.startsWith("/mobil")) return <Outlet />;
 
   return (

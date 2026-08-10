@@ -20,3 +20,8 @@ export const addDays = (d: Date, days: number) => {
 
 export const UNITS = ["stk", "m", "m²", "m³", "tonn", "time", "LS", "RS"];
 export const OUR_REFS = ["Tommy Hauge", "Karl Hauge"];
+
+// Én felles nøkkel for temavalget. Tidligere skrev toppmenyen til "th-theme"
+// mens innstillingssiden brukte "hm-theme", så de to temavelgerne overstyrte
+// hverandre og valget i Innstillinger overlevde ikke en omlasting.
+export const THEME_STORAGE_KEY = "th-theme";

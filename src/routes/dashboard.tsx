@@ -38,7 +38,7 @@ export function useDashboard() {
       const offers = offersRes.data ?? [];
       const amendments = amendmentsRes.data ?? [];
 
-      // Rekn ut stats for kvart tilbud
+      // Regn ut stats for hvert tilbud
       const offerStats = offers.map((o: any) => {
         const total = offerTotal(o.offer_lines, o.admin_cost_pct);
         const inv = Number(o.invoiced_amount ?? 0);
@@ -64,7 +64,7 @@ export function useDashboard() {
       const amendmentTotalSum = amendmentStats.reduce((s, a) => s + a.total, 0);
       const amendmentFakturert = amendmentStats.reduce((s, a) => s + a.inv, 0);
 
-      // Nylige + utgåande
+      // Nylige + utgående
       const recent = (recentRes.data ?? []).map((o: any) => ({
         ...o,
         total: offerTotal(o.offer_lines, o.admin_cost_pct),
@@ -98,7 +98,7 @@ export function useDashboard() {
   });
 }
 
-// --- Sub-komponentar ---
+// --- Sub-komponenter ---
 
 function StatCard({
   icon: Icon,
@@ -198,13 +198,13 @@ function Dashboard() {
 
   const faktureringsRing = d ? [
     { name: "Fullstendig fakturert", value: d.totalFakturert, color: RING_COLORS.fakturert },
-    { name: "Delvis / ikkje fakturert", value: d.totalGjenstår, color: RING_COLORS.ikkjeStarta },
+    { name: "Delvis / ikke fakturert", value: d.totalGjenstår, color: RING_COLORS.ikkjeStarta },
   ] : [];
 
   const tilbudStatusRing = d ? [
     { name: "Fullstendig fakturert", value: d.fullFakturertCount, color: RING_COLORS.fakturert },
     { name: "Delvis fakturert", value: d.delvisFakturertCount, color: RING_COLORS.delvis },
-    { name: "Ikkje starta", value: d.ikkjeStartaCount, color: "#94a3b8" },
+    { name: "Ikke startet", value: d.ikkjeStartaCount, color: "#94a3b8" },
     { name: "Utgåtte", value: d.utgåtteCount, color: RING_COLORS.utgått },
   ] : [];
 
@@ -219,20 +219,20 @@ function Dashboard() {
         <p className="mt-1 text-sm text-muted-foreground">Oversikt over tilbud, fakturering og aktivitet</p>
       </div>
 
-      {/* Hovudkort — rad 1 */}
+      {/* Hovedkort — rad 1 */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={CircleDollarSign} label="Total kontraktssum" value={isLoading ? "…" : nok(d?.totalKontraktssum ?? 0)} hint="Alle tilbud" />
         <StatCard icon={CheckCircle2} label="Fakturert" value={isLoading ? "…" : nok(d?.totalFakturert ?? 0)} hint={isLoading ? "" : `${fakturertPct.toFixed(1)} % av total`} accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" />
-        <StatCard icon={TrendingUp} label="Gjenstår" value={isLoading ? "…" : nok(d?.totalGjenstår ?? 0)} hint="Ikkje fakturert enno" accent="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
-        <StatCard icon={ClipboardEdit} label="Endringsmeldingar" value={isLoading ? "…" : String(d?.amendmentsCount ?? 0)} hint={isLoading ? "" : `${nok(d?.amendmentTotalSum ?? 0)} total`} to="/endringsmeldinger" />
+        <StatCard icon={TrendingUp} label="Gjenstår" value={isLoading ? "…" : nok(d?.totalGjenstår ?? 0)} hint="Ikke fakturert ennå" accent="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
+        <StatCard icon={ClipboardEdit} label="Endringsmeldinger" value={isLoading ? "…" : String(d?.amendmentsCount ?? 0)} hint={isLoading ? "" : `${nok(d?.amendmentTotalSum ?? 0)} total`} to="/endringsmeldinger" />
       </div>
 
-      {/* Rad 2: talstatistikk */}
+      {/* Rad 2: tallstatistikk */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={FileText} label="Åpne tilbud" value={isLoading ? "…" : String(d?.åpneCount ?? 0)} hint="Innanfor gyldigheitsperiode" to="/tilbud" />
+        <StatCard icon={FileText} label="Åpne tilbud" value={isLoading ? "…" : String(d?.åpneCount ?? 0)} hint="Innenfor gyldighetsperiode" to="/tilbud" />
         <StatCard icon={CheckCircle2} label="Fullt fakturert" value={isLoading ? "…" : String(d?.fullFakturertCount ?? 0)} hint="100 % fakturert" accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" to="/status" />
         <StatCard icon={Clock} label="Delvis fakturert" value={isLoading ? "…" : String(d?.delvisFakturertCount ?? 0)} hint="Mellom 1–99 %" accent="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" to="/status" />
-        <StatCard icon={AlertTriangle} label="Utgåtte tilbud" value={isLoading ? "…" : String(d?.utgåtteCount ?? 0)} hint="Utløpt, ikkje fullt fakturert" accent="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" />
+        <StatCard icon={AlertTriangle} label="Utgåtte tilbud" value={isLoading ? "…" : String(d?.utgåtteCount ?? 0)} hint="Utløpt, ikke fullt fakturert" accent="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" />
       </div>
 
       {/* Diagram-seksjon */}
@@ -265,7 +265,7 @@ function Dashboard() {
             {[
               { label: "Fullstendig fakturert", val: d?.fullFakturertCount ?? 0, color: RING_COLORS.fakturert },
               { label: "Delvis fakturert", val: d?.delvisFakturertCount ?? 0, color: RING_COLORS.delvis },
-              { label: "Ikkje starta", val: d?.ikkjeStartaCount ?? 0, color: "#94a3b8" },
+              { label: "Ikke startet", val: d?.ikkjeStartaCount ?? 0, color: "#94a3b8" },
               { label: "Utgåtte", val: d?.utgåtteCount ?? 0, color: RING_COLORS.utgått },
             ].map((r) => (
               <div key={r.label} className="flex items-center justify-between gap-2">
@@ -283,7 +283,7 @@ function Dashboard() {
         <div className="rounded-xl border bg-card shadow-sm flex flex-col">
           <div className="border-b px-5 py-4">
             <h2 className="text-sm font-semibold">Utløper snart</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Neste 14 dagar</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Neste 14 dager</p>
           </div>
           <div className="flex-1 divide-y overflow-auto">
             {isLoading ? (
@@ -310,7 +310,7 @@ function Dashboard() {
         <div className="flex items-center justify-between border-b px-6 py-4">
           <h2 className="text-lg font-semibold">Siste godkjente tilbud</h2>
           <Link to="/tilbud" className="flex items-center gap-1 text-sm font-medium text-primary hover:underline">
-            Sjå alle <ArrowRight className="h-3 w-3" />
+            Se alle <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
         <div className="divide-y">
@@ -318,7 +318,7 @@ function Dashboard() {
             <p className="px-6 py-8 text-center text-muted-foreground">Laster…</p>
           ) : (d?.recent ?? []).length === 0 ? (
             <p className="px-6 py-8 text-center text-muted-foreground">
-              Ingen godkjente tilbud enno.{" "}
+              Ingen godkjente tilbud ennå.{" "}
               <Link to="/tilbud" className="text-primary hover:underline">Gå til tilbud og godkjenn</Link>
             </p>
           ) : (d?.recent ?? []).map((o: any) => {

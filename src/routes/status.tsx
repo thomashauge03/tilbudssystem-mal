@@ -138,7 +138,7 @@ function PaymentsPanel({
       ) : (
         <>
           {(payments ?? []).length === 0 && !adding && (
-            <p className="text-sm text-muted-foreground italic">Ingen fakturaer registrert enno.</p>
+            <p className="text-sm text-muted-foreground italic">Ingen fakturaer registrert ennå.</p>
           )}
 
           {(payments ?? []).length > 0 && (
@@ -480,7 +480,7 @@ function StatusPage() {
         </div>
       </section>
 
-      {/* Endringsmeldingar */}
+      {/* Endringsmeldinger */}
       {filter !== "active" && (
         <section className="space-y-2">
           <h2 className="text-lg font-semibold">Endringsmeldinger</h2>

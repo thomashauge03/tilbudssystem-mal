@@ -24,7 +24,7 @@ const STATUSES = [
 
 type Status = (typeof STATUSES)[number];
 
-// Rekkjefølgje for sortering — lågast tal kjem øvst
+// Rekkefølge for sortering — lavest tall kommer øverst
 const STATUS_ORDER: Record<Status, number> = {
   "Forespørsel Mottatt": 0,
   "Under Oppfølging":    1,
@@ -49,7 +49,7 @@ interface Lead {
   status_changed_at: string | null;
 }
 
-// Fargeklassar for statusbadges og teljekorta
+// Fargeklasser for statusbadges og tellekortene
 const STATUS_BADGE: Record<Status, string> = {
   "Forespørsel Mottatt": "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
   "Under Oppfølging":    "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
@@ -124,7 +124,7 @@ function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<Omit<Lead, "id" | "created_at" | "status_changed_at">>(() => {
-    // Gjenopprett utkast frå sessionStorage om det finst (berre same fane/økt)
+    // Gjenopprett utkast fra sessionStorage hvis det finnes (bare samme fane/økt)
     const saved = sessionStorage.getItem(draftKey);
     if (saved) {
       try { return JSON.parse(saved); } catch { sessionStorage.removeItem(draftKey); }
@@ -134,7 +134,7 @@ function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
   const f = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
 
-  // Lagre skjematilstand i sessionStorage ved kvar endring
+  // Lagre skjematilstand i sessionStorage ved hver endring
   useEffect(() => {
     sessionStorage.setItem(draftKey, JSON.stringify(form));
   }, [form, draftKey]);
@@ -146,9 +146,9 @@ function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
     <tr className="bg-muted/30 border-y-2 border-primary/20">
       <td className="px-2 py-2 min-w-[140px]">
         <Select value={form.ansvarlig || "__none"} onValueChange={(v) => f("ansvarlig", v === "__none" ? "" : v)}>
-          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Vel…" /></SelectTrigger>
+          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Velg…" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__none">— Ikkje tildelt —</SelectItem>
+            <SelectItem value="__none">— Ikke tildelt —</SelectItem>
             {refs.filter(r => r?.trim()).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
           </SelectContent>
         </Select>
@@ -171,7 +171,7 @@ function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
         <Input value={form.adresse} onChange={(e) => f("adresse", e.target.value)} placeholder="Adresse" className="h-8 text-xs" />
       </td>
       <td className="px-2 py-2 min-w-[120px]">
-        <Input value={form.postnr_sted} onChange={(e) => f("postnr_sted", e.target.value)} placeholder="Postnr/stad" className="h-8 text-xs" />
+        <Input value={form.postnr_sted} onChange={(e) => f("postnr_sted", e.target.value)} placeholder="Postnr/sted" className="h-8 text-xs" />
       </td>
       <td className="px-2 py-2 min-w-[120px]">
         <Input value={form.telefon} onChange={(e) => f("telefon", e.target.value)} placeholder="Telefon" className="h-8 text-xs" />
@@ -216,7 +216,7 @@ async function upsertCustomer(lead: Omit<Lead, "id" | "created_at" | "status_cha
   const notes = lead.hva || null;
 
   if (existing) {
-    // Oppdater med ny info om feltet er tomt
+    // Oppdater med ny info hvis feltet er tomt
     await supabase.from("customers").update({
       email: lead.mail || null,
       phone: lead.telefon || null,
@@ -263,7 +263,7 @@ function PotensielleKunderPage() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["potential-customers"] });
 
-  // Slett automatisk "Tilbud Avslått" som er eldre enn 24 timar
+  // Slett automatisk "Tilbud Avslått" som er eldre enn 24 timer
   useEffect(() => {
     if (!tenantId) return; // C4: guard — tenantId not yet loaded
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -296,7 +296,7 @@ function PotensielleKunderPage() {
     } else {
       const { error } = await supabase.from("potential_customers").update(payload).eq("id", id);
       if (error) { toast.error(error.message); return; }
-      toast.success("Lagra");
+      toast.success("Lagret");
     }
 
     // Opprett/oppdater kunden i kunderegister
@@ -322,12 +322,12 @@ function PotensielleKunderPage() {
   const remove = async (id: string) => {
     const { error } = await supabase.from("potential_customers").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
-    toast.success("Sletta");
+    toast.success("Slettet");
     setDeleteId(null);
     refresh();
   };
 
-  // Sorter: etter status-rekkjefølgje, deretter dato (nyaste øvst)
+  // Sorter: etter status-rekkefølge, deretter dato (nyeste øverst)
   const sorted = [...leads].sort((a, b) => {
     const sA = STATUS_ORDER[a.status as Status] ?? 99;
     const sB = STATUS_ORDER[b.status as Status] ?? 99;
@@ -357,7 +357,7 @@ function PotensielleKunderPage() {
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Potensielle kunder</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{leads.length} forespørslar totalt</p>
+          <p className="mt-1 text-sm text-muted-foreground">{leads.length} forespørsler totalt</p>
         </div>
         <Button onClick={() => setEditingId("new")}>
           <Plus className="mr-2 h-4 w-4" />Ny forespørsel
@@ -396,7 +396,7 @@ function PotensielleKunderPage() {
           </Button>
         )}
         <span className="text-xs text-muted-foreground ml-auto">
-          {filtered.length} av {leads.length} viser
+          {filtered.length} av {leads.length} vises
         </span>
       </div>
 
@@ -405,7 +405,7 @@ function PotensielleKunderPage() {
         <table className="w-full text-sm min-w-[1200px]">
           <thead className="border-b bg-muted/30">
             <tr>
-              {["Ansvarlig","Status","Dato","Kunde","Adresse","Postnr/stad","Telefon","E-post","Hva skal gjøres","Når","Merknad",""].map((h, i) => (
+              {["Ansvarlig","Status","Dato","Kunde","Adresse","Postnr/sted","Telefon","E-post","Hva skal gjøres","Når","Merknad",""].map((h, i) => (
                 <th key={i} className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -423,7 +423,7 @@ function PotensielleKunderPage() {
             {filtered.length === 0 && editingId !== "new" && (
               <tr>
                 <td colSpan={12} className="px-4 py-8 text-center text-muted-foreground">
-                  Ingen forespørslar. Klikk «Ny forespørsel» for å starte.
+                  Ingen forespørsler. Klikk «Ny forespørsel» for å starte.
                 </td>
               </tr>
             )}
@@ -482,8 +482,8 @@ function PotensielleKunderPage() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        * Tilbud Avslått-rader vert automatisk sletta etter 24 timar.
-        Nye kunder vert automatisk lagt til i kunderegister.
+        * Tilbud Avslått-rader blir automatisk slettet etter 24 timer.
+        Nye kunder blir automatisk lagt til i kunderegister.
       </p>
 
       {/* L2: delete confirm modal instead of window.confirm() */}
@@ -496,7 +496,7 @@ function PotensielleKunderPage() {
               </div>
               <div>
                 <h2 className="font-semibold text-sm">Slett rad</h2>
-                <p className="text-xs text-muted-foreground">Er du sikker? Handlingen kan ikkje angrast.</p>
+                <p className="text-xs text-muted-foreground">Er du sikker? Handlingen kan ikke angres.</p>
               </div>
             </div>
             <div className="flex gap-2 justify-end">

@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Moon, Sun, Monitor, Settings, ChevronDown, Smartphone } from "lucide-react";
+import { THEME_STORAGE_KEY } from "@/lib/format";
 
 const BASE_LINKS = [
   { to: "/", label: "Dashboard", exact: true },
@@ -30,7 +31,7 @@ type Theme = "light" | "dark" | "system";
 
 function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {
-    return (localStorage.getItem("th-theme") as Theme) ?? "light";
+    return (localStorage.getItem(THEME_STORAGE_KEY) as Theme) ?? "light";
   });
 
   useEffect(() => {
@@ -38,7 +39,7 @@ function useTheme() {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark = theme === "dark" || (theme === "system" && prefersDark);
     root.classList.toggle("dark", isDark);
-    localStorage.setItem("th-theme", theme);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
   return { theme, setTheme };
@@ -78,14 +79,14 @@ export function AppNav() {
     navigate({ to: "/login" });
   };
 
-  const displayName = user?.email?.split("@")[0] ?? "Brukar";
+  const displayName = user?.email?.split("@")[0] ?? "Bruker";
 
   return (
     <header className="hm-topnav no-print">
       {/* Brand */}
       <Link to="/" className="hm-brand">
-        {/* Vis berre tenanten sin eigen logo. /logo.png er Techauge sin, og
-            blei tidlegare vist til alle firma medan brandinga lasta. */}
+        {/* Vis bare tenantens egen logo. /logo.png er Techauge sin, og
+            ble tidligere vist til alle firmaer mens brandingen lastet. */}
         {branding?.logo_url && (
           <img
             src={branding.logo_url}
@@ -124,7 +125,7 @@ export function AppNav() {
       <div className="hm-nav-right">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="hm-user-chip" title="Profil og innstillingar">
+            <button className="hm-user-chip" title="Profil og innstillinger">
               <span className="hm-avatar">{initials(user?.email)}</span>
               <span className="hidden sm:inline">{displayName}</span>
               <ChevronDown className="h-3 w-3 opacity-50" />
@@ -157,7 +158,7 @@ export function AppNav() {
             {/* Tema */}
             <DropdownMenuGroup>
               <DropdownMenuLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Utsjånad
+                Utseende
               </DropdownMenuLabel>
               {THEME_OPTIONS.map((opt) => {
                 const Icon = opt.icon;
@@ -182,7 +183,7 @@ export function AppNav() {
 
             <DropdownMenuSeparator />
 
-            {/* Innstillingar */}
+            {/* Innstillinger */}
             <DropdownMenuGroup>
               <DropdownMenuItem asChild className="cursor-pointer">
                 <Link to="/mobil" className="flex items-center">
@@ -193,7 +194,7 @@ export function AppNav() {
               <DropdownMenuItem asChild className="cursor-pointer">
                 <Link to="/settings" className="flex items-center">
                   <Settings className="mr-2 h-4 w-4" />
-                  Innstillingar
+                  Innstillinger
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>

@@ -108,7 +108,7 @@ function SignatureCanvas({ onSign }: { onSign: (dataUrl: string) => void }) {
         {!hasSignature && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-gray-400 gap-2">
             <PenLine className="h-4 w-4" />
-            Teikn signaturen din her
+            Tegn signaturen din her
           </div>
         )}
       </div>
@@ -216,7 +216,7 @@ function SignerPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signerName.trim()) { alert("Skriv inn fullt navn"); return; }
-    if (!signatureDataUrl) { alert("Teikn signaturen din"); return; }
+    if (!signatureDataUrl) { alert("Tegn signaturen din"); return; }
     if (!accepted) { alert("Du må bekrefte at du aksepterer tilbudet før du kan signere"); return; }
     setSubmitting(true);
     const { data, error: signErr } = await supabase.rpc("sign_offer" as never, {
@@ -255,7 +255,7 @@ function SignerPage() {
         <div className="max-w-sm text-center space-y-3">
           <CheckCircle2 className="mx-auto h-14 w-14 text-green-500" />
           <h1 className="text-xl font-semibold text-gray-900">Tilbud allerede signert</h1>
-          <p className="text-sm text-gray-500">Dette tilbudet er allerede signert. Lenken er engangslenkje og kan ikke brukes igjen.</p>
+          <p className="text-sm text-gray-500">Dette tilbudet er allerede signert. Lenken er en engangslenke og kan ikke brukes igjen.</p>
         </div>
       </div>
     );
@@ -268,7 +268,7 @@ function SignerPage() {
           <CheckCircle2 className="mx-auto h-16 w-16 text-green-500" />
           <h1 className="text-2xl font-bold text-gray-900">Takk for signeringen!</h1>
           <p className="text-gray-600">
-            Tilbud #{signedInfo?.offer_number} – {signedInfo?.title} er no godkjent og signert av{" "}
+            Tilbud #{signedInfo?.offer_number} – {signedInfo?.title} er nå godkjent og signert av{" "}
             <strong>{signerName}</strong>.
           </p>
           <p className="text-sm text-gray-400">Du kan lukke dette vinduet.</p>
@@ -342,7 +342,7 @@ function SignerPage() {
             <SignatureCanvas onSign={setSignatureDataUrl} />
           </div>
 
-          {/* Bekreftelse — må hakast av før innsending */}
+          {/* Bekreftelse — må hukes av før innsending */}
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-gray-50 p-3.5">
             <input
               type="checkbox"
@@ -362,7 +362,7 @@ function SignerPage() {
           </Button>
 
           <p className="text-xs text-gray-400 text-center">
-            Denne lenken er engangslenkje og vil ikkje virke etter signering.
+            Denne lenken er en engangslenke og vil ikke virke etter signering.
           </p>
         </form>
       </div>

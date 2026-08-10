@@ -102,8 +102,8 @@ export function openOfferPdf(
   settings: OfferPdfSettings,
   targetWin?: Window | null,
 ) {
-  // Ingen fallback til /logo.png — den er Techauge sin, og ville hamna i andre
-  // firma sine tilbod når innstillingane ikkje var lasta enno.
+  // Ingen fallback til /logo.png — den er Techauge sin, og ville havnet i andre
+  // firmaers tilbud når innstillingene ikke var lastet enda.
   const logoUrl = settings.logo_url || "";
   const included = lines.filter((l) => l.included);
   const vat = totals.total * (settings.vat_pct / 100);
@@ -114,36 +114,36 @@ export function openOfferPdf(
     hour: "2-digit", minute: "2-digit",
   }).format(now).replace(",", " ·");
 
-  // Grenser for antal linjer per side
-  // Éi-sides tilbud: ≤4 linjer og kort tilbudstekst → alt på side 1 inkl. avslutning
-  // Fleirsides tilbud: eigen dedikert avslutningsside (ingen tabell) → alltid plass
+  // Grenser for antall linjer per side
+  // Én-sides tilbud: ≤4 linjer og kort tilbudstekst → alt på side 1 inkl. avslutning
+  // Flersides tilbud: egen dedikert avslutningsside (ingen tabell) → alltid plass
   const textLen = (offer.offer_text ?? "").length;
   const forbeholdCount = (settings.forbehold ?? []).length;
 
-  // Tel faktiske linjeskift + teikn-wrap for betre estimat
+  // Tell faktiske linjeskift + tegn-wrap for bedre estimat
   const offerTextLines = (offer.offer_text ?? "").split("\n");
   const totalTextLines = offerTextLines.reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 68)), 0);
   const estTextMm = totalTextLines * 6.2;
 
-  // Forbehold: kvar post = tittel + beskriving (~14mm per post)
+  // Forbehold: hver post = tittel + beskrivelse (~14mm per post)
   const estForbeholdMm = forbeholdCount * 14;
 
-  // Fast innhald på side 1: topptekst + kundeblokk + overskrift + tabell-header + carry-out + padding
+  // Fast innhold på side 1: topptekst + kundeblokk + overskrift + tabell-header + carry-out + padding
   const FIXED_MM = 145;
-  const LINE_MM = 13; // høgde per tilbudslinje (inkl. kommentar-rom)
+  const LINE_MM = 13; // høyde per tilbudslinje (inkl. kommentar-rom)
   const PAGE_MM = 297;
 
-  // Kor mange linjar får faktisk plass på side 1?
+  // Hvor mange linjer får faktisk plass på side 1?
   const availForLines = PAGE_MM - FIXED_MM - estTextMm - estForbeholdMm;
   const LINES_PAGE_1 = Math.min(8, Math.max(1, Math.floor(availForLines / LINE_MM)));
 
-  // Max høgde tilbudstekst kan ta — vert klippa av overflow:hidden
+  // Maks høyde tilbudsteksten kan ta — blir klippet av overflow:hidden
   const maxDescMm = Math.max(18, PAGE_MM - FIXED_MM - estForbeholdMm - (LINES_PAGE_1 * LINE_MM) - 8);
   const LINES_PER_PAGE = 22;
 
-  // Éi-siders tilbud: ingen forbehold, kort tekst, få linjer.
-  // Avslutningsblokka (summar + vilkår + signatur) er tung, så grensene er
-  // stramme for å unngå at botnen renn over på side 2.
+  // Én-siders tilbud: ingen forbehold, kort tekst, få linjer.
+  // Avslutningsblokken (summer + vilkår + signatur) er tung, så grensene er
+  // stramme for å unngå at bunnen renner over på side 2.
   const SHORT_LINE_LIMIT = 3;
   const SHORT_TEXT_LIMIT = 240;
   const isSinglePage =
@@ -221,7 +221,7 @@ export function openOfferPdf(
     typedPages.push({ kind: "closing" });
   }
 
-  // Bakoverkompatibelt: behold pages-array for kumulative summar
+  // Bakoverkompatibelt: behold pages-array for kumulative summer
   const pages: OfferLine[][] = typedPages.map((p) => p.kind === "lines" ? p.rows : []);
 
   const totalPages = pages.length;
@@ -323,11 +323,11 @@ export function openOfferPdf(
         ${offer.offer_text ? `<p class="desc">${escapeHtml(offer.offer_text)}</p>` : ""}
       </div>` : "";
 
-    // Carry-radene ligg alltid i DOM-en, men kan vere skjulte. Køyreskriptet slår
-    // dei av og på og reknar ut beløpa på nytt etter at sider er delte/slåtte saman.
+    // Carry-radene ligger alltid i DOM-en, men kan være skjult. Kjøreskriptet slår
+    // dem av og på og regner ut beløpene på nytt etter at sider er delt/slått sammen.
     const carryHidden = (hide: boolean) => hide ? ` style="display:none"` : "";
     const carryIn = `<div class="carry carry-in"${carryHidden(isFirst || cumulativeBefore <= 0)}>
-          <span>Overført frå forrige side</span>
+          <span>Overført fra forrige side</span>
           <span>${fmtNok(cumulativeBefore)}</span>
          </div>`;
 
@@ -420,7 +420,7 @@ export function openOfferPdf(
         }).join("")}
       </div>` : "";
 
-    // Berre pristabell-sider viser tabellen
+    // Bare pristabell-sider viser tabellen
     const tableSection = pt.kind === "lines"
       ? `${carryIn}${tableHtml(pageLines)}${carryOut}`
       : "";
@@ -599,7 +599,7 @@ export function openOfferPdf(
   .items tbody td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .items tbody td.desc-cell { font-weight: 500; color: var(--ink); max-width: 0; overflow: hidden; }
   .items tbody td.discount-cell { color: var(--slate-600); font-size: 9pt; }
-  /* Beskriving: maks 3 linjer, kommentar: maks 2 linjer */
+  /* Beskrivelse: maks 3 linjer, kommentar: maks 2 linjer */
   .desc-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .comment { font-size: 8.5pt; color: var(--slate-600); font-weight: 400; font-style: italic; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 2px; }
   .strikethrough { font-size: 8pt; color: var(--slate-400); text-decoration: line-through; display: block; }
@@ -607,7 +607,7 @@ export function openOfferPdf(
   /* Skyver avslutning til bunnen på siste side */
   .flex-fill { flex: 1; }
   .bottom-push { padding-top: 4mm; }
-  /* Avslutningsside utan linjer: stor toppadding for å simulere botn-plassering */
+  /* Avslutningsside uten linjer: stor toppadding for å simulere bunn-plassering */
   .closing-push { padding-top: ${settings.closing_page_offset_mm ?? 90}mm; }
 
   .totals-wrap { display: grid; grid-template-columns: 1fr 92mm; gap: 8mm; margin-bottom: 6mm; }
@@ -745,7 +745,7 @@ ${pagesHtml}
     </div>
   </header>
   <section class="body">
-    <div class="carry carry-in"><span>Overført frå forrige side</span><span></span></div>
+    <div class="carry carry-in"><span>Overført fra forrige side</span><span></span></div>
     ${tableHtml([])}
     <div class="carry carry-out"><span>Overføres til neste side</span><span></span></div>
   </section>
@@ -754,8 +754,8 @@ ${pagesHtml}
 (function() {
   var PX_MM = 96 / 25.4;
   var PAGE_MM = 297;
-  var BUFFER_MM = 44; // tryggheitsmarginen (skjerm-px vs utskrift-mm er ikkje eksakt)
-  var SPLIT_BUFFER_MM = 16; // luft i botn før vi flyttar rader til ny side
+  var BUFFER_MM = 44; // sikkerhetsmarginen (skjerm-px vs utskrift-mm er ikke eksakt)
+  var SPLIT_BUFFER_MM = 16; // luft i bunnen før vi flytter rader til ny side
 
   function mm(el) { return el ? el.getBoundingClientRect().height / PX_MM : 0; }
 
@@ -779,7 +779,7 @@ ${pagesHtml}
       var nxt = pages[i + 1];
       var nxtIsClosing = nxt.classList.contains('page-closing');
 
-      // Avslutningssida skal alltid vere eigen side
+      // Avslutningssiden skal alltid være egen side
       if (nxtIsClosing) continue;
 
       var curHeader = mm(cur.querySelector('.masthead, .cont-header'));
@@ -808,9 +808,9 @@ ${pagesHtml}
     return false;
   }
 
-  // Pakk alle tilbodslinjer på nytt ut frå faktisk høgde. Serversida deler på
-  // fast radtal (22), så høge rader (lang beskrivelse + kommentar) rann over.
-  // Her fyller vi kvar side til ho er full, og lagar nye sider etter behov.
+  // Pakk alle tilbudslinjer på nytt ut fra faktisk høyde. Serversiden deler på
+  // fast radantall (22), så høye rader (lang beskrivelse + kommentar) rant over.
+  // Her fyller vi hver side til den er full, og lager nye sider etter behov.
   function reflowLines() {
     var linePages = Array.from(document.querySelectorAll('.page'))
       .filter(function(p) { return p.querySelector('table.items tbody'); });
@@ -827,7 +827,7 @@ ${pagesHtml}
 
     linePages.forEach(function(p) { p.querySelector('tbody').innerHTML = ''; });
 
-    // bodyContentMm tel ikkje med summar-blokka, så den må trekkjast frå plassen
+    // bodyContentMm teller ikke med summer-blokken, så den må trekkes fra plassen
     function availFor(page) {
       return PAGE_MM
         - mm(page.querySelector('.masthead, .cont-header'))
@@ -843,7 +843,7 @@ ${pagesHtml}
     allRows.forEach(function(row) {
       var tb = current.querySelector('tbody');
       tb.appendChild(row);
-      // Passar ho ikkje, opne ny side — men aldri legg igjen ei tom side
+      // Passer den ikke, åpne ny side — men aldri legg igjen en tom side
       if (bodyContentMm(current) > availFor(current) && tb.querySelectorAll('tr[data-sum]').length > 1) {
         tb.removeChild(row);
         var np = tpl.content.firstElementChild.cloneNode(true);
@@ -855,7 +855,7 @@ ${pagesHtml}
       }
     });
 
-    // Summar/vilkår høyrer heime på den siste linjesida
+    // Summer/vilkår hører hjemme på den siste linjesiden
     function placeBottom(page) {
       var sec = page.querySelector('.body');
       if (fill) sec.appendChild(fill);
@@ -864,7 +864,7 @@ ${pagesHtml}
     if (push) {
       var lastPage = used[used.length - 1];
       placeBottom(lastPage);
-      // Summane tek plass — skyv rader vidare om sida no renn over
+      // Summene tar plass — skyv rader videre om siden nå renner over
       var tb = lastPage.querySelector('tbody');
       while (tb.querySelectorAll('tr[data-sum]').length > 1 && bodyContentMm(lastPage) > availFor(lastPage)) {
         var rows = tb.querySelectorAll('tr[data-sum]');
@@ -882,7 +882,7 @@ ${pagesHtml}
     linePages.forEach(function(p) { if (used.indexOf(p) === -1) p.remove(); });
   }
 
-  // Beløpa i "overført/overføres" må reknast på nytt når rader har flytta seg
+  // Beløpene i "overført/overføres" må regnes på nytt når rader har flyttet seg
   function recalcCarries() {
     var linePages = Array.from(document.querySelectorAll('.page'))
       .filter(function(p) { return p.querySelector('table.items tbody tr[data-sum]'); });
@@ -915,12 +915,12 @@ ${pagesHtml}
   }
 
   window.onload = function() {
-    // Vent på at fontar er lasta – gjer målinga nøyaktig
+    // Vent på at fonter er lastet – gjør målingen nøyaktig
     var ready = (typeof document.fonts !== 'undefined' && document.fonts.ready)
       ? document.fonts.ready
       : Promise.resolve();
     ready.then(function() {
-      // Pakk linjene etter faktisk høgde, slå deretter saman sider som får plass i lag
+      // Pakk linjene etter faktisk høyde, slå deretter sammen sider som får plass sammen
       reflowLines();
       var changed = true;
       while (changed) { changed = tryMerge(); }
@@ -967,7 +967,7 @@ export interface ContractData {
 }
 
 export function openContractPdf(d: ContractData) {
-  // Sjå kommentaren i openOfferPdf — ingen fallback til Techauge-logoen
+  // Se kommentaren i openOfferPdf — ingen fallback til Techauge-logoen
   const logoUrl = d.logo_url || "";
   const nokFmt = (n: number) =>
     new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " kr";
@@ -990,7 +990,7 @@ export function openContractPdf(d: ContractData) {
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11pt; line-height: 1.5; margin: 0; background: #ECECE7; }
 
-  /* A4-ark: skjerm viser dei som separate sider med skugge */
+  /* A4-ark: skjerm viser dem som separate sider med skygge */
   .sheet {
     width: 210mm; min-height: 297mm;
     background: #fff; margin: 8mm auto;
@@ -999,7 +999,7 @@ export function openContractPdf(d: ContractData) {
   }
   .sheet-body { padding: 20mm 18mm; }
   .cover-sheet { padding: 20mm 18mm; display: flex; }
-  /* Kjelda som skriptet måler ut frå – usynleg, men med rett innhaldsbreidde */
+  /* Kilden som skriptet måler ut fra – usynlig, men med riktig innholdsbredde */
   #flow { position: absolute; left: -9999px; top: 0; width: 174mm; visibility: hidden; }
 
   .cover { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 257mm; text-align: center; gap: 0; }
@@ -1042,7 +1042,7 @@ export function openContractPdf(d: ContractData) {
     }
     .sheet:last-child { page-break-after: auto; break-after: auto; }
     .cover { min-height: auto; height: 257mm; }
-    /* Hald overskrift saman med teksten under, og unngå at avsnitt/seksjonar delast */
+    /* Hold overskriften sammen med teksten under, og unngå at avsnitt/seksjoner deles */
     h3 { break-after: avoid; page-break-after: avoid; }
     .sec, p, ul, li, table.bp, .parties, .sig-section { break-inside: avoid; page-break-inside: avoid; }
   }
@@ -1050,7 +1050,7 @@ export function openContractPdf(d: ContractData) {
 </head>
 <body>
 
-<!-- Sider vert bygd her av pagineringsskriptet -->
+<!-- Sider blir bygd her av pagineringsskriptet -->
 <div id="pages">
   <!-- FORSIDE -->
   <div class="sheet cover-sheet">
@@ -1072,7 +1072,7 @@ export function openContractPdf(d: ContractData) {
   </div>
 </div>
 
-<!-- AVTALETEKST (kjelde – vert flytta inn i sider av skriptet) -->
+<!-- AVTALETEKST (kilde – blir flyttet inn i sider av skriptet) -->
 <div id="flow">
 
 <div class="sec">
@@ -1111,7 +1111,7 @@ export function openContractPdf(d: ContractData) {
 
 <div class="sec">
 <h3>5. Betalingsplan</h3>
-<p>Betalingsplan avtalast mellom partane. Betalingsfrist er 14 dager fra fakturadato.</p>
+<p>Betalingsplan avtales mellom partene. Betalingsfrist er 14 dager fra fakturadato.</p>
 </div>
 
 <div class="sec">
@@ -1184,7 +1184,7 @@ ${forbeholdHtml}
 <script>
 (function () {
   var PX_MM = 96 / 25.4;
-  // A4 innhaldshøgde = 297mm - topp/botn marg (20mm + 20mm) = 257mm.
+  // A4 innholdshøyde = 297mm - topp/bunn marg (20mm + 20mm) = 257mm.
   // Litt slingringsmonn for måleavvik skjerm-px vs utskrift.
   var CONTENT_MM = 252;
 
@@ -1218,7 +1218,7 @@ ${forbeholdHtml}
     blocks.forEach(function (block) {
       sheetBody.appendChild(block);
       var h = mm(block);
-      // Får ikkje plass på denne sida → flytt til ny side (med mindre sida er tom)
+      // Får ikke plass på denne siden → flytt til ny side (med mindre siden er tom)
       if (used + h > CONTENT_MM && used > 0) {
         newSheet();
         sheetBody.appendChild(block);

@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Save, Sun, Moon, Monitor, GripVertical, Upload, X } from "lucide-react";
+import { Plus, Trash2, Save, Sun, Moon, Monitor, GripVertical, Upload, X, Building2, FileText, Calculator, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -265,37 +266,54 @@ function SettingsPage() {
     document.documentElement.classList.toggle("dark", t === "dark" || (t === "system" && prefersDark));
   };
 
+  const patch = {
+    offer_validity_days: validityDays,
+    our_refs: ourRefs,
+    company_name: companyName,
+    company_org_nr: companyOrgNr,
+    company_tagline: companyTagline,
+    units,
+    forbehold,
+    payment_terms: paymentTerms,
+    default_offer_text: defaultOfferText,
+    email_subject_template: emailSubject,
+    vat_pct: vatPct,
+    closing_page_offset_mm: closingPageOffsetMm,
+  };
+
+  // Med fanene er endringar lett å gløyme att på ei fane du ikkje ser
+  const dirty = !!saved && Object.keys(patch).some(
+    (k) => JSON.stringify((patch as any)[k]) !== JSON.stringify((saved as any)[k] ?? DEFAULT_SETTINGS[k as keyof typeof DEFAULT_SETTINGS])
+  );
+
+  const [saving, setSaving] = useState(false);
   const handleSave = async () => {
-    await saveSettings({
-      offer_validity_days: validityDays,
-      our_refs: ourRefs,
-      company_name: companyName,
-      company_org_nr: companyOrgNr,
-      company_tagline: companyTagline,
-      units,
-      forbehold,
-      payment_terms: paymentTerms,
-      default_offer_text: defaultOfferText,
-      email_subject_template: emailSubject,
-      vat_pct: vatPct,
-      closing_page_offset_mm: closingPageOffsetMm,
-    });
+    setSaving(true);
+    try {
+      await saveSettings(patch);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (isLoading) return <div className="text-muted-foreground">Laster innstillingar…</div>;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Innstillingar</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Konfigurer standardverdiar og preferansar</p>
-        </div>
-        <Button onClick={handleSave} disabled={!tenantId}>
-          <Save className="mr-2 h-4 w-4" />Lagre
-        </Button>
+    <div className="mx-auto max-w-2xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Innstillingar</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Konfigurer standardverdiar og preferansar</p>
       </div>
 
+      <Tabs defaultValue="firma" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+          <TabsTrigger value="firma"><Building2 className="mr-1.5 h-4 w-4" />Firma</TabsTrigger>
+          <TabsTrigger value="tilbod"><FileText className="mr-1.5 h-4 w-4" />Tilbod</TabsTrigger>
+          <TabsTrigger value="okonomi"><Calculator className="mr-1.5 h-4 w-4" />Økonomi</TabsTrigger>
+          <TabsTrigger value="utsjaanad"><Palette className="mr-1.5 h-4 w-4" />Utsjånad</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="tilbod" className="space-y-6">
       {/* Tilbud-standardar */}
       <SectionCard
         title="Tilbud"
@@ -359,7 +377,9 @@ function SettingsPage() {
           Forbehold vert valde per tilbud og visast som liten tekst på PDF-en.
         </p>
       </SectionCard>
+      </TabsContent>
 
+      <TabsContent value="okonomi" className="space-y-6">
       {/* Økonomi */}
       <SectionCard
         title="Økonomi"
@@ -445,7 +465,9 @@ function SettingsPage() {
           </p>
         </div>
       </SectionCard>
+      </TabsContent>
 
+      <TabsContent value="firma" className="space-y-6">
       {/* Firma-info */}
       <SectionCard
         title="Firmainformasjon"
@@ -465,7 +487,9 @@ function SettingsPage() {
           <p className="text-xs text-muted-foreground">T.d. «Anlegg · Veiarbeid · Asfaltering»</p>
         </div>
       </SectionCard>
+      </TabsContent>
 
+      <TabsContent value="utsjaanad" className="space-y-6">
       {/* Utsjånad */}
       <SectionCard title="Utsjånad" description="Visuelle preferansar for denne nettlesaren">
         <div className="space-y-2">
@@ -493,10 +517,20 @@ function SettingsPage() {
         </div>
       </SectionCard>
 
-      <div className="flex justify-end pb-4">
-        <Button onClick={handleSave} size="lg" disabled={!tenantId}>
-          <Save className="mr-2 h-4 w-4" />Lagre alle innstillingar
-        </Button>
+      </TabsContent>
+      </Tabs>
+
+      {/* Fast lagre-linje. Lagrar alle faner, ikkje berre den du ser. */}
+      <div className="sticky bottom-0 z-20 mt-6 border-t bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            {dirty ? "Du har ulagra endringar" : "Alt er lagra"}
+          </p>
+          <Button onClick={handleSave} size="lg" disabled={!tenantId || saving}>
+            <Save className="mr-2 h-4 w-4" />
+            {saving ? "Lagrar…" : "Lagre alle innstillingar"}
+          </Button>
+        </div>
       </div>
     </div>
   );

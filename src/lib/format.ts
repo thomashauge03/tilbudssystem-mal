@@ -25,3 +25,19 @@ export const OUR_REFS = ["Tommy Hauge", "Karl Hauge"];
 // mens innstillingssiden brukte "hm-theme", så de to temavelgerne overstyrte
 // hverandre og valget i Innstillinger overlevde ikke en omlasting.
 export const THEME_STORAGE_KEY = "th-theme";
+
+// Endringsmeldingsnummer er sammensatt: "<prosjektnr>-<løpenummer>", f.eks.
+// "1001-3". Kolonnen er text, så en ren alfabetisk sortering ville plassert
+// "1001-10" foran "1001-2". Her sammenlignes prefiks og løpenummer hver for seg.
+export function compareAmendmentNumber(a: string | null | undefined, b: string | null | undefined) {
+  const parse = (v: string | null | undefined) => {
+    const s = String(v ?? "");
+    const m = s.match(/^(.*)-(\d+)$/);
+    return m ? { prefix: m[1], seq: parseInt(m[2], 10) } : { prefix: s, seq: 0 };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  // numeric: true så prosjektnummer 1001 sorteres etter 999, ikke før
+  const byPrefix = pa.prefix.localeCompare(pb.prefix, "nb", { numeric: true });
+  return byPrefix !== 0 ? byPrefix : pa.seq - pb.seq;
+}

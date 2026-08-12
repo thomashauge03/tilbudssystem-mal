@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { nok, fmtDate } from "@/lib/format";
+import { nok, fmtDate, compareAmendmentNumber } from "@/lib/format";
 import { Check, Search, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
@@ -267,9 +267,13 @@ function StatusPage() {
       const { data, error } = await supabase
         .from("amendments")
         .select("id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, amendment_lines(quantity, unit_price)")
-        .order("amendment_number", { ascending: false });
+        .order("created_at", { ascending: false });
       if (error) throw error;
-      return data ?? [];
+      // Sorteres på klienten: databasen kan bare sortere teksten alfabetisk, og
+      // ville lagt "1001-10" foran "1001-2". Nyeste nummer først.
+      return (data ?? []).sort((x: any, y: any) =>
+        compareAmendmentNumber(y.amendment_number, x.amendment_number)
+      );
     },
   });
 

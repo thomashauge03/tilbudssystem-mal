@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2 } from "lucide-react";
 import { nok, num, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openPrintPdf, escapeHtml } from "@/lib/pdf";
+import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -25,6 +26,7 @@ interface AState {
   // Begge feltene ligger her slik at de overlever lagring og lasting av skjemaet.
   status?: string;
   customer_signed_at?: string | null;
+  attachment_urls?: Array<{ name: string; url: string }>;
 }
 
 function empty(): AState {
@@ -34,7 +36,7 @@ function empty(): AState {
     notified_date: toISODate(new Date()), revised_date: null,
     project_manager: "", customer_email: "",
     change_description: "", reason: "", other_notes: "",
-    status: "krav", customer_signed_at: null,
+    status: "krav", customer_signed_at: null, attachment_urls: [],
   };
 }
 
@@ -147,7 +149,12 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
       }
       setA(empty()); setInit(true);
     }
-    if (isEdit && loaded && !init) { setA(loaded.amendment as any); setLines(loaded.lines); setInit(true); }
+    if (isEdit && loaded && !init) {
+      const la = loaded.amendment as any;
+      setA({ ...la, attachment_urls: Array.isArray(la.attachment_urls) ? la.attachment_urls : [] });
+      setLines(loaded.lines);
+      setInit(true);
+    }
   }, [isEdit, loaded, init, initialOfferId, initialOffer, appSettings]);
 
   // Lagre skjematilstand i sessionStorage ved hver endring (bare for nye endringsmeldinger)
@@ -237,6 +244,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
       notified_date: a.notified_date, revised_date: a.revised_date || null,
       project_manager: a.project_manager || null, customer_email: a.customer_email || null,
       change_description: a.change_description, reason: a.reason, other_notes: a.other_notes,
+      attachment_urls: a.attachment_urls ?? [],
     };
     let id = currentAmendmentIdRef.current ?? amendmentId;
     const editing = isEdit || !!currentAmendmentIdRef.current;
@@ -448,6 +456,13 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
           </div>
           <div className="space-y-2"><Label>Prosjektleder</Label><Input value={a.project_manager} onChange={(e) => set("project_manager", e.target.value)} /></div>
           <div className="space-y-2"><Label>E-post kunde</Label><Input type="email" value={a.customer_email} onChange={(e) => set("customer_email", e.target.value)} /></div>
+
+          {/* Vedlegg — samme komponent som tilbudet bruker */}
+          <AttachmentField
+            value={a.attachment_urls ?? []}
+            onChange={(next) => set("attachment_urls", next)}
+            pathPrefix={`${tenantId}/amendment/${currentAmendmentIdRef.current ?? amendmentId ?? "ny"}`}
+          />
         </div>
 
         <div className="space-y-4">

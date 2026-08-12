@@ -9,12 +9,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, Download } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
+import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -222,47 +223,6 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (dragIndex !== null) moveLine(dragIndex, i);
     setDragIndex(null);
     setDragOverIndex(null);
-  };
-
-  const [uploading, setUploading] = useState(false);
-  const [dropActive, setDropActive] = useState(false);
-
-  // Last ned et vedlegg til maskinen (nødvendig for webmail — se kommentar ved drag-ut)
-  const downloadAttachment = async (att: { name: string; url: string }) => {
-    try {
-      const res = await fetch(att.url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blobUrl = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = att.name;
-      a.click();
-      URL.revokeObjectURL(blobUrl);
-    } catch {
-      window.open(att.url, "_blank", "noopener");
-    }
-  };
-
-  // Last opp en liste med filer til vedleggsbøtten
-  const uploadFiles = async (files: File[]) => {
-    const pdfs = files.filter((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
-    if (files.length && !pdfs.length) { toast.error("Bare PDF-filer kan legges ved"); return; }
-    if (!pdfs.length) return;
-    setUploading(true);
-    try {
-      for (const file of pdfs) {
-        if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} er for stor (maks 20 MB)`); continue; }
-        const path = `${tenantId}/${offerId ?? "ny"}/${Date.now()}_${file.name}`;
-        const { error } = await supabase.storage.from("offer-attachments").upload(path, file, { upsert: true });
-        if (error) { toast.error(error.message); continue; }
-        const { data } = supabase.storage.from("offer-attachments").getPublicUrl(path);
-        // funksjonell oppdatering slik at flere filer i samme slipp ikke overskriver hverandre
-        setOffer((p) => ({ ...p, attachment_urls: [...(p.attachment_urls ?? []), { name: file.name, url: data.publicUrl }] }));
-        toast.success(`${file.name} lagt til`);
-      }
-    } finally {
-      setUploading(false);
-    }
   };
 
   const pickCustomer = (id: string) => {
@@ -732,93 +692,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <Input type="number" step="0.1" value={offer.admin_cost_pct} onChange={(e) => set("admin_cost_pct", Number(e.target.value))} />
           </div>
 
-          {/* Vedlegg */}
-          <div className="space-y-2">
-            <Label>Vedlegg (PDF)</Label>
-            <div className="space-y-2">
-              {(offer.attachment_urls ?? []).map((att, i) => (
-                <div
-                  key={i}
-                  draggable
-                  title="Dra til skrivebordet eller Outlook-programmet. Webmail (Gmail o.l.) kan ikke ta imot filen — bruk nedlastingsknappen."
-                  onDragStart={(e) => {
-                    // Bare DownloadURL: nettleseren henter da filen og leverer den som en ekte
-                    // fil til mottakere UTENFOR nettleseren (utforskeren, Outlook-programmet).
-                    // En nettside kan ikke levere en fil til en annen nettside via drag, og setter vi
-                    // text/plain eller text/uri-list her, limer webmail inn navn/lenke i stedet.
-                    e.dataTransfer.setData("DownloadURL", `application/pdf:${att.name}:${att.url}`);
-                    e.dataTransfer.effectAllowed = "copy";
-                  }}
-                  className="flex cursor-grab items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm active:cursor-grabbing"
-                >
-                  <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                  <span className="flex-1 truncate">{att.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => void downloadAttachment(att)}
-                    title="Last ned – dra deretter filen fra nedlastingene inn i e-posten"
-                    className="text-muted-foreground hover:text-primary"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </button>
-                  <a href={att.url} target="_blank" rel="noopener noreferrer" title="Åpne i ny fane" className="text-muted-foreground hover:text-primary">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const path = att.url.split("/offer-attachments/")[1]?.split("?")[0];
-                      if (path) await supabase.storage.from("offer-attachments").remove([path]);
-                      set("attachment_urls", (offer.attachment_urls ?? []).filter((_, idx) => idx !== i));
-                    }}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-              {/* Slippsone: dra PDF rett hit fra e-post eller utforskeren, eller lim inn med Ctrl+V */}
-              <label
-                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropActive(true); }}
-                onDragEnter={(e) => { e.preventDefault(); setDropActive(true); }}
-                onDragLeave={(e) => { if (e.currentTarget === e.target) setDropActive(false); }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDropActive(false);
-                  void uploadFiles(Array.from(e.dataTransfer.files ?? []));
-                }}
-                onPaste={(e) => {
-                  const files = Array.from(e.clipboardData?.files ?? []);
-                  if (files.length) { e.preventDefault(); void uploadFiles(files); }
-                }}
-                tabIndex={0}
-                className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-3 py-5 text-center text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring ${
-                  dropActive ? "border-primary bg-primary/10 text-primary" : "border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50 hover:bg-muted/40"
-                }`}
-              >
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files ?? []);
-                    e.target.value = "";
-                    void uploadFiles(files);
-                  }}
-                />
-                <Paperclip className="h-5 w-5" />
-                {uploading ? (
-                  <span className="font-medium">Laster opp…</span>
-                ) : (
-                  <>
-                    <span className="font-medium">Slipp PDF her</span>
-                    <span>eller klikk for å velge fil · Ctrl+V limer inn</span>
-                  </>
-                )}
-              </label>
-            </div>
-          </div>
+          {/* Vedlegg — delt komponent med endringsmeldinger */}
+          <AttachmentField
+            value={offer.attachment_urls ?? []}
+            onChange={(next) => set("attachment_urls", next)}
+            pathPrefix={`${tenantId}/${offerId ?? "ny"}`}
+          />
         </div>
 
         {/* Right: text + lines */}

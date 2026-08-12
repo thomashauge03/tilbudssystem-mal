@@ -900,7 +900,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                           />
                         )}
                       </td>
-                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2"><Input type="number" step="0.1" min="0" max="100" className="text-right no-spinner" value={l.discount_pct || ""} placeholder="0" onChange={(e) => updLine(i, { discount_pct: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2 text-right font-medium">
                         {nok(lineSum(l))}
@@ -975,7 +975,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Pris/enhet</Label>
-                        <Input type="number" step="1" className="no-spinner" value={l.unit_price} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input type="number" step="1" className="no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Rabatt %</Label>

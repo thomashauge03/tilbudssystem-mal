@@ -103,7 +103,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     queryFn: async () => {
       const { data, error } = await supabase
         .from("offers")
-        .select("id, offer_number, title, project_id, project_number, customer_email, projects(project_number, name)")
+        .select("id, offer_number, title, our_ref, project_id, project_number, customer_email, projects(project_number, name)")
         .eq("id", initialOfferId!)
         .single();
       if (error) throw error;
@@ -124,6 +124,10 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
         project_ref: initialOffer.project_number || proj?.project_number || proj?.name || "",
         internal_description: initialOffer.title ?? "",
         customer_email: initialOffer.customer_email ?? "",
+        // Tilbudets "Vår referanse" er den samme personen som står som
+        // prosjektleder på endringen. Mangler den, brukes firmaets første
+        // referanse fra innstillingene.
+        project_manager: initialOffer.our_ref || appSettings?.our_refs?.[0]?.name || "",
       });
       setInit(true);
       return;
@@ -144,7 +148,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
       setA(empty()); setInit(true);
     }
     if (isEdit && loaded && !init) { setA(loaded.amendment as any); setLines(loaded.lines); setInit(true); }
-  }, [isEdit, loaded, init, initialOfferId, initialOffer]);
+  }, [isEdit, loaded, init, initialOfferId, initialOffer, appSettings]);
 
   // Lagre skjematilstand i sessionStorage ved hver endring (bare for nye endringsmeldinger)
   useEffect(() => {
@@ -499,7 +503,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                           />
                         )}
                       </td>
-                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2 text-right font-medium">{nok(Number(l.quantity || 0) * Number(l.unit_price || 0))}</td>
                       <td className="px-1 py-2"><Button size="icon" variant="ghost" onClick={() => removeLine(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button></td>
                     </tr>
@@ -544,7 +548,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Pris/enhet</Label>
-                        <Input type="number" step="1" className="no-spinner" value={l.unit_price} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input type="number" step="1" className="no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Sum</Label>

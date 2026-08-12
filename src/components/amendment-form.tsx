@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2 } from "lucide-react";
-import { nok, num, fmtDate, toISODate, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { nok, num, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openPrintPdf, escapeHtml } from "@/lib/pdf";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -79,7 +79,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
         .from("offers")
         .select("id, offer_number, title, customer_name, project_number, status")
         .eq("tenant_id", tenantId!)
-        .in("status", ["godkjent"])
+        .in("status", OFFER_WON_STATUSES)
         .order("offer_number", { ascending: false })
         .limit(200);
       return data ?? [];

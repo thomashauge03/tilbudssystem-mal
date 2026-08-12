@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate } from "@/lib/format";
+import { nok, fmtDate , OFFER_WON_STATUSES, OFFER_COMPLETED } from "@/lib/format";
 import {
   FileText, TrendingUp, ClipboardEdit, CheckCircle2,
   Clock, AlertTriangle, ArrowRight, CircleDollarSign,
@@ -29,13 +29,13 @@ export function useDashboard() {
       const today = new Date().toISOString().slice(0, 10);
       const soon = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
       const [offersRes, amendmentsRes, recentRes, expiringRes, expiredRes] = await Promise.all([
-        supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("offer_number", { ascending: false }).limit(500),
+        supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").in("status", OFFER_WON_STATUSES).order("offer_number", { ascending: false }).limit(500),
         supabase.from("amendments").select("id, amendment_number, project_ref, notified_date, invoiced_amount, amendment_lines(quantity, unit_price)").limit(500),
-        supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("created_at", { ascending: false }).limit(6),
+        supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").in("status", OFFER_WON_STATUSES).order("created_at", { ascending: false }).limit(6),
         // Fristen gjelder bare tilbud som ennå ikke er godkjent — et godkjent
         // tilbud er aktivt og kan ikke løpe ut.
-        supabase.from("offers").select("id, offer_number, title, customer_name, status, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, included)").not("status", "eq", "godkjent").gte("valid_until", today).lte("valid_until", soon),
-        supabase.from("offers").select("id, status, valid_until").not("status", "eq", "godkjent").lt("valid_until", today),
+        supabase.from("offers").select("id, offer_number, title, customer_name, status, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, included)").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).gte("valid_until", today).lte("valid_until", soon),
+        supabase.from("offers").select("id, status, valid_until").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).lt("valid_until", today),
       ]);
 
       const offers = offersRes.data ?? [];
@@ -46,14 +46,15 @@ export function useDashboard() {
         const total = offerTotal(o.offer_lines, o.admin_cost_pct);
         const inv = Number(o.invoiced_amount ?? 0);
         // Alle disse er godkjente, og da gjelder ikke fristen
-        return { id: o.id, total, inv, pct: total > 0 ? inv / total : 0 };
+        return { id: o.id, total, inv, status: o.status, pct: total > 0 ? inv / total : 0 };
       });
 
       const totalKontraktssum = offerStats.reduce((s, o) => s + o.total, 0);
       const totalFakturert = offerStats.reduce((s, o) => s + o.inv, 0);
       const totalGjenstår = totalKontraktssum - totalFakturert;
 
-      const åpne = offerStats.filter((o) => o.pct < 1);
+      // Merket som fullført = ferdig, uansett faktureringsgrad
+      const åpne = offerStats.filter((o) => o.status !== OFFER_COMPLETED && o.pct < 1);
       // Utgåtte = tilbud som ikke ble godkjent innen fristen
       const utgåtteCount = (expiredRes.data ?? []).length;
       const delvisFakturert = offerStats.filter((o) => o.inv > 0 && o.inv < o.total);

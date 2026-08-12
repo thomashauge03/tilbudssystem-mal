@@ -30,8 +30,16 @@ export const THEME_STORAGE_KEY = "th-theme";
 // tilbud er aktivt, og da har fristen ingen betydning lenger — det skal verken
 // vises, telles som utløpt eller filtreres bort.
 export const OFFER_APPROVED = "godkjent";
+export const OFFER_COMPLETED = "fullført";
 
-export const offerHasDeadline = (status?: string | null) => status !== OFFER_APPROVED;
+// Begge betyr at jobben er vunnet. De må telle likt i alle økonomivisninger —
+// et fullført tilbud er fortsatt en kontrakt som er utført og fakturert, og
+// skal ikke forsvinne ut av kontraktssum, ordre eller status.
+export const OFFER_WON_STATUSES = [OFFER_APPROVED, OFFER_COMPLETED];
+
+export const isOfferWon = (status?: string | null) => OFFER_WON_STATUSES.includes(status ?? "");
+
+export const offerHasDeadline = (status?: string | null) => !isOfferWon(status);
 
 export const isOfferExpired = (
   offer: { status?: string | null; valid_until?: string | null },

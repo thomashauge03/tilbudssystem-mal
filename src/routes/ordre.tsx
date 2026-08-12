@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate } from "@/lib/format";
+import { nok, fmtDate , OFFER_WON_STATUSES } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Search, PenLine, FileCheck } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -49,7 +49,7 @@ function OrdrePage() {
       const { data, error } = await supabase
         .from("offers")
         .select("id, offer_number, title, customer_name, offer_date, valid_until, our_ref, project_number, offer_lines(quantity, unit_price, included), admin_cost_pct, invoiced_amount, customer_signed_at, contract_signed")
-        .eq("status", "godkjent")
+        .in("status", OFFER_WON_STATUSES)
         .order("offer_number", { ascending: false });
       if (error) throw error;
       return data ?? [];

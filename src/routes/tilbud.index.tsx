@@ -15,18 +15,19 @@ import {
 import { Plus, Search, Trash2, PenLine, FileCheck } from "lucide-react";
 import { useAppSettings } from "@/hooks/use-app-settings";
 
-const STATUSES = ["utkast", "sendt", "godkjent", "avvist"] as const;
+const STATUSES = ["utkast", "sendt", "godkjent", "fullført", "avslått"] as const;
 type OfferStatus = typeof STATUSES[number];
 
 const STATUS_STYLE: Record<OfferStatus, string> = {
   utkast:   "bg-gray-100 text-gray-700 border-gray-300",
   sendt:    "bg-yellow-100 text-yellow-800 border-yellow-300",
   godkjent: "bg-green-100 text-green-800 border-green-300",
-  avvist:   "bg-red-100 text-red-700 border-red-300",
+  fullført: "bg-blue-100 text-blue-800 border-blue-300",
+  avslått:  "bg-red-100 text-red-700 border-red-300",
 };
 
 const STATUS_LABEL: Record<OfferStatus, string> = {
-  utkast: "Utkast", sendt: "Sendt", godkjent: "Godkjent", avvist: "Avvist",
+  utkast: "Utkast", sendt: "Sendt", godkjent: "Godkjent", fullført: "Fullført", avslått: "Avslått",
 };
 
 function StatusBadge({ status, offerId, onUpdate }: { status: OfferStatus; offerId: string; onUpdate: () => void }) {

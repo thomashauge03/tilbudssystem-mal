@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { nok, fmtDate, compareAmendmentNumber } from "@/lib/format";
+import { nok, fmtDate, compareAmendmentNumber, OFFER_WON_STATUSES } from "@/lib/format";
 import { Check, Search, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
@@ -254,7 +254,7 @@ function StatusPage() {
       const { data, error } = await supabase
         .from("offers")
         .select("id, offer_number, title, customer_name, valid_until, project_number, admin_cost_pct, invoiced_amount, offer_lines(quantity, unit_price, included)")
-        .eq("status", "godkjent")
+        .in("status", OFFER_WON_STATUSES)
         .order("offer_number", { ascending: false });
       if (error) throw error;
       return data ?? [];

@@ -144,9 +144,12 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
   // Generer endringsmeldingsnummer: [prosjekt]-[løpenummer]
   async function nextNumber(project: string): Promise<string> {
     const prefix = (project || "0").trim();
-    const { data } = await supabase.from("amendments").select("amendment_number").like("amendment_number", `${prefix}-%`);
+    const { data, error } = await supabase.from("amendments").select("amendment_number").like("amendment_number", `${prefix}-%`);
+    // Uten dette ville en feil her stilltiende gi nummer 1 på nytt, og to
+    // endringsmeldinger på samme prosjekt kunne få samme nummer.
+    if (error) throw error;
     const nums = (data ?? []).map((r) => {
-      const m = r.amendment_number.match(/-(\d+)$/);
+      const m = String(r.amendment_number ?? "").match(/-(\d+)$/);
       return m ? parseInt(m[1]) : 0;
     });
     const next = (nums.length ? Math.max(...nums) : 0) + 1;
@@ -154,13 +157,27 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
   }
 
   const save = async (): Promise<string | null> => {
-    if (!a.project_ref.trim()) { toast.error("Prosjekt er påkrevd"); return null; }
+    // Feltene kan komme tilbake som null fra databasen, så .trim() må skjermes
+    const projectRef = (a.project_ref ?? "").trim();
+    const internalDesc = (a.internal_description ?? "").trim();
+    if (!projectRef) { toast.error("Prosjekt er påkrevd"); return null; }
     let number = a.amendment_number;
-    if (!isEdit && !number) number = await nextNumber(a.project_ref);
+    if (!isEdit && !number) {
+      try {
+        number = await nextNumber(projectRef);
+      } catch (e: any) {
+        toast.error(`Kunne ikke generere endringsmeldingsnummer: ${e?.message ?? e}`);
+        return null;
+      }
+    }
 
     const payload = {
+      // amendments.title er NOT NULL uten default. Appen viser den ingen steder
+      // — den bruker internal_description og project_ref — men uten en verdi her
+      // feilet hver eneste innsetting på not-null-constraint.
+      title: internalDesc || `Endringsmelding ${number}`,
       amendment_number: number, offer_id: a.offer_id || null, project_id: a.project_id || null,
-      project_ref: a.project_ref, internal_description: a.internal_description,
+      project_ref: projectRef, internal_description: a.internal_description,
       is_mass_settlement: a.is_mass_settlement, is_additional_work: a.is_additional_work, is_price_increase: a.is_price_increase,
       notified_date: a.notified_date, revised_date: a.revised_date || null,
       project_manager: a.project_manager || null, customer_email: a.customer_email || null,
@@ -199,8 +216,20 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
   };
 
   const handleSave = async () => { const id = await save(); if (id && !isEdit) navigate({ to: "/endringsmeldinger/$id", params: { id } }); };
-  const handlePdf = async () => { const id = await save(); if (!id) return; generatePdf({ ...a, id }, lines, subtotal); };
+  // Uten firmainnstillingene får dokumentet feil (eller manglende) firmanavn
+  const requireSettings = () => {
+    if (!appSettings) { toast.error("Firmainnstillingene er ikke lastet enda – prøv igjen om et øyeblikk"); return false; }
+    return true;
+  };
+
+  const handlePdf = async () => {
+    if (!requireSettings()) return;
+    const id = await save();
+    if (!id) return;
+    generatePdf({ ...a, id }, lines, subtotal, appSettings?.company_name ?? "");
+  };
   const handleEmail = async () => {
+    if (!requireSettings()) return;
     const id = await save(); if (!id) return;
     if (!a.customer_email) { toast.error("Mangler kunde-e-post"); return; }
     const subject = `Endringsmelding nr. ${a.amendment_number} – Prosjekt ${a.project_ref}`;
@@ -405,7 +434,9 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
   );
 }
 
-function generatePdf(a: AState, lines: ALine[], subtotal: number) {
+// companyName må sendes inn: denne funksjonen ligger utenfor komponenten og har
+// ikke tilgang til appSettings (den refererte den før, og krasjet med ReferenceError)
+function generatePdf(a: AState, lines: ALine[], subtotal: number, companyName: string) {
   const chip = (on: boolean, label: string) => `<span class="chip ${on ? "on" : ""}">${label}</span>`;
   const linesHtml = lines.map((l) => `
     <tr>
@@ -418,7 +449,7 @@ function generatePdf(a: AState, lines: ALine[], subtotal: number) {
 
   const html = `
     <div class="header">
-      <div><h1>${escapeHtml(appSettings?.company_name ?? "Tilbudssystem")}</h1><div style="font-size:9.5pt;color:#555;margin-top:4px">Endringsmelding</div></div>
+      <div><h1>${escapeHtml(companyName)}</h1><div style="font-size:9.5pt;color:#555;margin-top:4px">Endringsmelding</div></div>
       <div class="meta">
         <div>Nr.: <strong>${escapeHtml(a.amendment_number)}</strong></div>
         <div>Prosjekt: ${escapeHtml(a.project_ref)}</div>
@@ -445,7 +476,7 @@ function generatePdf(a: AState, lines: ALine[], subtotal: number) {
       <tfoot><tr class="total-row"><td colspan="4" class="num">Total eks. mva</td><td class="num">${nok(subtotal)}</td></tr></tfoot>
     </table>
 
-    <div class="footer">Prosjektleder: ${escapeHtml(a.project_manager || "—")} · ${escapeHtml(appSettings?.company_name ?? "Tilbudssystem")}</div>
+    <div class="footer">Prosjektleder: ${escapeHtml(a.project_manager || "—")} · ${escapeHtml(companyName)}</div>
   `;
   openPrintPdf(`Endringsmelding-${a.amendment_number}`, html);
 }

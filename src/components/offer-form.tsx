@@ -126,6 +126,21 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     },
   });
 
+  // Endringsmeldinger som peker på dette tilbudet
+  const { data: amendments } = useQuery({
+    queryKey: ["offer-amendments", offerId],
+    enabled: isEdit,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("amendments")
+        .select("id, amendment_number, internal_description, notified_date, amendment_lines(quantity, unit_price)")
+        .eq("offer_id", offerId!)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const [offer, setOffer] = useState<OfferState>(() => emptyOffer(0, 30, ""));
   const [lines, setLines] = useState<Line[]>([]);
   const [initialized, setInitialized] = useState(false);
@@ -975,6 +990,47 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               <div className="flex justify-between border-t pt-2 text-lg font-bold"><span>Totalt eks. mva</span><span className="text-primary">{nok(total)}</span></div>
             </div>
           </div>
+
+          {/* Endringsmeldinger knyttet til dette tilbudet — så du finner veien
+              begge veier, ikke bare fra endringsmeldingen til tilbudet */}
+          {isEdit && (
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  Endringsmeldinger
+                  {(amendments ?? []).length > 0 && (
+                    <span className="ml-2 text-xs font-normal normal-case">({amendments!.length})</span>
+                  )}
+                </h2>
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/endringsmeldinger/ny"><Plus className="mr-1 h-4 w-4" />Ny endringsmelding</Link>
+                </Button>
+              </div>
+              {(amendments ?? []).length === 0 ? (
+                <p className="py-3 text-sm text-muted-foreground">Ingen endringsmeldinger på dette tilbudet.</p>
+              ) : (
+                <div className="divide-y">
+                  {amendments!.map((am: any) => {
+                    const sum = (am.amendment_lines ?? []).reduce(
+                      (s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
+                    return (
+                      <Link
+                        key={am.id}
+                        to="/endringsmeldinger/$id"
+                        params={{ id: am.id }}
+                        className="flex items-center gap-3 py-2.5 text-sm hover:bg-accent/40"
+                      >
+                        <span className="font-medium tabular-nums text-primary">{am.amendment_number}</span>
+                        <span className="flex-1 truncate text-muted-foreground">{am.internal_description || "—"}</span>
+                        <span className="text-xs text-muted-foreground">{fmtDate(am.notified_date)}</span>
+                        <span className="font-medium tabular-nums">{nok(sum)}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

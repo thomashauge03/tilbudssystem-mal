@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2 } from "lucide-react";
 import { nok, num, fmtDate, toISODate, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openPrintPdf, escapeHtml } from "@/lib/pdf";
 import { useAppSettings } from "@/hooks/use-app-settings";
@@ -21,6 +21,10 @@ interface AState {
   is_mass_settlement: boolean; is_additional_work: boolean; is_price_increase: boolean;
   notified_date: string; revised_date: string | null; project_manager: string; customer_email: string;
   change_description: string; reason: string; other_notes: string;
+  // Livssyklus: 'krav' ved oppretting, 'endringsmelding' når kunden har signert.
+  // Begge feltene ligger her slik at de overlever lagring og lasting av skjemaet.
+  status?: string;
+  customer_signed_at?: string | null;
 }
 
 function empty(): AState {
@@ -30,10 +34,11 @@ function empty(): AState {
     notified_date: toISODate(new Date()), revised_date: null,
     project_manager: "", customer_email: "",
     change_description: "", reason: "", other_notes: "",
+    status: "krav", customer_signed_at: null,
   };
 }
 
-export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
+export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: string; initialOfferId?: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isEdit = !!amendmentId;
@@ -84,9 +89,46 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
   const [a, setA] = useState<AState>(() => empty());
   const [lines, setLines] = useState<ALine[]>([]);
   const [init, setInit] = useState(false);
+  // Knappene lagrer før de gjør noe annet. Uten denne referansen ville en ny
+  // melding blitt lagt inn på nytt for hver knapp man trykket på, og
+  // signeringslenken ville pekt på den første av kopiene.
+  const currentAmendmentIdRef = useRef<string | undefined>(amendmentId);
   const DRAFT_KEY = `amendment-draft-${amendmentId ?? "new"}`;
 
+  // Når kravet opprettes fra inne i et tilbud, hentes tilbudet slik at både
+  // tilbudskoblingen og prosjektet kan fylles inn på forhånd.
+  const { data: initialOffer } = useQuery({
+    queryKey: ["offer-for-new-amendment", initialOfferId],
+    enabled: !!initialOfferId && !amendmentId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("offers")
+        .select("id, offer_number, title, project_id, project_number, customer_email, projects(project_number, name)")
+        .eq("id", initialOfferId!)
+        .single();
+      if (error) throw error;
+      return data as any;
+    },
+  });
+
   useEffect(() => {
+    // Vent på tilbudet før skjemaet initialiseres, ellers ville det blitt tomt
+    if (!isEdit && initialOfferId && !initialOffer) return;
+
+    if (!isEdit && !init && initialOfferId && initialOffer) {
+      const proj = initialOffer.projects;
+      setA({
+        ...empty(),
+        offer_id: initialOffer.id,
+        project_id: initialOffer.project_id ?? null,
+        project_ref: initialOffer.project_number || proj?.project_number || proj?.name || "",
+        internal_description: initialOffer.title ?? "",
+        customer_email: initialOffer.customer_email ?? "",
+      });
+      setInit(true);
+      return;
+    }
+
     if (!isEdit && !init) {
       // Gjenopprett utkast fra sessionStorage om det finnes (bare samme fane/økt)
       const saved = sessionStorage.getItem(DRAFT_KEY);
@@ -102,7 +144,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
       setA(empty()); setInit(true);
     }
     if (isEdit && loaded && !init) { setA(loaded.amendment as any); setLines(loaded.lines); setInit(true); }
-  }, [isEdit, loaded, init]);
+  }, [isEdit, loaded, init, initialOfferId, initialOffer]);
 
   // Lagre skjematilstand i sessionStorage ved hver endring (bare for nye endringsmeldinger)
   useEffect(() => {
@@ -112,6 +154,12 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
 
   const subtotal = useMemo(() => lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0), [lines]);
   const set = <K extends keyof AState>(k: K, v: AState[K]) => setA((p) => ({ ...p, [k]: v }));
+
+  // Et krav om endring blir en endringsmelding først når kunden har signert.
+  // Statusen settes av en trigger i databasen, men vi leser begge feltene her
+  // slik at visningen stemmer også rett etter en nullstilling.
+  const isSigned = !!a.customer_signed_at || a.status === "endringsmelding";
+  const docLabel = isSigned ? "Endringsmelding" : "Krav om endring";
 
   const pickProject = (id: string) => {
     if (id === "__none") { setA((p) => ({ ...p, project_id: null, project_ref: "" })); return; }
@@ -166,16 +214,19 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
       try {
         number = await nextNumber(projectRef);
       } catch (e: any) {
-        toast.error(`Kunne ikke generere endringsmeldingsnummer: ${e?.message ?? e}`);
+        toast.error(`Kunne ikke generere nummer: ${e?.message ?? e}`);
         return null;
       }
     }
 
+    // Status er bevisst utelatt fra payload: den styres av signeringen (triggeren
+    // i databasen setter 'endringsmelding'). Ville vi sendt a.status med her,
+    // kunne en lagring av en signert melding skrevet 'krav' tilbake over den.
     const payload = {
       // amendments.title er NOT NULL uten default. Appen viser den ingen steder
       // — den bruker internal_description og project_ref — men uten en verdi her
       // feilet hver eneste innsetting på not-null-constraint.
-      title: internalDesc || `Endringsmelding ${number}`,
+      title: internalDesc || `${docLabel} ${number}`,
       amendment_number: number, offer_id: a.offer_id || null, project_id: a.project_id || null,
       project_ref: projectRef, internal_description: a.internal_description,
       is_mass_settlement: a.is_mass_settlement, is_additional_work: a.is_additional_work, is_price_increase: a.is_price_increase,
@@ -183,16 +234,18 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
       project_manager: a.project_manager || null, customer_email: a.customer_email || null,
       change_description: a.change_description, reason: a.reason, other_notes: a.other_notes,
     };
-    let id = amendmentId;
-    if (isEdit) {
-      const { error } = await supabase.from("amendments").update(payload).eq("id", amendmentId!);
+    let id = currentAmendmentIdRef.current ?? amendmentId;
+    const editing = isEdit || !!currentAmendmentIdRef.current;
+    if (editing && id) {
+      const { error } = await supabase.from("amendments").update(payload).eq("id", id);
       if (error) { toast.error(error.message); return null; }
-      await supabase.from("amendment_lines").delete().eq("amendment_id", amendmentId!);
+      await supabase.from("amendment_lines").delete().eq("amendment_id", id);
     } else {
-      const { data, error } = await supabase.from("amendments").insert({ ...payload, tenant_id: tenantId }).select("id").single();
+      const { data, error } = await supabase.from("amendments").insert({ ...payload, status: "krav", tenant_id: tenantId }).select("id").single();
       if (error) { toast.error(error.message); return null; }
       id = data.id;
-      setA((p) => ({ ...p, amendment_number: number }));
+      currentAmendmentIdRef.current = id;
+      setA((p) => ({ ...p, amendment_number: number, status: "krav" }));
     }
     if (lines.length) {
       const ins = lines.map((l, idx) => ({
@@ -210,7 +263,7 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
     qc.invalidateQueries({ queryKey: ["amendments"] });
     qc.invalidateQueries({ queryKey: ["amendment", id] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
-    toast.success("Endringsmelding lagret");
+    toast.success(`${docLabel} lagret`);
     sessionStorage.removeItem(DRAFT_KEY);
     return id!;
   };
@@ -232,10 +285,61 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
     if (!requireSettings()) return;
     const id = await save(); if (!id) return;
     if (!a.customer_email) { toast.error("Mangler kunde-e-post"); return; }
-    const subject = `Endringsmelding nr. ${a.amendment_number} – Prosjekt ${a.project_ref}`;
-    const body = `Hei,\n\nVedlagt finner du endringsmelding nr. ${a.amendment_number} for prosjekt ${a.project_ref}.\n\nMed vennlig hilsen\n${appSettings?.company_name ?? "Tilbudssystem"}`;
+
+    // Er kravet ikke signert, legger vi ved en signeringslenke slik tilbudene gjør
+    let signingLink = "";
+    if (!isSigned && tenantId) {
+      const { data: tokenData } = await supabase
+        .from("amendment_signing_tokens" as never)
+        .insert({ amendment_id: id, tenant_id: tenantId } as never)
+        .select("token")
+        .single();
+      if (tokenData) {
+        signingLink = `\n\nSigner kravet digitalt her:\n${window.location.origin}/signer-endring/${(tokenData as any).token}`;
+      }
+    }
+
+    const senderName = appSettings?.company_name ?? "Tilbudssystem";
+    const subject = isSigned
+      ? `Endringsmelding nr. ${a.amendment_number} – Prosjekt ${a.project_ref}`
+      : `Krav om endring nr. ${a.amendment_number} – Prosjekt ${a.project_ref}`;
+    const body = isSigned
+      ? `Hei,\n\nVedlagt finner du endringsmelding nr. ${a.amendment_number} for prosjekt ${a.project_ref}.\n\nMed vennlig hilsen\n${senderName}`
+      : `Hei,\n\nVi sender herved krav om endring nr. ${a.amendment_number} for prosjekt ${a.project_ref}.${signingLink}\n\nVia signeringslenken kan du lese gjennom kravet før du signerer digitalt. Når kravet er signert, blir det en endringsmelding.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
     const cc = a.project_manager && a.project_manager.includes("@") ? `&cc=${encodeURIComponent(a.project_manager)}` : "";
     window.location.href = `mailto:${encodeURIComponent(a.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}${cc}`;
+  };
+
+  const handleSigningLink = async () => {
+    const id = await save();
+    if (!id) return;
+    if (!tenantId) { toast.error("Ingen tenant"); return; }
+    const { data: tokenData, error } = await supabase
+      .from("amendment_signing_tokens" as never)
+      .insert({ amendment_id: id, tenant_id: tenantId } as never)
+      .select("token")
+      .single();
+    if (error || !tokenData) { toast.error("Kunne ikke opprette signeringslenke"); return; }
+    const link = `${window.location.origin}/signer-endring/${(tokenData as any).token}`;
+    await navigator.clipboard.writeText(link);
+    toast.success("Signeringslenke kopiert til utklippstavlen!");
+  };
+
+  const handleResetSignature = async () => {
+    if (!amendmentId) return;
+    if (!window.confirm("Er du sikker på at du vil nullstille kundesignaturen? Meldingen blir da et krav om endring igjen, og alle signeringslenker slutter å fungere.")) return;
+    await supabase.from("amendment_signing_tokens" as never).delete().eq("amendment_id" as never, amendmentId as never);
+    // Triggeren i databasen setter bare status ved signering, ikke ved
+    // nullstilling — derfor må status settes eksplisitt tilbake til 'krav' her.
+    const { error } = await supabase
+      .from("amendments")
+      .update({ customer_signed_at: null, status: "krav" } as any)
+      .eq("id", amendmentId);
+    if (error) { toast.error(error.message); return; }
+    setA((p) => ({ ...p, customer_signed_at: null, status: "krav" }));
+    qc.invalidateQueries({ queryKey: ["amendment", amendmentId] });
+    qc.invalidateQueries({ queryKey: ["amendments"] });
+    toast.success("Signatur nullstilt. Du kan nå sende ut en ny signeringslenke.");
   };
 
   if (isEdit && !init) return <div className="text-muted-foreground">Laster…</div>;
@@ -245,14 +349,42 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild><Link to="/endringsmeldinger"><ArrowLeft className="mr-1 h-4 w-4" />Tilbake</Link></Button>
-          <h1 className="text-2xl font-bold">{isEdit ? `Endringsmelding ${a.amendment_number}` : "Ny endringsmelding"}</h1>
+          <h1 className="text-2xl font-bold">
+            {isEdit ? `${docLabel} #${a.amendment_number}` : "Nytt krav om endring"}
+          </h1>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap lg:justify-end">
+          {/* Er den alt signert, skal det ikke gå an å be om en ny signatur —
+              da ville customer_signed_at blitt overskrevet. Nullstill først. */}
+          {!isSigned && (
+            <Button variant="outline" onClick={handleSigningLink} title="Generer signeringslenke og kopier til utklippstavlen">
+              <Link2 className="mr-2 h-4 w-4" />Signeringslenke
+            </Button>
+          )}
+          {isEdit && isSigned && (
+            <Button variant="outline" onClick={handleResetSignature} className="text-destructive border-destructive/50 hover:bg-destructive/10" title="Nullstill kundesignatur">
+              <RotateCcw className="mr-2 h-4 w-4" />Nullstill signatur
+            </Button>
+          )}
           <Button variant="outline" onClick={handleEmail}><Mail className="mr-2 h-4 w-4" />Send på e-post</Button>
           <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF</Button>
           <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre</Button>
         </div>
       </div>
+
+      {isSigned && (
+        <div className="flex items-start gap-3 rounded-xl border border-green-600/40 bg-green-600/10 p-4">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-600" />
+          <div className="text-sm">
+            <div className="font-semibold text-green-700 dark:text-green-500">
+              Signert av kunden{a.customer_signed_at ? ` ${fmtDate(a.customer_signed_at)}` : ""}
+            </div>
+            <div className="text-muted-foreground">
+              Kravet om endring er nå en endringsmelding.
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
@@ -437,6 +569,8 @@ export function AmendmentForm({ amendmentId }: { amendmentId?: string }) {
 // companyName må sendes inn: denne funksjonen ligger utenfor komponenten og har
 // ikke tilgang til appSettings (den refererte den før, og krasjet med ReferenceError)
 function generatePdf(a: AState, lines: ALine[], subtotal: number, companyName: string) {
+  // Dokumentet heter "Krav om endring" til kunden har signert
+  const docLabel = a.customer_signed_at || a.status === "endringsmelding" ? "Endringsmelding" : "Krav om endring";
   const chip = (on: boolean, label: string) => `<span class="chip ${on ? "on" : ""}">${label}</span>`;
   const linesHtml = lines.map((l) => `
     <tr>
@@ -449,7 +583,7 @@ function generatePdf(a: AState, lines: ALine[], subtotal: number, companyName: s
 
   const html = `
     <div class="header">
-      <div><h1>${escapeHtml(companyName)}</h1><div style="font-size:9.5pt;color:#555;margin-top:4px">Endringsmelding</div></div>
+      <div><h1>${escapeHtml(companyName)}</h1><div style="font-size:9.5pt;color:#555;margin-top:4px">${docLabel}</div></div>
       <div class="meta">
         <div>Nr.: <strong>${escapeHtml(a.amendment_number)}</strong></div>
         <div>Prosjekt: ${escapeHtml(a.project_ref)}</div>
@@ -478,5 +612,5 @@ function generatePdf(a: AState, lines: ALine[], subtotal: number, companyName: s
 
     <div class="footer">Prosjektleder: ${escapeHtml(a.project_manager || "—")} · ${escapeHtml(companyName)}</div>
   `;
-  openPrintPdf(`Endringsmelding-${a.amendment_number}`, html);
+  openPrintPdf(`${docLabel.replace(/ /g, "-")}-${a.amendment_number}`, html);
 }

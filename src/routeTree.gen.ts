@@ -26,6 +26,7 @@ import { Route as EndringsmeldingerIndexRouteImport } from './routes/endringsmel
 import { Route as TilbudNyRouteImport } from './routes/tilbud.ny'
 import { Route as TilbudIdRouteImport } from './routes/tilbud.$id'
 import { Route as SignerTokenRouteImport } from './routes/signer.$token'
+import { Route as SignerEndringTokenRouteImport } from './routes/signer-endring.$token'
 import { Route as EndringsmeldingerNyRouteImport } from './routes/endringsmeldinger.ny'
 import { Route as EndringsmeldingerIdRouteImport } from './routes/endringsmeldinger.$id'
 
@@ -114,6 +115,11 @@ const SignerTokenRoute = SignerTokenRouteImport.update({
   path: '/signer/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignerEndringTokenRoute = SignerEndringTokenRouteImport.update({
+  id: '/signer-endring/$token',
+  path: '/signer-endring/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EndringsmeldingerNyRoute = EndringsmeldingerNyRouteImport.update({
   id: '/endringsmeldinger/ny',
   path: '/endringsmeldinger/ny',
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/status': typeof StatusRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
+  '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/status': typeof StatusRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
+  '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/status': typeof StatusRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
+  '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
@@ -206,6 +215,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
+    | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
+    | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
+    | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
@@ -270,6 +282,7 @@ export interface RootRouteChildren {
   StatusRoute: typeof StatusRoute
   EndringsmeldingerIdRoute: typeof EndringsmeldingerIdRoute
   EndringsmeldingerNyRoute: typeof EndringsmeldingerNyRoute
+  SignerEndringTokenRoute: typeof SignerEndringTokenRoute
   SignerTokenRoute: typeof SignerTokenRoute
   TilbudIdRoute: typeof TilbudIdRoute
   TilbudNyRoute: typeof TilbudNyRoute
@@ -398,6 +411,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignerTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signer-endring/$token': {
+      id: '/signer-endring/$token'
+      path: '/signer-endring/$token'
+      fullPath: '/signer-endring/$token'
+      preLoaderRoute: typeof SignerEndringTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/endringsmeldinger/ny': {
       id: '/endringsmeldinger/ny'
       path: '/endringsmeldinger/ny'
@@ -430,6 +450,7 @@ const rootRouteChildren: RootRouteChildren = {
   StatusRoute: StatusRoute,
   EndringsmeldingerIdRoute: EndringsmeldingerIdRoute,
   EndringsmeldingerNyRoute: EndringsmeldingerNyRoute,
+  SignerEndringTokenRoute: SignerEndringTokenRoute,
   SignerTokenRoute: SignerTokenRoute,
   TilbudIdRoute: TilbudIdRoute,
   TilbudNyRoute: TilbudNyRoute,

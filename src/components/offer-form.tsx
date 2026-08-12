@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, Paperclip, X, ExternalLink, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, Download } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { nok, num, fmtDate, toISODate, addDays, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { useAppSettings } from "@/hooks/use-app-settings";
@@ -356,6 +356,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   // Uten innstillingene blir firmanavn/logo tomme i PDF-en. Bedre å vente enn
   // å produsere et dokument med feil (eller manglende) merkevare.
+  const hasDeadline = offerHasDeadline(offer.status);
+
   const settingsReady = !!appSettings;
   const requireSettings = () => {
     if (!settingsReady) { toast.error("Firmainnstillingene er ikke lastet ennå – prøv igjen om et øyeblikk"); return false; }
@@ -415,7 +417,9 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
     const subject = `Tilbud nr. ${offer.offer_number ?? ""} – ${offer.title}`;
     const senderName = appSettings?.company_name ?? "Tilbudssystem";
-    const body = `Hei,\n\nVi sender herved tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.\n\nTilbudet er gyldig t.o.m. ${fmtDate(offer.valid_until)}.${signingLink}\n\nVia signeringslenken kan du lese gjennom tilbudet og kontrakten før du signerer digitalt.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
+    // Et godkjent tilbud har ingen frist igjen, så da nevnes den ikke
+    const gyldighet = hasDeadline ? `\n\nTilbudet er gyldig t.o.m. ${fmtDate(offer.valid_until)}.` : "";
+    const body = `Hei,\n\nVi sender herved tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.${gyldighet}${signingLink}\n\nVia signeringslenken kan du lese gjennom tilbudet og kontrakten før du signerer digitalt.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
     window.location.href = `mailto:${encodeURIComponent(offer.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -627,10 +631,19 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               <Label>Tilbudsdato</Label>
               <Input type="date" value={offer.offer_date} onChange={(e) => set("offer_date", e.target.value)} />
             </div>
-            <div className="space-y-2">
-              <Label>Gyldig t.o.m.</Label>
-              <Input type="date" value={offer.valid_until} onChange={(e) => set("valid_until", e.target.value)} />
-            </div>
+            {/* Fristen gjelder bare fram til tilbudet er godkjent. Etterpå er
+                tilbudet aktivt, og datoen ville bare forvirret. */}
+            {hasDeadline ? (
+              <div className="space-y-2">
+                <Label>Gyldig t.o.m.</Label>
+                <Input type="date" value={offer.valid_until} onChange={(e) => set("valid_until", e.target.value)} />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <p className="flex h-9 items-center text-sm text-muted-foreground">Godkjent — ingen frist</p>
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Deres referanse</Label>
@@ -1003,7 +1016,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   )}
                 </h2>
                 <Button size="sm" variant="outline" asChild>
-                  <Link to="/endringsmeldinger/ny"><Plus className="mr-1 h-4 w-4" />Ny endringsmelding</Link>
+                  <Link to="/endringsmeldinger/ny" search={{ offer: offerId }}><Plus className="mr-1 h-4 w-4" />Nytt krav om endring</Link>
                 </Button>
               </div>
               {(amendments ?? []).length === 0 ? (

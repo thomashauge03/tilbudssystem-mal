@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { nok, fmtDate, compareAmendmentNumber, OFFER_WON_STATUSES } from "@/lib/format";
+import { nok, fmtDate, compareAmendmentNumber, OFFER_WON_STATUSES, OFFER_COMPLETED } from "@/lib/format";
 import { Check, Search, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/status")({
   component: StatusPage,
 });
 
-type Filter = "all" | "active" | "partial";
+type Filter = "all" | "active" | "partial" | "fullført";
 
 // H3/M7: derive today at call time so it doesn't go stale if the app is open across midnight
 const getToday = () => new Date().toISOString().slice(0, 10);
@@ -253,7 +253,7 @@ function StatusPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("offers")
-        .select("id, offer_number, title, customer_name, valid_until, project_number, admin_cost_pct, invoiced_amount, offer_lines(quantity, unit_price, included)")
+        .select("id, offer_number, title, customer_name, status, valid_until, project_number, admin_cost_pct, invoiced_amount, offer_lines(quantity, unit_price, included)")
         .in("status", OFFER_WON_STATUSES)
         .order("offer_number", { ascending: false });
       if (error) throw error;
@@ -305,6 +305,7 @@ function StatusPage() {
         // "Aktive" betyr derfor: ikke ferdig fakturert.
         if (filter === "active" && total > 0 && inv >= total) return false;
         if (filter === "partial" && (inv === 0 || inv >= total)) return false;
+        if (filter === "fullført" && o.status !== OFFER_COMPLETED) return false;
         return matchesSearch([o.title, o.customer_name, String(o.offer_number), o.project_number]);
       }),
     [offers, filter, q, today],
@@ -315,27 +316,29 @@ function StatusPage() {
       (amendments ?? []).filter((a: any) => {
         const total = amendmentTotal(a);
         const inv = Number(a.invoiced_amount ?? 0);
-        if (filter === "active") return false;
+        if (filter === "active" || filter === "fullført") return false;
         if (filter === "partial" && (inv === 0 || inv >= total)) return false;
         return matchesSearch([a.amendment_number, a.project_ref, a.internal_description]);
       }),
     [amendments, filter, q],
   );
 
+  // Summene regnes av det som faktisk vises, ikke av hele basen — ellers ville
+  // toppen vist ett tall og tabellen under et annet.
   const totalSum = useMemo(
     () =>
-      (offers ?? []).reduce((s: number, o: any) => s + offerTotal(o), 0) +
-      (amendments ?? []).reduce((s: number, a: any) => s + amendmentTotal(a), 0),
-    [offers, amendments],
+      filteredOffers.reduce((s: number, o: any) => s + offerTotal(o), 0) +
+      filteredAmendments.reduce((s: number, a: any) => s + amendmentTotal(a), 0),
+    [filteredOffers, filteredAmendments],
   );
 
   const totalInvoiced = useMemo(
     () =>
-      [...(offers ?? []), ...(amendments ?? [])].reduce(
+      [...filteredOffers, ...filteredAmendments].reduce(
         (s: number, x: any) => s + Number(x.invoiced_amount ?? 0),
         0,
       ),
-    [offers, amendments],
+    [filteredOffers, filteredAmendments],
   );
 
   const invalidate = () => {
@@ -347,6 +350,7 @@ function StatusPage() {
     { key: "all", label: "Alle" },
     { key: "active", label: "Aktive tilbud" },
     { key: "partial", label: "Delvis fakturert" },
+    { key: "fullført", label: "Fullført" },
   ];
 
   return (

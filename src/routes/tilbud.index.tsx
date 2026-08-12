@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate } from "@/lib/format";
+import { nok, fmtDate, isOfferExpired, offerHasDeadline } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -100,8 +100,9 @@ function OffersList() {
 
   const today = new Date().toISOString().slice(0, 10);
   const rows = (data ?? []).filter((o: any) => {
-    if (filter === "active" && o.valid_until && o.valid_until < today) return false;
-    if (filter === "expired" && (!o.valid_until || o.valid_until >= today)) return false;
+    // Et godkjent tilbud er aktivt uansett dato — fristen gjelder bare de andre
+    if (filter === "active" && isOfferExpired(o, today)) return false;
+    if (filter === "expired" && !isOfferExpired(o, today)) return false;
     if (!q) return true;
     const t = q.toLowerCase();
     const customerName = o.customers?.name ?? "";
@@ -196,8 +197,10 @@ function OffersList() {
                   <td className="px-4 py-3">{o.customers?.name ?? "—"}</td>
                   <td className="px-4 py-3">{o.title}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{fmtDate(o.created_at)}</td>
-                  <td className={`px-4 py-3 text-sm ${o.valid_until && o.valid_until < today ? "text-destructive" : "text-muted-foreground"}`}>
-                    {o.valid_until ? fmtDate(o.valid_until) : "—"}
+                  <td className={`px-4 py-3 text-sm ${isOfferExpired(o, today) ? "text-destructive" : "text-muted-foreground"}`}>
+                    {!offerHasDeadline(o.status)
+                      ? <span className="text-muted-foreground/50" title="Godkjent tilbud har ingen frist">—</span>
+                      : o.valid_until ? fmtDate(o.valid_until) : "—"}
                   </td>
                   <td className="px-4 py-3 text-sm">{o.our_ref ?? "—"}</td>
                   <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()} title={o.customer_signed_at ? `Signert av kunde` : "Ikke signert av kunde"}>

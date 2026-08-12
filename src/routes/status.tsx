@@ -301,7 +301,9 @@ function StatusPage() {
       (offers ?? []).filter((o: any) => {
         const total = offerTotal(o);
         const inv = Number(o.invoiced_amount ?? 0);
-        if (filter === "active" && o.valid_until < today) return false;
+        // Alle tilbudene her er godkjente, og da gjelder ikke fristen lenger.
+        // "Aktive" betyr derfor: ikke ferdig fakturert.
+        if (filter === "active" && total > 0 && inv >= total) return false;
         if (filter === "partial" && (inv === 0 || inv >= total)) return false;
         return matchesSearch([o.title, o.customer_name, String(o.offer_number), o.project_number]);
       }),
@@ -404,7 +406,6 @@ function StatusPage() {
                 <th className="px-4 py-3">Kunde</th>
                 <th className="px-4 py-3">Beskrivelse</th>
                 <th className="px-4 py-3">Prosjektnr.</th>
-                <th className="px-4 py-3">Gyldig t.o.m.</th>
                 <th className="px-4 py-3 text-right">Kontraktssum</th>
                 <th className="px-4 py-3 text-right">Fakturert</th>
                 <th className="px-4 py-3 text-right">Gjenstår</th>
@@ -415,11 +416,11 @@ function StatusPage() {
             <tbody>
               {loadO ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">Laster…</td>
+                  <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Laster…</td>
                 </tr>
               ) : filteredOffers.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">Ingen tilbud.</td>
+                  <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Ingen tilbud.</td>
                 </tr>
               ) : (
                 filteredOffers.map((o: any, i: number) => {
@@ -439,9 +440,6 @@ function StatusPage() {
                         <td className="px-4 py-3">{o.customer_name ?? "—"}</td>
                         <td className="px-4 py-3">{o.title}</td>
                         <td className="px-4 py-3 text-muted-foreground">{o.project_number ?? "—"}</td>
-                        <td className={`px-4 py-3 ${o.valid_until < today ? "text-destructive" : "text-muted-foreground"}`}>
-                          {fmtDate(o.valid_until)}
-                        </td>
                         <td className="px-4 py-3 text-right font-medium">{nok(total)}</td>
                         <td className="px-4 py-3 text-right font-medium">
                           <span className={inv > 0 ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}>
@@ -470,7 +468,7 @@ function StatusPage() {
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={10} className="p-0">
+                          <td colSpan={9} className="p-0">
                             <PaymentsPanel parentId={o.id} parentType="offers" onSaved={invalidate} />
                           </td>
                         </tr>

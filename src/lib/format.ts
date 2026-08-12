@@ -26,6 +26,18 @@ export const OUR_REFS = ["Tommy Hauge", "Karl Hauge"];
 // hverandre og valget i Innstillinger overlevde ikke en omlasting.
 export const THEME_STORAGE_KEY = "th-theme";
 
+// Fristen "gyldig t.o.m." gjelder bare tilbud som ikke er godkjent. Et godkjent
+// tilbud er aktivt, og da har fristen ingen betydning lenger — det skal verken
+// vises, telles som utløpt eller filtreres bort.
+export const OFFER_APPROVED = "godkjent";
+
+export const offerHasDeadline = (status?: string | null) => status !== OFFER_APPROVED;
+
+export const isOfferExpired = (
+  offer: { status?: string | null; valid_until?: string | null },
+  today: string,
+) => offerHasDeadline(offer.status) && !!offer.valid_until && offer.valid_until < today;
+
 // Endringsmeldingsnummer er sammensatt: "<prosjektnr>-<løpenummer>", f.eks.
 // "1001-3". Kolonnen er text, så en ren alfabetisk sortering ville plassert
 // "1001-10" foran "1001-2". Her sammenlignes prefiks og løpenummer hver for seg.

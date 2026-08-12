@@ -1,3 +1,5 @@
+import { offerHasDeadline } from "@/lib/format";
+
 export function openPrintPdf(title: string, bodyHtml: string) {
   const win = window.open("", "_blank", "width=900,height=1100");
   if (!win) return;
@@ -59,6 +61,7 @@ interface OfferPdfData {
   project_number: string;
   offer_text: string;
   admin_cost_pct: number;
+  status?: string;
 }
 
 interface OfferPdfSettings {
@@ -105,6 +108,8 @@ export function openOfferPdf(
   // Ingen fallback til /logo.png — den er Techauge sin, og ville havnet i andre
   // firmaers tilbud når innstillingene ikke var lastet enda.
   const logoUrl = settings.logo_url || "";
+  // Godkjent tilbud er aktivt — da har "gyldig t.o.m." ingen betydning
+  const hasDeadline = offerHasDeadline(offer.status);
   const included = lines.filter((l) => l.included);
   const vat = totals.total * (settings.vat_pct / 100);
   const totalInclVat = totals.total + vat;
@@ -287,7 +292,7 @@ export function openOfferPdf(
               </div>
               <dl class="meta-grid">
                 <dt>Dato</dt><dd>${fmtDate(offer.offer_date)}</dd>
-                <dt>Gyldig t.o.m.</dt><dd>${fmtDate(offer.valid_until)}</dd>
+                ${hasDeadline ? `<dt>Gyldig t.o.m.</dt><dd>${fmtDate(offer.valid_until)}</dd>` : ""}
                 ${offer.project_number ? `<dt>Prosjektnr.</dt><dd>${escapeHtml(offer.project_number)}</dd>` : ""}
               </dl>
             </div>
@@ -360,10 +365,10 @@ export function openOfferPdf(
             <p class="label">Betalingsvilkår</p>
             <div class="v">${escapeHtml(settings.payment_terms) || "—"}</div>
           </div>
-          <div class="condition">
+          ${hasDeadline ? `<div class="condition">
             <p class="label">Tilbudet gyldig</p>
             <div class="v">T.o.m. ${fmtDate(offer.valid_until)}</div>
-          </div>
+          </div>` : ""}
           <div class="condition">
             <p class="label">Vår referanse</p>
             <div class="v">${escapeHtml(offer.our_ref) || "—"}</div>

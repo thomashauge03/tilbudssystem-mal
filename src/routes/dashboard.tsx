@@ -28,11 +28,14 @@ export function useDashboard() {
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
       const soon = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
-      const [offersRes, amendmentsRes, recentRes, expiringRes] = await Promise.all([
+      const [offersRes, amendmentsRes, recentRes, expiringRes, expiredRes] = await Promise.all([
         supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("offer_number", { ascending: false }).limit(500),
         supabase.from("amendments").select("id, amendment_number, project_ref, notified_date, invoiced_amount, amendment_lines(quantity, unit_price)").limit(500),
         supabase.from("offers").select("id, offer_number, title, customer_name, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").order("created_at", { ascending: false }).limit(6),
-        supabase.from("offers").select("id, offer_number, title, customer_name, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, included)").eq("status", "godkjent").gte("valid_until", today).lte("valid_until", soon),
+        // Fristen gjelder bare tilbud som ennå ikke er godkjent — et godkjent
+        // tilbud er aktivt og kan ikke løpe ut.
+        supabase.from("offers").select("id, offer_number, title, customer_name, status, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, included)").not("status", "eq", "godkjent").gte("valid_until", today).lte("valid_until", soon),
+        supabase.from("offers").select("id, status, valid_until").not("status", "eq", "godkjent").lt("valid_until", today),
       ]);
 
       const offers = offersRes.data ?? [];
@@ -42,16 +45,17 @@ export function useDashboard() {
       const offerStats = offers.map((o: any) => {
         const total = offerTotal(o.offer_lines, o.admin_cost_pct);
         const inv = Number(o.invoiced_amount ?? 0);
-        const expired = o.valid_until < today;
-        return { id: o.id, total, inv, expired, pct: total > 0 ? inv / total : 0 };
+        // Alle disse er godkjente, og da gjelder ikke fristen
+        return { id: o.id, total, inv, pct: total > 0 ? inv / total : 0 };
       });
 
       const totalKontraktssum = offerStats.reduce((s, o) => s + o.total, 0);
       const totalFakturert = offerStats.reduce((s, o) => s + o.inv, 0);
       const totalGjenstår = totalKontraktssum - totalFakturert;
 
-      const åpne = offerStats.filter((o) => !o.expired && o.pct < 1);
-      const utgåtte = offerStats.filter((o) => o.expired && o.inv < o.total);
+      const åpne = offerStats.filter((o) => o.pct < 1);
+      // Utgåtte = tilbud som ikke ble godkjent innen fristen
+      const utgåtteCount = (expiredRes.data ?? []).length;
       const delvisFakturert = offerStats.filter((o) => o.inv > 0 && o.inv < o.total);
       const fullFakturert = offerStats.filter((o) => o.total > 0 && o.inv >= o.total);
       const ikkjeStarta = offerStats.filter((o) => o.inv === 0 && o.total > 0);
@@ -69,7 +73,6 @@ export function useDashboard() {
         ...o,
         total: offerTotal(o.offer_lines, o.admin_cost_pct),
         inv: Number(o.invoiced_amount ?? 0),
-        expired: o.valid_until < today,
       }));
 
       const expiring = (expiringRes.data ?? []).map((o: any) => ({
@@ -83,7 +86,7 @@ export function useDashboard() {
         totalFakturert,
         totalGjenstår,
         åpneCount: åpne.length,
-        utgåtteCount: utgåtte.length,
+        utgåtteCount,
         delvisFakturertCount: delvisFakturert.length,
         fullFakturertCount: fullFakturert.length,
         ikkjeStartaCount: ikkjeStarta.length,
@@ -205,7 +208,6 @@ function Dashboard() {
     { name: "Fullstendig fakturert", value: d.fullFakturertCount, color: RING_COLORS.fakturert },
     { name: "Delvis fakturert", value: d.delvisFakturertCount, color: RING_COLORS.delvis },
     { name: "Ikke startet", value: d.ikkjeStartaCount, color: "#94a3b8" },
-    { name: "Utgåtte", value: d.utgåtteCount, color: RING_COLORS.utgått },
   ] : [];
 
   const fakturertPct = d && d.totalKontraktssum > 0
@@ -229,10 +231,10 @@ function Dashboard() {
 
       {/* Rad 2: tallstatistikk */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={FileText} label="Åpne tilbud" value={isLoading ? "…" : String(d?.åpneCount ?? 0)} hint="Innenfor gyldighetsperiode" to="/tilbud" />
+        <StatCard icon={FileText} label="Åpne tilbud" value={isLoading ? "…" : String(d?.åpneCount ?? 0)} hint="Godkjent, ikke ferdig fakturert" to="/tilbud" />
         <StatCard icon={CheckCircle2} label="Fullt fakturert" value={isLoading ? "…" : String(d?.fullFakturertCount ?? 0)} hint="100 % fakturert" accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" to="/status" />
         <StatCard icon={Clock} label="Delvis fakturert" value={isLoading ? "…" : String(d?.delvisFakturertCount ?? 0)} hint="Mellom 1–99 %" accent="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" to="/status" />
-        <StatCard icon={AlertTriangle} label="Utgåtte tilbud" value={isLoading ? "…" : String(d?.utgåtteCount ?? 0)} hint="Utløpt, ikke fullt fakturert" accent="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" />
+        <StatCard icon={AlertTriangle} label="Utgåtte tilbud" value={isLoading ? "…" : String(d?.utgåtteCount ?? 0)} hint="Frist utløpt uten godkjenning" accent="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" />
       </div>
 
       {/* Diagram-seksjon */}
@@ -266,7 +268,6 @@ function Dashboard() {
               { label: "Fullstendig fakturert", val: d?.fullFakturertCount ?? 0, color: RING_COLORS.fakturert },
               { label: "Delvis fakturert", val: d?.delvisFakturertCount ?? 0, color: RING_COLORS.delvis },
               { label: "Ikke startet", val: d?.ikkjeStartaCount ?? 0, color: "#94a3b8" },
-              { label: "Utgåtte", val: d?.utgåtteCount ?? 0, color: RING_COLORS.utgått },
             ].map((r) => (
               <div key={r.label} className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -338,9 +339,6 @@ function Dashboard() {
                   <p className="text-sm font-medium">{nok(o.total)}</p>
                   <p className="text-xs text-muted-foreground">{pct.toFixed(0)} % fakturert</p>
                 </div>
-                {o.expired && (
-                  <span className="flex-shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">Utgått</span>
-                )}
               </Link>
             );
           })}

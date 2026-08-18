@@ -19,6 +19,7 @@ interface AuthCtx {
   tenantId: string | null;
   hasTenant: boolean;
   branding: TenantBranding | null;
+  refreshBranding: () => Promise<void>;
   authError: string | null;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string) => Promise<{ error?: string }>;
@@ -39,6 +40,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // C2: cancel flag prevents stale async results from applying after unmount/sign-out
   const cancelRef = useRef(false);
+
+  const loadBranding = async (tid: string) => {
+    const { data: settings } = await supabase
+      .from("app_settings")
+      .select("company_name, company_tagline, primary_color, logo_url")
+      .eq("tenant_id", tid)
+      .single();
+
+    if (cancelRef.current || !settings) return;
+
+    setBranding({
+      company_name: settings.company_name ?? "",
+      company_tagline: (settings as any).company_tagline ?? "",
+      primary_color: (settings as any).primary_color ?? "#dc2626",
+      logo_url: (settings as any).logo_url ?? "",
+    });
+  };
 
   const fetchRole = async (userId: string) => {
     setRoleLoading(true);
@@ -64,22 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTenantId(tid);
 
       if (tid) {
-        const { data: settings } = await supabase
-          .from("app_settings")
-          .select("company_name, company_tagline, primary_color, logo_url")
-          .eq("tenant_id", tid)
-          .single();
-
-        if (cancelRef.current) return;
-
-        if (settings) {
-          setBranding({
-            company_name: settings.company_name ?? "",
-            company_tagline: (settings as any).company_tagline ?? "",
-            primary_color: (settings as any).primary_color ?? "#dc2626",
-            logo_url: (settings as any).logo_url ?? "",
-          });
-        }
+        await loadBranding(tid);
       }
     } catch {
       if (!cancelRef.current) {
@@ -136,6 +139,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => { await supabase.auth.signOut(); };
 
+  // Firmanavn, logo og primærfarge leses bare ved innlogging. Uten en måte å
+  // hente dem på nytt ble toppmenyen stående med gamle verdier til neste
+  // sidelasting etter at de ble endret i Innstillinger.
+  const refreshBranding = async () => {
+    if (!tenantId) return;
+    try {
+      await loadBranding(tenantId);
+    } catch {
+      // Branding er kosmetikk — lagringen er allerede bekreftet for brukeren.
+    }
+  };
+
   return (
     <Ctx.Provider value={{
       user, session, loading, roleLoading, role,
@@ -143,6 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       tenantId,
       hasTenant: tenantId !== null,
       branding,
+      refreshBranding,
       authError,
       signIn, signUp, signOut,
     }}>

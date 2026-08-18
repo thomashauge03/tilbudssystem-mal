@@ -56,8 +56,9 @@ function ProsjekterPage() {
   const [filterStatus, setFilterStatus] = useState<"all" | Status>("all");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Project | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => {
       const [p, c, o, am] = await Promise.all([
@@ -66,6 +67,9 @@ function ProsjekterPage() {
         supabase.from("offers").select("project_id, invoiced_amount").not("project_id", "is", null),
         supabase.from("amendments").select("project_id, invoiced_amount").not("project_id", "is", null),
       ]);
+      // Uten denne sjekken blir en delvis feilet henting vist som tomme tall
+      const firstError = p.error ?? c.error ?? o.error ?? am.error;
+      if (firstError) throw firstError;
       const customerMap = new Map((c.data ?? []).map((x: any) => [x.id, x.name]));
 
       const statsByProject = new Map<string, { offers: number; amendments: number; invoiced: number }>();
@@ -91,7 +95,8 @@ function ProsjekterPage() {
   const { data: customers } = useQuery({
     queryKey: ["customers-simple"],
     queryFn: async () => {
-      const { data } = await supabase.from("customers").select("id, name, email").order("name");
+      const { data, error } = await supabase.from("customers").select("id, name, email").order("name");
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -106,6 +111,7 @@ function ProsjekterPage() {
 
   const save = async (p: Project) => {
     if (!p.name.trim()) { toast.error("Prosjektnavn er påkrevd"); return; }
+    setSaving(true);
     const payload = {
       name: p.name,
       project_number: p.project_number || null,
@@ -118,6 +124,7 @@ function ProsjekterPage() {
     const { error } = p.id
       ? await supabase.from("projects").update(payload).eq("id", p.id)
       : await supabase.from("projects").insert({ ...payload, tenant_id: tenantId });
+    setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success(p.id ? "Prosjekt oppdatert" : "Prosjekt opprettet");
     setOpen(false);
@@ -176,6 +183,12 @@ function ProsjekterPage() {
           ))}
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          Feil: {(error as Error).message}
+        </div>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
@@ -295,8 +308,8 @@ function ProsjekterPage() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Avbryt</Button>
-            <Button onClick={() => edit && save(edit)}>Lagre</Button>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Avbryt</Button>
+            <Button onClick={() => edit && save(edit)} disabled={saving}>{saving ? "Lagrer…" : "Lagre"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

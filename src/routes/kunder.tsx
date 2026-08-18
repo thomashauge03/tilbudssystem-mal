@@ -30,9 +30,10 @@ function CustomersPage() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Customer | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; offerCount: number } | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["customers-full"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -62,19 +63,37 @@ function CustomersPage() {
 
   const save = async (c: Customer) => {
     if (!c.name.trim()) { toast.error("Navn er påkrevd"); return; }
+    setSaving(true);
     const payload = {
       name: c.name, email: c.email || null, phone: c.phone || null,
       address: c.address || null, contact_person: c.contact_person || null,
       notes: c.notes || null,
     };
+    const prevName = c.id ? (data ?? []).find((x: any) => x.id === c.id)?.name : null;
     const { error } = c.id
       ? await supabase.from("customers").update(payload).eq("id", c.id)
       : await supabase.from("customers").insert({ ...payload, tenant_id: tenantId });
-    if (error) { toast.error(error.message); return; }
+    if (error) { setSaving(false); toast.error(error.message); return; }
+
+    // Tilbud lagrer en kopi av kundenavnet; uten denne oppdateringen viser
+    // status, ordre, dashbord og nye PDF-er det gamle navnet.
+    if (c.id && prevName && prevName !== c.name) {
+      const { error: copyError } = await supabase
+        .from("offers")
+        .update({ customer_name: c.name })
+        .eq("customer_id", c.id);
+      if (copyError) { setSaving(false); toast.error(copyError.message); return; }
+    }
+
+    setSaving(false);
     toast.success("Kunde lagret");
     setOpen(false); setEdit(null);
     qc.invalidateQueries({ queryKey: ["customers-full"] });
     qc.invalidateQueries({ queryKey: ["customers-simple"] });
+    qc.invalidateQueries({ queryKey: ["offers"] });
+    qc.invalidateQueries({ queryKey: ["status-offers"] });
+    qc.invalidateQueries({ queryKey: ["offers-godkjent"] });
+    qc.invalidateQueries({ queryKey: ["mobil-offers"] });
   };
 
   return (
@@ -93,6 +112,12 @@ function CustomersPage() {
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input placeholder="Søk…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          Feil: {(error as Error).message}
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
         <table className="w-full">
@@ -120,7 +145,7 @@ function CustomersPage() {
                 <td className="px-4 py-3 text-right text-sm">{c.offer_count}</td>
                 <td className="px-2 flex gap-1">
                   <Button variant="ghost" size="icon" onClick={() => { setEdit(c); setOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ id: c.id, name: c.name })} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ id: c.id, name: c.name, offerCount: c.offer_count ?? 0 })} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
                 </td>
               </tr>
             ))}
@@ -142,8 +167,8 @@ function CustomersPage() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Avbryt</Button>
-            <Button onClick={() => edit && save(edit)}>Lagre</Button>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Avbryt</Button>
+            <Button onClick={() => edit && save(edit)} disabled={saving}>{saving ? "Lagrer…" : "Lagre"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -153,7 +178,15 @@ function CustomersPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Slett kunde</AlertDialogTitle>
             <AlertDialogDescription>
-              Er du sikker på at du vil slette <strong>{deleteTarget?.name}</strong>? Dette kan ikke angres.
+              Er du sikker på at du vil slette <strong>{deleteTarget?.name}</strong>?
+              {!!deleteTarget?.offerCount && (
+                <>
+                  {" "}Kunden er koblet til <strong>{deleteTarget.offerCount} tilbud</strong>. Tilbudene og prosjektene
+                  blir ikke slettet, men mister kundekoblingen, og tilbudene kan ikke lagres på nytt før du velger
+                  en kunde fra kunderegisteret igjen.
+                </>
+              )}
+              {" "}Dette kan ikke angres.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

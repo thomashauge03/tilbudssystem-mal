@@ -1,8 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate, isOfferExpired, offerHasDeadline } from "@/lib/format";
+import { nok, fmtDate, offerTotal, isOfferExpired, offerHasDeadline } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -32,7 +33,10 @@ const STATUS_LABEL: Record<OfferStatus, string> = {
 
 function StatusBadge({ status, offerId, onUpdate }: { status: OfferStatus; offerId: string; onUpdate: () => void }) {
   const update = async (next: OfferStatus) => {
-    await supabase.from("offers").update({ status: next }).eq("id", offerId);
+    const { error } = await supabase.from("offers").update({ status: next }).eq("id", offerId);
+    // Uten dette gikk merkelappen tilbake til gammel status ved neste henting,
+    // uten noe tegn til at lagringen feilet
+    if (error) { toast.error(error.message); return; }
     onUpdate();
   };
   return (
@@ -65,6 +69,7 @@ function OffersList() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: appSettings } = useAppSettings();
   const signedRefs = new Set(
@@ -80,18 +85,24 @@ function OffersList() {
       queryClient.invalidateQueries({ queryKey: ["offers"] });
       setDeleteTarget(null);
     },
+    // Uten onError ble dialogen stående åpen uten forklaring når slettingen
+    // ble avvist, f.eks. av en fremmednøkkel eller radsikkerhet
+    onError: (err: any) => {
+      toast.error(err?.message ?? "Kunne ikke slette tilbudet");
+      setDeleteTarget(null);
+    },
   });
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["offers"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("offers")
         .select(`
           id, offer_number, title, status, valid_until, our_ref, customer_ref, created_at,
-          customer_signed_at, contract_signed,
+          customer_signed_at, contract_signed, admin_cost_pct,
           customers(name),
-          offer_lines(quantity, unit_price, discount_pct)
+          offer_lines(quantity, unit_price, discount_pct, included)
         `)
         .order("offer_number", { ascending: false });
       if (error) throw error;
@@ -110,13 +121,7 @@ function OffersList() {
     return [o.title, customerName, String(o.offer_number)].some((s) => (s ?? "").toLowerCase().includes(t));
   });
 
-  const sumOf = (o: any) => {
-    return (o.offer_lines ?? []).reduce((s: number, l: any) => {
-      const line = Number(l.quantity ?? 0) * Number(l.unit_price ?? 0);
-      const disc = 1 - Number(l.discount_pct ?? 0) / 100;
-      return s + line * disc;
-    }, 0);
-  };
+  const sumOf = (o: any) => offerTotal(o.offer_lines, o.admin_cost_pct);
 
   return (
     <div className="space-y-6">
@@ -148,9 +153,9 @@ function OffersList() {
         </div>
       </div>
 
-      {error && (
+      {isError && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-          Feil: {(error as Error).message}
+          Kunne ikke hente tilbudene: {(error as Error)?.message ?? "ukjent feil"}
         </div>
       )}
 
@@ -185,7 +190,7 @@ function OffersList() {
                 <tr
                   key={o.id}
                   className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
-                  onClick={() => (window.location.href = `/tilbud/${o.id}`)}
+                  onClick={() => navigate({ to: "/tilbud/$id", params: { id: o.id } })}
                 >
                   <td className="px-4 py-3 tabular-nums text-sm text-primary">#{o.offer_number}</td>
                   <td className="px-4 py-3">
@@ -222,7 +227,10 @@ function OffersList() {
                           }
                           onClick={async (e) => {
                             e.stopPropagation();
-                            await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
+                            const { error: updateError } = await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
+                            // Uten dette slo prikken tilbake ved neste henting
+                            // uten at noen fikk vite at lagringen feilet
+                            if (updateError) { toast.error(updateError.message); return; }
                             queryClient.invalidateQueries({ queryKey: ["offers"] });
                           }}
                           className="inline-flex items-center justify-center"

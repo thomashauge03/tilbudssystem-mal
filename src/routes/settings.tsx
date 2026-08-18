@@ -5,22 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Save, Sun, Moon, Monitor, GripVertical, Upload, X, Building2, FileText, Calculator, Palette } from "lucide-react";
+import { Plus, Trash2, Save, GripVertical, Upload, X, Building2, FileText, Calculator, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { THEME_STORAGE_KEY } from "@/lib/format";
+import { useTheme, THEME_OPTIONS } from "@/hooks/use-theme";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
-
-type Theme = "light" | "dark" | "system";
-
-const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "Lys modus", icon: Sun },
-  { value: "dark", label: "Mørk modus", icon: Moon },
-  { value: "system", label: "Systemstandard", icon: Monitor },
-];
 
 function SectionCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -240,9 +232,7 @@ function SettingsPage() {
   const [emailSubject, setEmailSubject] = useState(DEFAULT_SETTINGS.email_subject_template);
   const [vatPct, setVatPct] = useState(DEFAULT_SETTINGS.vat_pct);
   const [closingPageOffsetMm, setClosingPageOffsetMm] = useState(DEFAULT_SETTINGS.closing_page_offset_mm);
-  const [theme, setThemeState] = useState<Theme>(() =>
-    (typeof window !== "undefined" ? (localStorage.getItem(THEME_STORAGE_KEY) as Theme) : null) ?? "light"
-  );
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     if (!saved) return;
@@ -259,13 +249,6 @@ function SettingsPage() {
     setVatPct(saved.vat_pct);
     setClosingPageOffsetMm(saved.closing_page_offset_mm);
   }, [saved]);
-
-  const applyTheme = (t: Theme) => {
-    setThemeState(t);
-    localStorage.setItem(THEME_STORAGE_KEY, t);
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    document.documentElement.classList.toggle("dark", t === "dark" || (t === "system" && prefersDark));
-  };
 
   const patch = {
     offer_validity_days: validityDays,
@@ -502,7 +485,7 @@ function SettingsPage() {
               return (
                 <button
                   key={opt.value}
-                  onClick={() => applyTheme(opt.value)}
+                  onClick={() => setTheme(opt.value)}
                   className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
                     active
                       ? "border-primary bg-primary/5 text-primary"

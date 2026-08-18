@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle2, FileText, FileSignature, PenLine, RotateCcw } from "lucide-react";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
+import { nok, lineNet, offerTotal } from "@/lib/format";
 
 export const Route = createFileRoute("/signer/$token")({
   component: SignerPage,
@@ -27,6 +28,21 @@ interface OfferInfo {
 function fmtDate(d: string) {
   if (!d) return "—";
   return new Intl.DateTimeFormat("nb-NO", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(d));
+}
+
+// Slår opp tilbudets "Vår ref." blant de ansatte i innstillingene. Ingen fallback
+// til første ansatte: et tilbud med utdatert referanse skal heller mangle navn enn
+// å få en tilfeldig kollegas stilling og signaturbilde i kontrakten.
+function refFor(settings: any, ourRef: string | null | undefined): any {
+  return (settings?.our_refs ?? []).find((r: any) => r.name === ourRef) ?? {};
+}
+
+// Tilbudet har egne forbehold; firmaets standardliste er bare utgangspunktet ved
+// opprettelse. Uten tilbudets egne ville kunden og entreprenøren sett ulike
+// forbehold i samme kontrakt.
+function forbeholdOf(offer: any, settings: any) {
+  const raw = offer?.forbehold ?? settings?.forbehold ?? [];
+  return raw.map((f: any) => (typeof f === "string" ? { title: f, description: "" } : f));
 }
 
 function SignatureCanvas({ onSign }: { onSign: (dataUrl: string) => void }) {
@@ -130,8 +146,10 @@ function SignerPage() {
   const [accepted, setAccepted] = useState(false);
   const [done, setDone] = useState(false);
   const [signedInfo, setSignedInfo] = useState<{ offer_number: number; title: string } | null>(null);
-  const [loadingPdf, setLoadingPdf] = useState(false);
-  const [loadingContract, setLoadingContract] = useState(false);
+  // Linjer, tilbud og innstillinger hentes med en gang: kunden skal se beløpet før
+  // hen signerer en bindende avtale, og de samme dataene brukes av begge PDF-ene.
+  const [pdfData, setPdfData] = useState<any | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.rpc("get_offer_by_token" as never, { p_token: token } as never)
@@ -142,75 +160,85 @@ function SignerPage() {
       });
   }, [token]);
 
-  const handleViewPdf = async () => {
-    if (!offerInfo) return;
-    setLoadingPdf(true);
-    try {
-      const { data } = await supabase.rpc("get_offer_pdf_by_token" as never, { p_token: token } as never);
-      if (!data) { alert("Kunne ikke laste tilbudet."); return; }
-      const d = data as any;
-      const lines = d.lines ?? [];
-      const settings = d.settings ?? {};
-      const offer = d.offer ?? {};
-      const subtotal = lines
-        .filter((l: any) => l.included !== false)
-        .reduce((s: number, l: any) => {
-          const gross = Number(l.quantity) * Number(l.unit_price);
-          return s + gross * (1 - (Number(l.discount_pct) || 0) / 100);
-        }, 0);
-      const admin = subtotal * ((Number(offer.admin_cost_pct) || 0) / 100);
-      openOfferPdf(offer, lines, { subtotal, admin, total: subtotal + admin }, settings);
-    } finally {
-      setLoadingPdf(false);
-    }
+  useEffect(() => {
+    supabase.rpc("get_offer_pdf_by_token" as never, { p_token: token } as never)
+      .then(({ data, error: e }) => {
+        if (e) { setPdfError(e.message); return; }
+        if (!data) { setPdfError("Fant ikke tilbudet."); return; }
+        setPdfData(data as any);
+      });
+  }, [token]);
+
+  const totals = useMemo(() => {
+    if (!pdfData) return null;
+    const offer = pdfData.offer ?? {};
+    const settings = pdfData.settings ?? {};
+    const exVat = offerTotal(pdfData.lines ?? [], offer.admin_cost_pct);
+    const vatPct = Number(settings.vat_pct ?? 25);
+    return { exVat, inclVat: exVat * (1 + vatPct / 100) };
+  }, [pdfData]);
+
+  const handleViewPdf = () => {
+    if (!pdfData) return;
+    const lines = pdfData.lines ?? [];
+    const settings = pdfData.settings ?? {};
+    const offer = pdfData.offer ?? {};
+    const subtotal = lines
+      .filter((l: any) => l.included !== false)
+      .reduce((s: number, l: any) => s + lineNet(l), 0);
+    const admin = subtotal * ((Number(offer.admin_cost_pct) || 0) / 100);
+    const refObj = refFor(settings, offer.our_ref);
+    openOfferPdf(offer, lines, { subtotal, admin, total: subtotal + admin }, {
+      // PDF-en leser flate ref_*-felt, ikke our_refs-lista, så de må bygges her —
+      // ellers står tilbudet uten telefon, e-post, stilling og signatur.
+      ...settings,
+      ref_phone: refObj.phone ?? "",
+      ref_email: refObj.email ?? "",
+      ref_position: refObj.position ?? "",
+      ref_signature: refObj.signature ?? "",
+      forbehold: forbeholdOf(offer, settings),
+    });
   };
 
-  const handleViewContract = async () => {
-    if (!offerInfo) return;
-    setLoadingContract(true);
-    try {
-      const { data } = await supabase.rpc("get_offer_pdf_by_token" as never, { p_token: token } as never);
-      if (!data) { alert("Kunne ikke laste kontrakten."); return; }
-      const d = data as any;
-      const lines = (d.lines ?? []).filter((l: any) => l.included !== false);
-      const settings = d.settings ?? {};
-      const offer = d.offer ?? {};
-      const subtotal = lines.reduce((s: number, l: any) => {
-        const gross = Number(l.quantity) * Number(l.unit_price);
-        return s + gross * (1 - (Number(l.discount_pct) || 0) / 100);
-      }, 0);
-      const admin = subtotal * ((Number(offer.admin_cost_pct) || 0) / 100);
-      const total = subtotal + admin;
-      const vatPct = Number(settings.vat_pct ?? 25);
-      const totalInclVat = total * (1 + vatPct / 100);
+  const handleViewContract = () => {
+    if (!pdfData) return;
+    const lines = (pdfData.lines ?? []).filter((l: any) => l.included !== false);
+    const settings = pdfData.settings ?? {};
+    const offer = pdfData.offer ?? {};
+    const subtotal = lines.reduce((s: number, l: any) => s + lineNet(l), 0);
+    const admin = subtotal * ((Number(offer.admin_cost_pct) || 0) / 100);
+    const total = subtotal + admin;
+    const vatPct = Number(settings.vat_pct ?? 25);
+    const totalInclVat = total * (1 + vatPct / 100);
 
-      const ourRefs: any[] = settings.our_refs ?? [];
-      const refObj = ourRefs.find((r: any) => r.name === offer.our_ref) ?? ourRefs[0] ?? {};
+    const refObj = refFor(settings, offer.our_ref);
 
-      openContractPdf({
-        offer_number: offer.offer_number,
-        title: offer.title,
-        offer_date: offer.offer_date,
-        customer_name: offer.customer_name,
-        project_number: offer.project_number,
-        offer_text: offer.offer_text,
-        total_incl_vat: totalInclVat,
-        company_name: settings.company_name,
-        company_org_nr: settings.company_org_nr ?? "",
-        company_address: settings.company_address,
-        company_phone: settings.company_phone,
-        logo_url: settings.logo_url,
-        ref_name: refObj.name,
-        ref_position: refObj.position,
-        ref_phone: refObj.phone,
-        ref_signature: refObj.signature,
-        forbehold: (settings.forbehold ?? []).map((f: any) =>
-          typeof f === "string" ? { title: f, description: "" } : f
-        ),
-      });
-    } finally {
-      setLoadingContract(false);
-    }
+    openContractPdf({
+      offer_number: offer.offer_number,
+      title: offer.title,
+      offer_date: offer.offer_date,
+      customer_name: offer.customer_name,
+      // Kundens adresse og telefon brukes tre steder i kontrakten, men manglet helt.
+      // Tom streng når RPC-en ikke returnerer dem — get_offer_pdf_by_token bør
+      // utvides med kundeopplysningene så kontrakten blir komplett.
+      customer_address: offer.customer_address ?? "",
+      customer_phone: offer.customer_phone ?? "",
+      project_number: offer.project_number,
+      offer_text: offer.offer_text,
+      total_incl_vat: totalInclVat,
+      company_name: settings.company_name,
+      company_org_nr: settings.company_org_nr ?? "",
+      company_address: settings.company_address,
+      company_phone: settings.company_phone,
+      logo_url: settings.logo_url,
+      ref_name: refObj.name,
+      ref_position: refObj.position,
+      ref_phone: refObj.phone,
+      ref_signature: refObj.signature,
+      // Faller tilbake på firmaets standardforbehold så lenge RPC-en ikke
+      // returnerer offers.forbehold — den bør utvides med feltet.
+      forbehold: forbeholdOf(offer, settings),
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -289,13 +317,13 @@ function SignerPage() {
               <p className="text-sm text-gray-500 mt-0.5">Til: {offerInfo.customer_name}</p>
             </div>
             <div className="flex flex-col gap-2 flex-shrink-0">
-              <Button type="button" variant="outline" size="sm" onClick={handleViewPdf} disabled={loadingPdf}>
+              <Button type="button" variant="outline" size="sm" onClick={handleViewPdf} disabled={!pdfData}>
                 <FileText className="mr-1.5 h-4 w-4" />
-                {loadingPdf ? "Laster…" : "Se tilbud"}
+                {pdfData || pdfError ? "Se tilbud" : "Laster…"}
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={handleViewContract} disabled={loadingContract}>
+              <Button type="button" variant="outline" size="sm" onClick={handleViewContract} disabled={!pdfData}>
                 <FileSignature className="mr-1.5 h-4 w-4" />
-                {loadingContract ? "Laster…" : "Se kontrakt"}
+                {pdfData || pdfError ? "Se kontrakt" : "Laster…"}
               </Button>
             </div>
           </div>
@@ -315,6 +343,32 @@ function SignerPage() {
               <p className="text-sm text-gray-600 whitespace-pre-wrap">{offerInfo.offer_text}</p>
             </div>
           )}
+        </div>
+
+        {/* Beløp — kunden inngår en bindende avtale her, og må se hva den koster */}
+        <div className="rounded-xl border bg-white shadow-sm p-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Beløp</h2>
+          {totals ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-500">Totalt eks. mva</span>
+                <span className="font-semibold text-gray-900">{nok(totals.exVat)}</span>
+              </div>
+              <div className="flex items-center justify-between border-t pt-2">
+                <span className="text-sm font-medium text-gray-500">Totalt inkl. mva</span>
+                <span className="text-lg font-bold text-gray-900">{nok(totals.inclVat)}</span>
+              </div>
+            </div>
+          ) : pdfError ? (
+            <p className="text-sm text-gray-500">
+              Kunne ikke hente beløpet: {pdfError}. Ta kontakt før du signerer.
+            </p>
+          ) : (
+            <p className="text-sm text-gray-500">Laster…</p>
+          )}
+          <p className="mt-3 text-xs text-gray-400">
+            Se «Se tilbud» for spesifikasjon av linjer, priser og forbehold.
+          </p>
         </div>
 
         {/* Signeringsskjema */}

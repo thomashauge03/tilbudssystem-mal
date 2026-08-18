@@ -139,7 +139,17 @@ function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
     sessionStorage.setItem(draftKey, JSON.stringify(form));
   }, [form, draftKey]);
 
-  const handleSave = () => { sessionStorage.removeItem(draftKey); onSave(form); };
+  const [saving, setSaving] = useState(false);
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave(form);
+      sessionStorage.removeItem(draftKey);
+    } finally {
+      setSaving(false);
+    }
+  };
   const handleCancel = () => { sessionStorage.removeItem(draftKey); onCancel(); };
 
   return (
@@ -190,10 +200,10 @@ function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
       </td>
       <td className="px-2 py-2 whitespace-nowrap">
         <div className="flex gap-1">
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSave}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSave} disabled={saving} title={saving ? "Lagrer…" : "Lagre"}>
             <Check className="h-4 w-4 text-green-600" />
           </Button>
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCancel}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCancel} disabled={saving}>
             <X className="h-4 w-4 text-muted-foreground" />
           </Button>
         </div>
@@ -205,33 +215,40 @@ function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
 async function upsertCustomer(lead: Omit<Lead, "id" | "created_at" | "status_changed_at">, tenantId: string | null) {
   if (!lead.navn.trim() || !tenantId) return;
   // C5: filter by both name AND tenant_id to avoid cross-tenant match
-  const { data: existing } = await supabase
+  // limit(1) i stedet for maybeSingle(): to kunder med samme navn skal ikke
+  // få oppslaget til å feile og dermed lage en tredje duplikat
+  const { data: existing, error: lookupError } = await supabase
     .from("customers")
     .select("id")
     .eq("name", lead.navn)
     .eq("tenant_id", tenantId)
-    .maybeSingle();
+    .limit(1);
+  if (lookupError) { toast.error(`Kunderegister: ${lookupError.message}`); return; }
 
   const adresse = [lead.adresse, lead.postnr_sted].filter(Boolean).join(", ");
-  const notes = lead.hva || null;
+  const found = existing?.[0];
 
-  if (existing) {
-    // Oppdater med ny info hvis feltet er tomt
-    await supabase.from("customers").update({
-      email: lead.mail || null,
-      phone: lead.telefon || null,
-      address: adresse || null,
-      notes: notes,
-    }).eq("id", existing.id);
+  if (found) {
+    // Bare felt som faktisk har verdi skrives — ellers tømmer et lead uten
+    // telefon/e-post kontaktinfoen på en kunde som allerede har den
+    const patch: Record<string, string> = {};
+    if (lead.mail) patch.email = lead.mail;
+    if (lead.telefon) patch.phone = lead.telefon;
+    if (adresse) patch.address = adresse;
+    if (lead.hva) patch.notes = lead.hva;
+    if (Object.keys(patch).length === 0) return;
+    const { error } = await supabase.from("customers").update(patch).eq("id", found.id);
+    if (error) { toast.error(`Kunderegister: ${error.message}`); return; }
   } else {
-    await supabase.from("customers").insert({
+    const { error } = await supabase.from("customers").insert({
       name: lead.navn,
       email: lead.mail || null,
       phone: lead.telefon || null,
       address: adresse || null,
-      notes: notes,
+      notes: lead.hva || null,
       tenant_id: tenantId,
     });
+    if (error) { toast.error(`Kunderegister: ${error.message}`); return; }
   }
 }
 
@@ -247,7 +264,7 @@ function PotensielleKunderPage() {
   // L2: replace window.confirm() with proper modal
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data: leads = [], isLoading } = useQuery({
+  const { data: leads = [], isLoading, error } = useQuery({
     queryKey: ["potential-customers", tenantId],
     enabled: !!tenantId,
     queryFn: async () => {
@@ -363,6 +380,12 @@ function PotensielleKunderPage() {
           <Plus className="mr-2 h-4 w-4" />Ny forespørsel
         </Button>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          Feil: {(error as Error).message}
+        </div>
+      )}
 
       {/* Statuskort */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

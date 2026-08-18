@@ -29,6 +29,39 @@ export const THEME_STORAGE_KEY = "th-theme";
 // Fristen "gyldig t.o.m." gjelder bare tilbud som ikke er godkjent. Et godkjent
 // tilbud er aktivt, og da har fristen ingen betydning lenger — det skal verken
 // vises, telles som utløpt eller filtreres bort.
+// ─── Én sannhet for hva et tilbud er verdt ────────────────────────────────
+// Dette ble tidligere regnet ulikt seks steder: noen glemte rabatt, andre tok
+// med linjer som ikke er inkludert, andre igjen droppet adm.påslag. Samme
+// tilbud kunne dermed vise tre forskjellige beløp i appen — og et fjerde i
+// PDF-en kunden hadde signert.
+export interface LineLike {
+  quantity?: number | null;
+  unit_price?: number | null;
+  discount_pct?: number | null;
+  included?: boolean | null;
+}
+
+/** Nettosum for én linje: antall × pris, minus eventuell rabatt. */
+export function lineNet(l: LineLike) {
+  const gross = Number(l.quantity ?? 0) * Number(l.unit_price ?? 0);
+  return gross * (1 - Number(l.discount_pct ?? 0) / 100);
+}
+
+/**
+ * Total for et tilbud: bare inkluderte linjer, minus rabatt, pluss adm.påslag.
+ * Spørringen må hente `quantity, unit_price, discount_pct, included` på linjene
+ * og `admin_cost_pct` på tilbudet — ellers blir tallet stille feil.
+ */
+export function offerTotal(lines: LineLike[] | null | undefined, adminPct?: number | null) {
+  const base = (lines ?? []).filter((l) => l.included !== false).reduce((s, l) => s + lineNet(l), 0);
+  return base + base * (Number(adminPct ?? 0) / 100);
+}
+
+/** Endringslinjer har ikke inkludert-hake og ikke adm.påslag. */
+export function amendmentTotal(lines: LineLike[] | null | undefined) {
+  return (lines ?? []).reduce((s, l) => s + lineNet(l), 0);
+}
+
 export const OFFER_APPROVED = "godkjent";
 export const OFFER_COMPLETED = "fullført";
 

@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate , OFFER_WON_STATUSES, OFFER_COMPLETED } from "@/lib/format";
+import { nok, fmtDate, offerTotal, amendmentTotal, OFFER_WON_STATUSES, OFFER_COMPLETED } from "@/lib/format";
 import {
   FileText, TrendingUp, ClipboardEdit, CheckCircle2,
   Clock, AlertTriangle, ArrowRight, CircleDollarSign,
@@ -15,13 +15,6 @@ export const Route = createFileRoute("/dashboard")({
 });
 
 
-function offerTotal(lines: any[], adminCostPct: number) {
-  const base = (lines ?? [])
-    .filter((l: any) => l.included !== false)
-    .reduce((s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
-  return base + base * (Number(adminCostPct ?? 0) / 100);
-}
-
 export function useDashboard() {
   return useQuery({
     queryKey: ["dashboard"],
@@ -29,14 +22,21 @@ export function useDashboard() {
       const today = new Date().toISOString().slice(0, 10);
       const soon = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
       const [offersRes, amendmentsRes, recentRes, expiringRes, expiredRes] = await Promise.all([
-        supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").in("status", OFFER_WON_STATUSES).order("offer_number", { ascending: false }).limit(500),
-        supabase.from("amendments").select("id, amendment_number, project_ref, notified_date, invoiced_amount, amendment_lines(quantity, unit_price)").limit(500),
-        supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, included)").in("status", OFFER_WON_STATUSES).order("created_at", { ascending: false }).limit(6),
+        // Uten .limit() henter vi alle rader. Et tak på 500 avkortet
+        // kontraktssummen stille så snart firmaet passerte 500 tilbud.
+        supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").in("status", OFFER_WON_STATUSES).order("offer_number", { ascending: false }),
+        supabase.from("amendments").select("id, amendment_number, project_ref, notified_date, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)"),
+        supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").in("status", OFFER_WON_STATUSES).order("created_at", { ascending: false }).limit(6),
         // Fristen gjelder bare tilbud som ennå ikke er godkjent — et godkjent
         // tilbud er aktivt og kan ikke løpe ut.
-        supabase.from("offers").select("id, offer_number, title, customer_name, status, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, included)").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).gte("valid_until", today).lte("valid_until", soon),
+        supabase.from("offers").select("id, offer_number, title, customer_name, status, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).gte("valid_until", today).lte("valid_until", soon),
         supabase.from("offers").select("id, status, valid_until").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).lt("valid_until", today),
       ]);
+
+      // Uten dette ville en feilet spørring bare gitt tomme lister, og
+      // dashbordet ville vist 0 kr som om alt var i orden.
+      const firstError = [offersRes, amendmentsRes, recentRes, expiringRes, expiredRes].find((r) => r.error)?.error;
+      if (firstError) throw firstError;
 
       const offers = offersRes.data ?? [];
       const amendments = amendmentsRes.data ?? [];
@@ -62,10 +62,10 @@ export function useDashboard() {
       const ikkjeStarta = offerStats.filter((o) => o.inv === 0 && o.total > 0);
 
       // Amendments
-      const amendmentStats = amendments.map((a: any) => {
-        const total = (a.amendment_lines ?? []).reduce((s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
-        return { total, inv: Number(a.invoiced_amount ?? 0) };
-      });
+      const amendmentStats = amendments.map((a: any) => ({
+        total: amendmentTotal(a.amendment_lines),
+        inv: Number(a.invoiced_amount ?? 0),
+      }));
       const amendmentTotalSum = amendmentStats.reduce((s, a) => s + a.total, 0);
       const amendmentFakturert = amendmentStats.reduce((s, a) => s + a.inv, 0);
 
@@ -224,7 +224,7 @@ function Dashboard() {
 
       {/* Hovedkort — rad 1 */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={CircleDollarSign} label="Total kontraktssum" value={isLoading ? "…" : nok(d?.totalKontraktssum ?? 0)} hint="Alle tilbud" />
+        <StatCard icon={CircleDollarSign} label="Total kontraktssum" value={isLoading ? "…" : nok(d?.totalKontraktssum ?? 0)} hint="Godkjente og fullførte tilbud" />
         <StatCard icon={CheckCircle2} label="Fakturert" value={isLoading ? "…" : nok(d?.totalFakturert ?? 0)} hint={isLoading ? "" : `${fakturertPct.toFixed(1)} % av total`} accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" />
         <StatCard icon={TrendingUp} label="Gjenstår" value={isLoading ? "…" : nok(d?.totalGjenstår ?? 0)} hint="Ikke fakturert ennå" accent="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
         <StatCard icon={ClipboardEdit} label="Endringsmeldinger" value={isLoading ? "…" : String(d?.amendmentsCount ?? 0)} hint={isLoading ? "" : `${nok(d?.amendmentTotalSum ?? 0)} total`} to="/endringsmeldinger" />

@@ -638,8 +638,9 @@ export function openOfferPdf(
   }).format(now).replace(",", " ·");
 
   // Grenser for antall linjer per side
-  // Én-sides tilbud: ≤4 linjer og kort tilbudstekst → alt på side 1 inkl. avslutning
-  // Flersides tilbud: egen dedikert avslutningsside (ingen tabell) → alltid plass
+  // Kompakt tilbud: få linjer og kort tilbudstekst → kundeblokk + tabell på side 1
+  // Flersides tilbud: egen tekstside først
+  // Begge: egen dedikert avslutningsside (ingen tabell) → alltid plass
   const textLen = (offer.offer_text ?? "").length;
   const forbeholdCount = (settings.forbehold ?? []).length;
 
@@ -664,18 +665,17 @@ export function openOfferPdf(
   const maxDescMm = Math.max(18, PAGE_MM - FIXED_MM - estForbeholdMm - (LINES_PAGE_1 * LINE_MM) - 8);
   const LINES_PER_PAGE = 22;
 
-  // Én-siders tilbud: ingen forbehold, kort tekst, få linjer.
-  // Avslutningsblokken (summer + vilkår + signatur) er tung, så grensene er
-  // stramme for å unngå at bunnen renner over på side 2.
+  // Kompakt tilbud: ingen forbehold, kort tekst, få linjer. Da slipper vi den
+  // dedikerte tekstsiden, og kundeblokk + tabell deler side 1.
   const SHORT_LINE_LIMIT = 3;
   const SHORT_TEXT_LIMIT = 240;
-  const isSinglePage =
+  const isCompact =
     included.length <= SHORT_LINE_LIMIT &&
     textLen < SHORT_TEXT_LIMIT &&
     forbeholdCount === 0;
 
   // Multi-side tilbud bruker alltid dedikert tekstside (side 1) og pristabell (side 2+)
-  const useTextPage = !isSinglePage;
+  const useTextPage = !isCompact;
 
   function calcLineSum(l: OfferLine) {
     const gross = l.quantity * l.unit_price;
@@ -735,8 +735,17 @@ export function openOfferPdf(
   const typedPages: PageType[] = [];
   let remaining = [...included];
 
-  if (isSinglePage) {
+  if (isCompact) {
+    // Avslutningsblokken (summer + vilkår + signatur) er drøyt 120 mm høy og fikk
+    // aldri plass sammen med topptekst, kundeblokk og tabell — arket rant over
+    // uansett hvor få linjer tilbudet hadde. Den får derfor egen side her også.
+    //
+    // Den egne siden er samtidig det som redder sumblokken: lå avslutningen på en
+    // linjeside, flyttet kjøreskriptet den til den siste siden det delte ut, og
+    // tryMerge slo så den siden sammen med den forrige — .bottom-push blir ikke
+    // med i flyttingen, så summene forsvant helt. page-closing slås aldri sammen.
     typedPages.push({ kind: "lines", rows: remaining.splice(0, SHORT_LINE_LIMIT) });
+    typedPages.push({ kind: "closing" });
   } else {
     typedPages.push({ kind: "text" });
     if (forbeholdCount > 0) typedPages.push({ kind: "forbehold" });
@@ -854,7 +863,9 @@ export function openOfferPdf(
           <span>${fmtNok(cumulativeBefore)}</span>
          </div>`;
 
-    const carryOut = `<div class="carry carry-out"${carryHidden(isLast)}>
+    // Uten linjer kjører ikke recalcCarries i det hele tatt, så en tom tabellside
+    // ville stått igjen med "Overføres til neste side 0,00 kr".
+    const carryOut = `<div class="carry carry-out"${carryHidden(isLast || pageLines.length === 0)}>
           <span>Overføres til neste side</span>
           <span>${fmtNok(cumulativeAfter)}</span>
          </div>`;
@@ -864,11 +875,9 @@ export function openOfferPdf(
       <div class="flex-fill"></div>
       <div class="bottom-push${isClosingPage ? " closing-push" : ""}">
         <div class="totals-wrap">
-          <div class="notes">
-            ${settings.payment_terms
-              ? `<p class="label">Betalingsbetingelser</p>${escapeHtml(settings.payment_terms)}`
-              : ""}
-          </div>
+          <!-- Betalingsbetingelsene står i .condition rett under. Den tomme cellen
+               holder venstre kolonne i grid-en åpen så sumblokken beholder bredden. -->
+          <div class="notes"></div>
           <div class="totals">
             ${hasAdmin ? `<div class="row sub">
               <span class="k">Sum eks. mva</span>
@@ -1030,8 +1039,96 @@ export interface ContractData {
   customer_signed_at?: string;
   customer_signature?: string;
   forbehold?: Array<{ title: string; description: string }>;
+  /**
+   * Betalingsbetingelsene fra innstillingene. Kontrakten går foran tilbudet ved
+   * motstrid (§2), så §5 må si det samme som tilbudet — ikke en egen frist.
+   */
+  payment_terms?: string;
+  /** Avtalt verneting. Malen brukes av flere firma, så domstolen kan ikke hardkodes. */
+  venue?: string;
 }
 
+/**
+ * Kontraktspesifikk CSS, lagt etter pdfStyles(). Kontrakten gjenbruker klassene
+ * fra tilbuds-PDF-en der de passer (.page, .body, .cont-header, .footer,
+ * .info-grid, .totals) — dette er bare det som er unikt for avtaledokumentet.
+ */
+const CONTRACT_STYLES = `
+  /* Forsiden må aldri slås sammen med første avtaleside. tryMerge slår bare sammen
+     sider som til sammen er under ~253 mm, og denne fyller arket alene. */
+  .cover-inner {
+    flex: 1; min-height: 250mm;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .cover-inner .logo { height: 30mm; width: auto; object-fit: contain; margin-bottom: 12mm; }
+  .cover-inner .company {
+    font-weight: 800; font-size: 12pt; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--ink); margin: 0 0 4mm 0;
+  }
+  .cover-inner .kind {
+    font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 30pt;
+    line-height: 1.05; letter-spacing: -0.01em; color: var(--ink); margin: 0 0 5mm 0;
+  }
+  .cover-inner .kind .accent { color: var(--accent); }
+  .cover-inner .rule { width: 40mm; height: 3px; background: var(--accent); margin-bottom: 12mm; }
+  .cover-inner .cover-title { font-size: 14pt; font-weight: 700; color: var(--ink); margin: 0 0 2mm 0; max-width: 140mm; }
+  .cover-inner .cover-sub { font-size: 9.5pt; color: var(--slate-600); margin: 0 0 14mm 0; font-variant-numeric: tabular-nums; }
+  .cover-inner .cover-label {
+    font-size: 7.5pt; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--slate-600); margin: 0 0 3mm 0;
+  }
+  .cover-inner .cover-name { font-size: 12pt; font-weight: 700; color: var(--ink); margin: 0 0 2mm 0; }
+  .cover-inner .cover-info { font-size: 10pt; color: var(--slate-700); line-height: 1.6; }
+
+  /* Kjøreskriptet måler .body-barna med getBoundingClientRect(), som ikke tar med
+     marger. Hver paragraf får derfor flow-root og padding i stedet for margin. */
+  .sec { display: flow-root; padding-bottom: 6mm; }
+  .sec h3 {
+    font-size: 11pt; font-weight: 800; color: var(--ink); letter-spacing: -0.01em;
+    margin: 0 0 3mm 0; padding-bottom: 2mm; border-bottom: 1.5px solid var(--ink);
+  }
+  /* Bare avtaleteksten — ikke p-ene inne i .info-cell, som har sine egne regler */
+  .sec > p { font-size: 10pt; line-height: 1.6; color: var(--slate-700); margin: 0 0 3mm 0; }
+  .sec > p:last-child { margin-bottom: 0; }
+  .sec ul { margin: 0; padding-left: 6mm; }
+  .sec li { font-size: 10pt; line-height: 1.6; color: var(--slate-700); margin-bottom: 1mm; }
+  .sec strong { color: var(--ink); font-weight: 700; }
+  /* Tilbudsteksten limes inn ordrett — avsnitt og punktlister må overleve */
+  .scope { white-space: pre-wrap; }
+  .party-meta { font-size: 9.5pt; color: var(--slate-700); margin: 0; }
+
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; margin-top: 4mm; }
+  .sig-box .lbl {
+    font-size: 7.5pt; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--slate-600); margin-bottom: 3mm;
+  }
+  .sig-box .name { font-size: 10.5pt; font-weight: 700; color: var(--ink); margin-bottom: 5mm; }
+  .sig-box .role { font-size: 9pt; color: var(--slate-600); margin-bottom: 1mm; }
+  .sig-img { max-height: 18mm; max-width: 55mm; width: auto; display: block; margin-bottom: 2mm; object-fit: contain; }
+  .sig-blank { height: 18mm; border-bottom: 1px dashed var(--slate-300); margin-bottom: 2mm; }
+  .sig-line { border-top: 1px solid var(--ink); padding-top: 3mm; font-size: 8.5pt; color: var(--slate-600); }
+  .sig-line + .sig-line { margin-top: 6mm; }
+
+  .foot-row {
+    display: flex; justify-content: space-between; gap: 8mm; padding-top: 3mm;
+    font-size: 7.5pt; color: var(--slate-600);
+  }
+  .foot-row .ft-strong { color: var(--ink); font-weight: 600; }
+
+  @media print {
+    .sec      { break-inside: avoid; page-break-inside: avoid; }
+    .sig-grid { break-inside: avoid; page-break-inside: avoid; }
+  }`;
+
+/**
+ * Entreprisekontrakt som PDF. Deler grunnmur med tilbuds-PDF-en: pdfStyles() for
+ * drakten og PDF_REFLOW_SCRIPT for sideombrekkingen.
+ *
+ * Hver paragraf legges ut som sin egen .page. Skriptets tryMerge slår deretter
+ * sammen sidene som får plass sammen, så korte kontrakter blir få sider og lange
+ * får så mange de trenger — uten at en paragraf blir delt på tvers av arkene.
+ */
 export function openContractPdf(d: ContractData) {
   // Se kommentaren i openOfferPdf — ingen fallback til Techauge-logoen
   const logoUrl = d.logo_url || "";
@@ -1040,276 +1137,199 @@ export function openContractPdf(d: ContractData) {
   const dateFmt = (s: string) =>
     s ? new Intl.DateTimeFormat("nb-NO", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(s)) : "—";
 
+  const offerNo = escapeHtml(String(d.offer_number));
+
   const forbeholdHtml = (d.forbehold ?? []).length > 0
     ? (d.forbehold!).map((f) =>
         `<li><strong>${escapeHtml(f.title)}</strong>${f.description ? ` – ${escapeHtml(f.description)}` : ""}</li>`
       ).join("")
     : "<li>Værforhold og naturhendelser.</li><li>Uforutsette grunnforhold, kabler, rør eller fundamenter.</li>";
 
+  // Omfanget står som eget avsnitt med pre-wrap. Limt inn midt i en setning
+  // kollapset avsnittene og punktlistene i tilbudsteksten til én lang linje.
+  const scopeText = (d.offer_text ?? "").trim() || d.title;
+
+  const contHeader = `<header class="cont-header">
+      <div class="cont-meta">
+        <span>${escapeHtml(d.company_name)} — Entreprisekontrakt · Tilbud ${offerNo}</span>
+        <span>Side <span class="page-num"></span></span>
+      </div>
+    </header>`;
+
+  const footer = `<footer class="footer">
+      <div class="foot-row">
+        <span class="ft-strong">${escapeHtml(d.company_name)}${d.company_org_nr ? ` · Org.nr. ${escapeHtml(d.company_org_nr)}` : ""}</span>
+        <span>Entreprisekontrakt · Tilbud nr. ${offerNo}${d.project_number ? ` · Prosjektnr. ${escapeHtml(d.project_number)}` : ""} · Side <span class="page-num"></span></span>
+      </div>
+    </footer>`;
+
+  // Avtaleteksten, én paragraf per blokk. Innholdet er ordrett som før — bare
+  // drakten er ny, med unntak av §3, §5 og §12 som er rettet hver for seg.
+  const sections: string[] = [
+    `<div class="sec">
+      <h3>1. Partene</h3>
+      <div class="info-grid">
+        <div class="info-cell">
+          <p class="label">Entreprenør</p>
+          <p class="name">${escapeHtml(d.company_name)}</p>
+          ${d.company_org_nr ? `<p class="line">Org.nr. ${escapeHtml(d.company_org_nr)}</p>` : ""}
+          ${d.company_address ? `<p class="line">${escapeHtml(d.company_address)}</p>` : ""}
+          ${d.company_phone ? `<p class="line">Tlf. ${escapeHtml(d.company_phone)}</p>` : ""}
+        </div>
+        <div class="info-cell">
+          <p class="label">Kunde</p>
+          <p class="name">${escapeHtml(d.customer_name)}</p>
+          ${d.customer_address ? `<p class="line">${escapeHtml(d.customer_address)}</p>` : ""}
+          ${d.customer_phone ? `<p class="line">Tlf. ${escapeHtml(d.customer_phone)}</p>` : ""}
+        </div>
+      </div>
+      ${d.project_number ? `<p class="party-meta"><strong>Prosjektnr.</strong> ${escapeHtml(d.project_number)}</p>` : ""}
+    </div>`,
+
+    `<div class="sec">
+      <h3>2. Kontraktsgrunnlag</h3>
+      <p>Kontrakten bygger på tilbud nr. ${offerNo} datert ${dateFmt(d.offer_date)}. Tilbudet med beskrivelser, mengder, illustrasjoner og forbehold utgjør vedlegg 1 til denne kontrakten. Ved motstrid går denne kontrakten foran tilbudet.</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>3. Arbeidets omfang</h3>
+      <p>Entreprenøren skal utføre arbeidene som er beskrevet nedenfor. Arbeidene utføres etter god fagmessig standard.</p>
+      <p class="scope">${escapeHtml(scopeText)}</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>4. Kontraktssum</h3>
+      <div class="totals">
+        <div class="row grand">
+          <span class="k">Kontraktssum inkl. mva</span>
+          <span class="v">${nokFmt(d.total_incl_vat)}<span class="cur">NOK</span></span>
+        </div>
+      </div>
+    </div>`,
+
+    `<div class="sec">
+      <h3>5. Betalingsplan</h3>
+      <p>Betalingsplan avtales mellom partene. ${d.payment_terms
+        ? `Betalingsbetingelser: ${escapeHtml(d.payment_terms)}.`
+        : "Betalingsfrist er 14 dager fra fakturadato."}</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>6. Manglende betaling</h3>
+      <p>Ved manglende betaling har entreprenøren rett til å stanse arbeidene umiddelbart. Entreprenøren kan kreve forsinkelsesrenter, dekning av merkostnader og nødvendig fristforlengelse som følge av betalingsmislighold.</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>7. Tilleggsarbeider</h3>
+      <p>Arbeider utenfor kontraktens omfang anses som tilleggsarbeider. Tilleggsarbeider skal varsles så langt det er praktisk mulig før utførelse og faktureres etter avtale eller etter medgått tid, maskinbruk, materialer og underentreprenørkostnader.</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>8. Fremdrift og fristforlengelse</h3>
+      <p>Entreprenøren har rett til fristforlengelse ved værforhold, naturhendelser, leveranseproblemer, offentlige pålegg, forhold hos kunden eller andre forhold utenfor entreprenørens kontroll.</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>9. Forbehold</h3>
+      <ul>${forbeholdHtml}</ul>
+    </div>`,
+
+    `<div class="sec">
+      <h3>10. Reklamasjon</h3>
+      <p>Eventuelle mangler skal meldes skriftlig innen rimelig tid. Entreprenøren skal gis mulighet til å undersøke og eventuelt utbedre forholdet før andre engasjeres.</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>11. Eiendomsforbehold</h3>
+      <p>Leverte materialer og utført arbeid forblir entreprenørens eiendom inntil fullt oppgjør er mottatt i den grad loven tillater dette.</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>12. Tvister</h3>
+      <p>Tvister skal først søkes løst ved forhandlinger. Dersom dette ikke fører frem, skal tvisten avgjøres av de ordinære domstoler ${d.venue
+        ? `med ${escapeHtml(d.venue)} som avtalt verneting`
+        : "ved saksøktes alminnelige verneting"}. Norsk rett gjelder.</p>
+    </div>`,
+
+    `<div class="sec">
+      <h3>13. Signaturer</h3>
+      <div class="sig-grid">
+        <div class="sig-box">
+          <div class="lbl">For kunden</div>
+          <div class="name">${escapeHtml(d.customer_signed_name ?? d.customer_name)}</div>
+          ${d.customer_signature
+            ? `<img src="${d.customer_signature}" alt="Kundesignatur" class="sig-img" />`
+            : `<div class="sig-blank"></div>`}
+          <div class="sig-line">Dato: ${d.customer_signed_at ? dateFmt(d.customer_signed_at) : "_______________________"}</div>
+          <div class="sig-line">Navn: ${escapeHtml(d.customer_signed_name ?? "_______________________")}</div>
+        </div>
+        <div class="sig-box">
+          <div class="lbl">For ${escapeHtml(d.company_name)}</div>
+          <div class="name">${escapeHtml(d.ref_name ?? d.company_ceo ?? "")}</div>
+          ${d.ref_signature
+            ? `<img src="${d.ref_signature}" alt="Signatur" class="sig-img" />`
+            : `<div class="sig-blank"></div>`}
+          ${d.ref_position ? `<div class="role">${escapeHtml(d.ref_position)}</div>` : ""}
+          ${d.ref_phone ? `<div class="role">Tlf. ${escapeHtml(d.ref_phone)}</div>` : ""}
+          <div class="sig-line">Dato: ${dateFmt(d.offer_date)}</div>
+          <div class="sig-line">Navn: ${escapeHtml(d.ref_name ?? d.company_ceo ?? "_______________________")}</div>
+        </div>
+      </div>
+    </div>`,
+  ];
+
+  const contentPages = sections.map((sec) => `<main class="page">
+  ${contHeader}
+  <section class="body">
+    ${sec}
+  </section>
+  ${footer}
+</main>`).join("\n");
+
   const html = `<!doctype html>
 <html lang="nb">
 <head>
 <meta charset="utf-8"/>
 <title>Entreprisekontrakt – ${escapeHtml(d.company_name)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 <style>
-  @page { size: A4; margin: 0; }
-  * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11pt; line-height: 1.5; margin: 0; background: #ECECE7; }
-
-  /* A4-ark: skjerm viser dem som separate sider med skygge */
-  .sheet {
-    width: 210mm; min-height: 297mm;
-    background: #fff; margin: 8mm auto;
-    box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 18px 50px rgba(20,20,20,.16);
-    position: relative; overflow: hidden;
-  }
-  .sheet-body { padding: 20mm 18mm; }
-  .cover-sheet { padding: 20mm 18mm; display: flex; }
-  /* Kilden som skriptet måler ut fra – usynlig, men med riktig innholdsbredde */
-  #flow { position: absolute; left: -9999px; top: 0; width: 174mm; visibility: hidden; }
-
-  .cover { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 257mm; text-align: center; gap: 0; }
-  .cover img { height: 36mm; width: auto; margin-bottom: 16mm; }
-  .cover h1 { font-size: 18pt; font-weight: 900; letter-spacing: 0.04em; margin: 0 0 2mm 0; }
-  .cover h2 { font-size: 15pt; font-weight: 700; letter-spacing: 0.06em; margin: 0 0 16mm 0; }
-  .cover .proj-label { font-size: 10pt; font-weight: 700; margin-bottom: 1mm; }
-  .cover .proj-line { font-size: 10pt; border-bottom: 1px solid #111; width: 60mm; display: inline-block; margin-bottom: 10mm; }
-  .cover .desc { font-size: 11pt; font-weight: 700; margin: 4mm 0 2mm 0; }
-  .cover .addr { font-size: 10pt; margin: 0 0 10mm 0; }
-  .cover .kunde-label { font-size: 11pt; font-weight: 900; letter-spacing: 0.1em; margin: 6mm 0 4mm 0; }
-  .cover .kunde-name { font-size: 11pt; font-weight: 700; margin-bottom: 1mm; }
-  .cover .kunde-info { font-size: 10pt; line-height: 1.6; }
-
-  .content { }
-  h3 { font-size: 13pt; font-weight: 900; margin: 8mm 0 3mm 0; border-bottom: 1px solid #111; padding-bottom: 1mm; }
-  p { margin: 0 0 4mm 0; }
-  table.bp { width: 100%; border-collapse: collapse; margin: 4mm 0 6mm 0; }
-  table.bp th { background: #111; color: #fff; padding: 5px 8px; font-size: 10pt; text-align: left; }
-  table.bp td { padding: 5px 8px; border-bottom: 1px solid #ddd; font-size: 10pt; }
-  table.bp td:last-child { text-align: right; }
-  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-bottom: 6mm; }
-  .party-box { background: #f5f5f5; border-left: 3px solid #111; padding: 5mm; }
-  .party-box .lbl { font-size: 9pt; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 2mm; color: #555; }
-  .party-box p { margin: 0; font-size: 10pt; line-height: 1.6; }
-  .sig-section { margin-top: 10mm; page-break-inside: avoid; }
-  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16mm; margin-top: 4mm; }
-  .sig-box .lbl { font-weight: 700; font-size: 10pt; margin-bottom: 3mm; }
-  .sig-box .name { font-size: 10pt; margin-bottom: 8mm; }
-  .sig-line { border-top: 1px solid #111; padding-top: 3mm; font-size: 9pt; color: #555; }
-  .sig-line + .sig-line { margin-top: 8mm; }
-  .sig-img { max-height: 18mm; max-width: 60mm; width: auto; display: block; margin-bottom: 2mm; }
-  .sec { break-inside: avoid; page-break-inside: avoid; }
-  @media print {
-    body { font-size: 10pt; background: #fff; }
-    .sheet {
-      width: 210mm; height: 297mm; min-height: 297mm;
-      margin: 0; box-shadow: none;
-      page-break-after: always; break-after: page;
-    }
-    .sheet:last-child { page-break-after: auto; break-after: auto; }
-    .cover { min-height: auto; height: 257mm; }
-    /* Hold overskriften sammen med teksten under, og unngå at avsnitt/seksjoner deles */
-    h3 { break-after: avoid; page-break-after: avoid; }
-    .sec, p, ul, li, table.bp, .parties, .sig-section { break-inside: avoid; page-break-inside: avoid; }
-  }
+${pdfStyles()}
+${CONTRACT_STYLES}
 </style>
 </head>
 <body>
-
-<!-- Sider blir bygd her av pagineringsskriptet -->
-<div id="pages">
-  <!-- FORSIDE -->
-  <div class="sheet cover-sheet">
-    <div class="cover">
-      ${logoUrl ? `<img src="${logoUrl}" alt="${escapeHtml(d.company_name)}" onerror="this.style.display='none'" />` : ""}
-      <h1>${escapeHtml(d.company_name).toUpperCase()}</h1>
-      <h2>ENTREPRISEKONTRAKT</h2>
-
-      ${d.title ? `<div class="desc">${escapeHtml(d.title)}</div>` : ""}
-      ${d.customer_address ? `<div class="addr">${escapeHtml(d.customer_address)}</div>` : ""}
-
-      <div class="kunde-label">KUNDE</div>
-      <div class="kunde-name">${escapeHtml(d.customer_name)}</div>
-      <div class="kunde-info">
+<!--
+  Forsiden fyller arket alene, slik at kjøreskriptet aldri drar avtaletekst opp på
+  den. Paragrafene under starter som én side hver og blir slått sammen av tryMerge.
+-->
+<main class="page page-cover">
+  <section class="body">
+    <div class="cover-inner">
+      ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="${escapeHtml(d.company_name)}" onerror="this.style.display='none'" />` : ""}
+      <p class="company">${escapeHtml(d.company_name)}</p>
+      <h1 class="kind">ENTREPRISE<span class="accent">KONTRAKT</span></h1>
+      <div class="rule"></div>
+      ${d.title ? `<p class="cover-title">${escapeHtml(d.title)}</p>` : ""}
+      <p class="cover-sub">Tilbud nr. ${offerNo} · ${dateFmt(d.offer_date)}${d.project_number ? ` · Prosjektnr. ${escapeHtml(d.project_number)}` : ""}</p>
+      <p class="cover-label">Kunde</p>
+      <p class="cover-name">${escapeHtml(d.customer_name)}</p>
+      <div class="cover-info">
         ${d.customer_address ? escapeHtml(d.customer_address) + "<br/>" : ""}
         ${d.customer_phone ? "Tlf. " + escapeHtml(d.customer_phone) : ""}
       </div>
     </div>
-  </div>
-</div>
-
-<!-- AVTALETEKST (kilde – blir flyttet inn i sider av skriptet) -->
-<div id="flow">
-
-<div class="sec">
-<h3>1. Partene</h3>
-<div class="parties">
-  <div class="party-box">
-    <div class="lbl">Entreprenør</div>
-    <p><strong>${escapeHtml(d.company_name)}</strong><br/>
-    ${d.company_org_nr ? "Org.nr. " + escapeHtml(d.company_org_nr) + "<br/>" : ""}
-    ${d.company_address ? escapeHtml(d.company_address) + "<br/>" : ""}
-    ${d.company_phone ? "Tlf. " + escapeHtml(d.company_phone) : ""}</p>
-  </div>
-  <div class="party-box">
-    <div class="lbl">Kunde</div>
-    <p><strong>${escapeHtml(d.customer_name)}</strong><br/>
-    ${d.customer_address ? escapeHtml(d.customer_address) + "<br/>" : ""}
-    ${d.customer_phone ? "Tlf. " + escapeHtml(d.customer_phone) : ""}</p>
-  </div>
-</div>
-</div>
-
-<div class="sec">
-<h3>2. Kontraktsgrunnlag</h3>
-<p>Kontrakten bygger på tilbud nr. ${escapeHtml(String(d.offer_number))} datert ${dateFmt(d.offer_date)}. Tilbudet med beskrivelser, mengder, illustrasjoner og forbehold utgjør vedlegg 1 til denne kontrakten. Ved motstrid går denne kontrakten foran tilbudet.</p>
-</div>
-
-<div class="sec">
-<h3>3. Arbeidets omfang</h3>
-<p>Entreprenøren skal utføre ${d.offer_text ? escapeHtml(d.offer_text) : escapeHtml(d.title)}. Arbeidene utføres etter god fagmessig standard.</p>
-</div>
-
-<div class="sec">
-<h3>4. Kontraktssum</h3>
-<p><strong>${nokFmt(d.total_incl_vat)}&nbsp;inkl. mva</strong></p>
-</div>
-
-<div class="sec">
-<h3>5. Betalingsplan</h3>
-<p>Betalingsplan avtales mellom partene. Betalingsfrist er 14 dager fra fakturadato.</p>
-</div>
-
-<div class="sec">
-<h3>6. Manglende betaling</h3>
-<p>Ved manglende betaling har entreprenøren rett til å stanse arbeidene umiddelbart. Entreprenøren kan kreve forsinkelsesrenter, dekning av merkostnader og nødvendig fristforlengelse som følge av betalingsmislighold.</p>
-</div>
-
-<div class="sec">
-<h3>7. Tilleggsarbeider</h3>
-<p>Arbeider utenfor kontraktens omfang anses som tilleggsarbeider. Tilleggsarbeider skal varsles så langt det er praktisk mulig før utførelse og faktureres etter avtale eller etter medgått tid, maskinbruk, materialer og underentreprenørkostnader.</p>
-</div>
-
-<div class="sec">
-<h3>8. Fremdrift og fristforlengelse</h3>
-<p>Entreprenøren har rett til fristforlengelse ved værforhold, naturhendelser, leveranseproblemer, offentlige pålegg, forhold hos kunden eller andre forhold utenfor entreprenørens kontroll.</p>
-</div>
-
-<div class="sec">
-<h3>9. Forbehold</h3>
-<ul>
-${forbeholdHtml}
-</ul>
-</div>
-
-<div class="sec">
-<h3>10. Reklamasjon</h3>
-<p>Eventuelle mangler skal meldes skriftlig innen rimelig tid. Entreprenøren skal gis mulighet til å undersøke og eventuelt utbedre forholdet før andre engasjeres.</p>
-</div>
-
-<div class="sec">
-<h3>11. Eiendomsforbehold</h3>
-<p>Leverte materialer og utført arbeid forblir entreprenørens eiendom inntil fullt oppgjør er mottatt i den grad loven tillater dette.</p>
-</div>
-
-<div class="sec">
-<h3>12. Tvister</h3>
-<p>Tvister skal først søkes løst ved forhandlinger. Dersom dette ikke fører frem, skal tvisten avgjøres av de ordinære domstoler med Agder tingrett som avtalt verneting. Norsk rett gjelder.</p>
-</div>
-
-<div class="sec">
-<h3>13. Signaturer</h3>
-<div class="sig-section">
-  <div class="sig-grid">
-    <div class="sig-box">
-      <div class="lbl">For kunden</div>
-      <div class="name">${escapeHtml(d.customer_signed_name ?? d.customer_name)}</div>
-      ${d.customer_signature
-        ? `<img src="${d.customer_signature}" alt="Kundesignatur" class="sig-img" />`
-        : `<div style="height:18mm;border-bottom:1px dashed #aaa;margin-bottom:2mm;"></div>`}
-      <div class="sig-line">Dato: ${d.customer_signed_at ? dateFmt(d.customer_signed_at) : "_______________________"}</div>
-      <div class="sig-line">Navn: ${escapeHtml(d.customer_signed_name ?? "_______________________")}</div>
-    </div>
-    <div class="sig-box">
-      <div class="lbl">For ${escapeHtml(d.company_name)}</div>
-      <div class="name">${escapeHtml(d.ref_name ?? d.company_ceo ?? "")}</div>
-      ${d.ref_signature
-        ? `<img src="${d.ref_signature}" alt="Signatur" class="sig-img" />`
-        : `<div style="height:18mm;border-bottom:1px dashed #aaa;margin-bottom:2mm;"></div>`}
-      ${d.ref_position ? `<div style="font-size:9pt;color:#555;margin-bottom:1mm;">${escapeHtml(d.ref_position)}</div>` : ""}
-      ${d.ref_phone ? `<div style="font-size:9pt;color:#555;margin-bottom:2mm;">Tlf. ${escapeHtml(d.ref_phone)}</div>` : ""}
-      <div class="sig-line">Dato: ${dateFmt(d.offer_date)}</div>
-      <div class="sig-line">Navn: ${escapeHtml(d.ref_name ?? d.company_ceo ?? "_______________________")}</div>
-    </div>
-  </div>
-</div>
-</div>
-
-</div>
-
+  </section>
+</main>
+${contentPages}
 <script>
-(function () {
-  var PX_MM = 96 / 25.4;
-  // A4 innholdshøyde = 297mm - topp/bunn marg (20mm + 20mm) = 257mm.
-  // Litt slingringsmonn for måleavvik skjerm-px vs utskrift.
-  var CONTENT_MM = 252;
-
-  function mm(el) {
-    var cs = window.getComputedStyle(el);
-    var marg = (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
-    return (el.getBoundingClientRect().height + marg) / PX_MM;
-  }
-
-  function paginate() {
-    var flow = document.getElementById('flow');
-    if (!flow) return;
-    var blocks = Array.from(flow.children);
-    var pagesHost = document.getElementById('pages');
-
-    var sheet = null;
-    var sheetBody = null;
-    var used = 0;
-
-    function newSheet() {
-      sheet = document.createElement('div');
-      sheet.className = 'sheet content-sheet';
-      sheetBody = document.createElement('div');
-      sheetBody.className = 'sheet-body';
-      sheet.appendChild(sheetBody);
-      pagesHost.appendChild(sheet);
-      used = 0;
-    }
-
-    newSheet();
-    blocks.forEach(function (block) {
-      sheetBody.appendChild(block);
-      var h = mm(block);
-      // Får ikke plass på denne siden → flytt til ny side (med mindre siden er tom)
-      if (used + h > CONTENT_MM && used > 0) {
-        newSheet();
-        sheetBody.appendChild(block);
-        h = mm(block);
-      }
-      used += h;
-    });
-
-    flow.remove();
-  }
-
-  window.onload = function () {
-    var ready = (typeof document.fonts !== 'undefined' && document.fonts.ready)
-      ? document.fonts.ready : Promise.resolve();
-    ready.then(function () {
-      paginate();
-      setTimeout(function () { window.print(); }, 300);
-    });
-  };
-})();
+${PDF_REFLOW_SCRIPT}
 </script>
 </body>
 </html>`;
 
-  const win = window.open("", "_blank", "width=900,height=1200");
+  const win = window.open("", "_blank", "width=1000,height=1200");
   if (!win) return;
   win.document.write(html);
   win.document.close();
@@ -1362,8 +1382,10 @@ interface AmendmentPdfSettings {
  * Endringsmelding / krav om endring som PDF — søsterversjonen av openOfferPdf.
  * Deler CSS (PDF_STYLES) og sideombrekking (PDF_REFLOW_SCRIPT) med tilbudet.
  *
- * Vi bygger bare én side her. Kjøreskriptet pakker tabellradene etter faktisk
- * høyde og lager flere sider fra <template id="cont-page-tpl"> ved behov.
+ * Vi bygger tre sider: tekstside, linjeside og avslutningsside. Kjøreskriptet
+ * pakker tabellradene etter faktisk høyde, lager flere linjesider fra
+ * <template id="cont-page-tpl"> ved behov, og slår tekst- og linjesiden sammen
+ * igjen når de får plass på samme ark.
  */
 export function openAmendmentPdf(
   amendment: AmendmentPdfData,
@@ -1599,18 +1621,18 @@ export function openAmendmentPdf(
       </div>
     </div>`;
 
-  // Carry-radene ligger alltid i DOM-en, men er skjult på første/siste side.
-  // Kjøreskriptet slår dem av og på og regner ut beløpene på nytt.
-  const carryIn = `<div class="carry carry-in" style="display:none">
+  // Begge carry-radene står synlige mens kjøreskriptet måler, akkurat som på
+  // malsidene — ellers får den første linjesiden 8 mm mer å gå på enn de andre og
+  // klemmer inn en rad for mye. recalcCarries skjuler dem igjen der de ikke hører
+  // hjemme (øverst på første linjeside, nederst på den siste).
+  const carryIn = `<div class="carry carry-in">
       <span>Overført fra forrige side</span>
       <span>${fmtNok(0)}</span>
      </div>`;
-  const carryOut = `<div class="carry carry-out" style="display:none">
+  const carryOut = `<div class="carry carry-out">
       <span>Overføres til neste side</span>
       <span>${fmtNok(linesTotal)}</span>
      </div>`;
-
-  const hasLines = lines.length > 0;
 
   const contHeader = `<header class="cont-header">
     <div class="cont-meta">
@@ -1618,24 +1640,6 @@ export function openAmendmentPdf(
       <span>Side <span class="page-num"></span></span>
     </div>
   </header>`;
-
-  // Avslutningsblokken (summer/vilkår/signatur) legges på en "stillasside" i stedet
-  // for på side 1. Kjøreskriptet måler hvor mange rader side 1 tar, og trekker fra
-  // høyden på .bottom-push — ligger blokken på side 1, blir det bare plass til én
-  // linje der. Skriptet flytter blokken til den siste linjesiden og fjerner
-  // stillassiden igjen, så den vises aldri.
-  const scaffoldPage = hasLines
-    ? `<main class="page page-lines">
-  ${contHeader}
-  <section class="body">
-    <div class="carry carry-in"><span>Overført fra forrige side</span><span></span></div>
-    ${tableHtml([])}
-    <div class="carry carry-out"><span>Overføres til neste side</span><span></span></div>
-    ${bottomPush}
-  </section>
-  ${footerHtml}
-</main>`
-    : "";
 
   const html = `<!doctype html>
 <html lang="no">
@@ -1650,7 +1654,22 @@ ${pdfStyles()}
 </style>
 </head>
 <body>
-<main class="page page-lines">
+<!--
+  Samme sideoppsett som et flersides tilbud, og av samme grunn:
+  1) tekstside  — innledning, ingen tabell
+  2) linjeside  — hele prisoverslaget; kjøreskriptet deler den i flere sider ved behov
+  3) page-closing — summer, vilkår og signatur
+
+  Avslutningsblokken må ligge på en side UTEN tabell. Ligger den på en linjeside,
+  flytter kjøreskriptet den til den siste siden det lager, og tryMerge kan siden
+  slå den siden sammen med den forrige — da forsvinner summene og signaturfeltet.
+  page-closing er nettopp det flagget tryMerge respekterer og aldri slår sammen.
+
+  Bunnteksten står bare på den siste siden, slik tilbudet også gjør det. tryMerge
+  regner ikke med bunntekst når den vurderer om to sider får plass sammen, så en
+  bunntekst på hver side ville gjort de sammenslåtte sidene for høye.
+-->
+<main class="page page-text">
   ${masthead}
   <section class="body">
     <div class="doc-intro">
@@ -1661,19 +1680,25 @@ ${pdfStyles()}
       ${typeTagsHtml}
       ${textBlocksHtml}
     </div>
+  </section>
+</main>
+<main class="page page-lines">
+  ${contHeader}
+  <section class="body">
     ${carryIn}
     ${tableHtml(lines)}
     ${carryOut}
-    ${hasLines ? "" : bottomPush}
+  </section>
+</main>
+<main class="page page-closing">
+  ${contHeader}
+  <section class="body">
+    ${bottomPush}
   </section>
   ${footerHtml}
 </main>
-${scaffoldPage}
-<!--
-  page-closing på malen er et flagg til kjøreskriptet: tryMerge slår aldri sammen en
-  side som er merket slik. Sidene herfra lages først når side 1 er full, så det er
-  ingenting å slå sammen — og en sammenslåing ville kastet avslutningsblokken.
--->
+<!-- Malsidene er også merket page-closing, så tryMerge aldri slår sammen to
+     linjesider til én side med to tabeller. -->
 <template id="cont-page-tpl"><main class="page page-lines page-closing">
   ${contHeader}
   <section class="body">
@@ -1681,7 +1706,6 @@ ${scaffoldPage}
     ${tableHtml([])}
     <div class="carry carry-out"><span>Overføres til neste side</span><span></span></div>
   </section>
-  ${footerHtml}
 </main></template>
 <script>
 ${PDF_REFLOW_SCRIPT}

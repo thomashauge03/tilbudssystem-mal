@@ -205,6 +205,9 @@ function AdminPageContent() {
       supabase.rpc("list_auth_users" as never),
     ]);
     if (!mountedRef.current) return;
+    // Uten dette ser en feilet henting ut som et tomt admin-panel
+    const firstError = tuRes.error ?? tenantsRes.error ?? usersRes.error;
+    if (firstError) toast.error(`Kunne ikke hente data: ${firstError.message}`);
     if (tuRes.data) setTenantUsers(tuRes.data as TenantUser[]);
     if (tenantsRes.data) setTenants(tenantsRes.data as Tenant[]);
     if (usersRes.data) setAuthUsers(usersRes.data as AuthUser[]);
@@ -286,7 +289,7 @@ function AdminPageContent() {
   const doLinkUser = async () => {
     setLinking(true);
     // Bekreft e-post automatisk ved kobling
-    await supabase.rpc("confirm_user_email" as never, { target_user_id: linkUserId } as never);
+    const { error: confirmError } = await supabase.rpc("confirm_user_email" as never, { target_user_id: linkUserId } as never);
 
     const { error } = await supabase.rpc("admin_link_user" as never, {
       p_user_id: linkUserId, p_tenant_id: linkTenantId, p_role: linkRole,
@@ -295,7 +298,9 @@ function AdminPageContent() {
     if (error) { toast.error(error.message); return; }
     const t = tenants.find(t => t.id === linkTenantId);
     const u = authUsers.find(u => u.id === linkUserId);
-    toast.success(`${u?.email} koblet til «${t?.name}» som ${linkRole} — e-post bekreftet`);
+    // Koblingen gikk gjennom, men bekreftelsen kan ha feilet for seg
+    toast.success(`${u?.email} koblet til «${t?.name}» som ${linkRole}${confirmError ? "" : " — e-post bekreftet"}`);
+    if (confirmError) toast.error(`E-posten ble ikke bekreftet: ${confirmError.message}`);
     setLinkUserId(""); setLinkTenantId(""); setLinkUserSearch(""); setLinkTenantSearch("");
     load();
   };
@@ -484,7 +489,8 @@ function AdminPageContent() {
                       {!u.confirmed_at && (
                         <button
                           onClick={async () => {
-                            await supabase.rpc("confirm_user_email" as never, { target_user_id: u.id } as never);
+                            const { error } = await supabase.rpc("confirm_user_email" as never, { target_user_id: u.id } as never);
+                            if (error) { toast.error(error.message); return; }
                             toast.success(`${u.email} bekreftet`);
                             load();
                           }}

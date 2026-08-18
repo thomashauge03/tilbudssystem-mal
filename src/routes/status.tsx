@@ -4,7 +4,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { nok, fmtDate, compareAmendmentNumber, OFFER_WON_STATUSES, OFFER_COMPLETED } from "@/lib/format";
+import {
+  nok, fmtDate, compareAmendmentNumber, OFFER_WON_STATUSES, OFFER_COMPLETED,
+  offerTotal, amendmentTotal,
+} from "@/lib/format";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Check, Search, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
@@ -45,13 +52,22 @@ function SummaryCard({ label, value, sub }: { label: string; value: string; sub?
   );
 }
 
+// Summen skrives tilbake på tilbudet/endringsmeldingen. Feiler lesingen, ville en
+// tom liste blitt tolket som "ingenting betalt" og nullstilt beløpet i basen — så
+// her avbrytes det heller før skriving.
 async function syncInvoicedAmount(parentId: string, parentType: "offers" | "amendments") {
   const col = parentType === "offers" ? "offer_id" : "amendment_id";
-  const { data } = await supabase.from("payments").select("amount, paid").eq(col, parentId);
+  const { data, error } = await supabase.from("payments").select("amount, paid").eq(col, parentId);
+  if (error) { toast.error(error.message); return false; }
   const invoiced = (data ?? [])
     .filter((p: any) => p.paid)
     .reduce((s: number, p: any) => s + Number(p.amount), 0);
-  await supabase.from(parentType).update({ invoiced_amount: invoiced }).eq("id", parentId);
+  const { error: updateError } = await supabase
+    .from(parentType)
+    .update({ invoiced_amount: invoiced })
+    .eq("id", parentId);
+  if (updateError) { toast.error(updateError.message); return false; }
+  return true;
 }
 
 function PaymentsPanel({
@@ -69,6 +85,7 @@ function PaymentsPanel({
   const [newAmount, setNewAmount] = useState<number | "">("");
   const [newDate, setNewDate] = useState(() => getToday());
   const [adding, setAdding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
   const col = parentType === "offers" ? "offer_id" : "amendment_id";
 
@@ -104,6 +121,7 @@ function PaymentsPanel({
   const deletePayment = async (id: string) => {
     const { error } = await supabase.from("payments").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
+    setDeleteTarget(null);
     await syncInvoicedAmount(parentId, parentType);
     invalidate();
   };
@@ -175,7 +193,8 @@ function PaymentsPanel({
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => deletePayment(p.id)}
+                    title="Slett faktura"
+                    onClick={() => setDeleteTarget(p)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -230,6 +249,29 @@ function PaymentsPanel({
           )}
         </>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Slett faktura</AlertDialogTitle>
+            <AlertDialogDescription>
+              Er du sikker på at du vil slette fakturaen på{" "}
+              <strong>{nok(Number(deleteTarget?.amount ?? 0))}</strong>
+              {deleteTarget?.description ? <> – {deleteTarget.description}</> : null}? Beløpet
+              trekkes fra det som er registrert som betalt. Dette kan ikke angres.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Avbryt</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deletePayment(deleteTarget.id)}
+            >
+              Slett
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -248,12 +290,13 @@ function StatusPage() {
       return next;
     });
 
-  const { data: offers, isLoading: loadO } = useQuery({
+  const { data: offers, isLoading: loadO, error: errorO } = useQuery({
     queryKey: ["status-offers"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("offers")
-        .select("id, offer_number, title, customer_name, status, valid_until, project_number, admin_cost_pct, invoiced_amount, offer_lines(quantity, unit_price, included)")
+        // discount_pct og included må være med, ellers regner offerTotal feil i stillhet
+        .select("id, offer_number, title, customer_name, status, valid_until, project_number, admin_cost_pct, invoiced_amount, offer_lines(quantity, unit_price, discount_pct, included)")
         .in("status", OFFER_WON_STATUSES)
         .order("offer_number", { ascending: false });
       if (error) throw error;
@@ -261,12 +304,12 @@ function StatusPage() {
     },
   });
 
-  const { data: amendments, isLoading: loadA } = useQuery({
+  const { data: amendments, isLoading: loadA, error: errorA } = useQuery({
     queryKey: ["status-amendments"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("amendments")
-        .select("id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, amendment_lines(quantity, unit_price)")
+        .select("id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       // Sorteres på klienten: databasen kan bare sortere teksten alfabetisk, og
@@ -277,19 +320,6 @@ function StatusPage() {
     },
   });
 
-  const offerTotal = (o: any) => {
-    const base = (o.offer_lines ?? [])
-      .filter((l: any) => l.included !== false)
-      .reduce((s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
-    return base + base * (Number(o.admin_cost_pct ?? 0) / 100);
-  };
-
-  const amendmentTotal = (a: any) =>
-    (a.amendment_lines ?? []).reduce(
-      (s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0),
-      0,
-    );
-
   const matchesSearch = (fields: (string | null | undefined)[]) => {
     if (!q) return true;
     const t = q.toLowerCase();
@@ -299,10 +329,10 @@ function StatusPage() {
   const filteredOffers = useMemo(
     () =>
       (offers ?? []).filter((o: any) => {
-        const total = offerTotal(o);
+        const total = offerTotal(o.offer_lines, o.admin_cost_pct);
         const inv = Number(o.invoiced_amount ?? 0);
         // Alle tilbudene her er godkjente, og da gjelder ikke fristen lenger.
-        // "Aktive" betyr derfor: ikke ferdig fakturert.
+        // "Aktive" betyr derfor: ikke ferdig betalt.
         if (filter === "active" && total > 0 && inv >= total) return false;
         if (filter === "partial" && (inv === 0 || inv >= total)) return false;
         if (filter === "fullført" && o.status !== OFFER_COMPLETED) return false;
@@ -314,7 +344,7 @@ function StatusPage() {
   const filteredAmendments = useMemo(
     () =>
       (amendments ?? []).filter((a: any) => {
-        const total = amendmentTotal(a);
+        const total = amendmentTotal(a.amendment_lines);
         const inv = Number(a.invoiced_amount ?? 0);
         if (filter === "active" || filter === "fullført") return false;
         if (filter === "partial" && (inv === 0 || inv >= total)) return false;
@@ -327,8 +357,8 @@ function StatusPage() {
   // toppen vist ett tall og tabellen under et annet.
   const totalSum = useMemo(
     () =>
-      filteredOffers.reduce((s: number, o: any) => s + offerTotal(o), 0) +
-      filteredAmendments.reduce((s: number, a: any) => s + amendmentTotal(a), 0),
+      filteredOffers.reduce((s: number, o: any) => s + offerTotal(o.offer_lines, o.admin_cost_pct), 0) +
+      filteredAmendments.reduce((s: number, a: any) => s + amendmentTotal(a.amendment_lines), 0),
     [filteredOffers, filteredAmendments],
   );
 
@@ -349,7 +379,7 @@ function StatusPage() {
   const FILTERS: { key: Filter; label: string }[] = [
     { key: "all", label: "Alle" },
     { key: "active", label: "Aktive tilbud" },
-    { key: "partial", label: "Delvis fakturert" },
+    { key: "partial", label: "Delvis betalt" },
     { key: "fullført", label: "Fullført" },
   ];
 
@@ -358,19 +388,26 @@ function StatusPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Status</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Oversikt over faktureringsgrad per tilbud og endringsmelding
+          Oversikt over betalingsgrad per tilbud og endringsmelding
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <SummaryCard label="Total kontraktssum" value={nok(totalSum)} sub="Eks. mva" />
+        {/* Tallet summerer bare fakturaer som er huket av som betalt, derfor "Betalt" og ikke "Fakturert" */}
         <SummaryCard
-          label="Fakturert"
+          label="Betalt"
           value={nok(totalInvoiced)}
           sub={`${totalSum > 0 ? Math.round((totalInvoiced / totalSum) * 100) : 0} % av total`}
         />
         <SummaryCard label="Gjenstår" value={nok(Math.max(0, totalSum - totalInvoiced))} sub="Eks. mva" />
       </div>
+
+      {(errorO || errorA) && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          Feil: {((errorO ?? errorA) as Error).message}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative max-w-sm flex-1">
@@ -411,7 +448,7 @@ function StatusPage() {
                 <th className="px-4 py-3">Beskrivelse</th>
                 <th className="px-4 py-3">Prosjektnr.</th>
                 <th className="px-4 py-3 text-right">Kontraktssum</th>
-                <th className="px-4 py-3 text-right">Fakturert</th>
+                <th className="px-4 py-3 text-right">Betalt</th>
                 <th className="px-4 py-3 text-right">Gjenstår</th>
                 <th className="w-36 px-4 py-3">Andel</th>
                 <th className="w-10 px-2 py-3"></th>
@@ -428,7 +465,7 @@ function StatusPage() {
                 </tr>
               ) : (
                 filteredOffers.map((o: any, i: number) => {
-                  const total = offerTotal(o);
+                  const total = offerTotal(o.offer_lines, o.admin_cost_pct);
                   const inv = Number(o.invoiced_amount ?? 0);
                   const rem = total - inv;
                   const pct = total > 0 ? (inv / total) * 100 : 0;
@@ -499,7 +536,7 @@ function StatusPage() {
                   <th className="px-4 py-3">Beskrivelse</th>
                   <th className="px-4 py-3">Dato varslet</th>
                   <th className="px-4 py-3 text-right">Prisoverslag</th>
-                  <th className="px-4 py-3 text-right">Fakturert</th>
+                  <th className="px-4 py-3 text-right">Betalt</th>
                   <th className="px-4 py-3 text-right">Gjenstår</th>
                   <th className="w-36 px-4 py-3">Andel</th>
                   <th className="w-10 px-2 py-3"></th>
@@ -516,7 +553,7 @@ function StatusPage() {
                   </tr>
                 ) : (
                   filteredAmendments.map((a: any, i: number) => {
-                    const total = amendmentTotal(a);
+                    const total = amendmentTotal(a.amendment_lines);
                     const inv = Number(a.invoiced_amount ?? 0);
                     const rem = total - inv;
                     const pct = total > 0 ? (inv / total) * 100 : 0;

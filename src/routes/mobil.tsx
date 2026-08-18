@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate } from "@/lib/format";
+import { nok, fmtDate, offerTotal } from "@/lib/format";
 import { useAuth } from "@/hooks/use-auth";
+import { useAppSettings } from "@/hooks/use-app-settings";
 import { useDashboard } from "@/routes/dashboard";
 import {
   CircleDollarSign, CheckCircle2, TrendingUp, FileText,
@@ -12,13 +13,6 @@ import {
 export const Route = createFileRoute("/mobil")({
   component: MobileDashboard,
 });
-
-function sumOf(o: any) {
-  const base = (o.offer_lines ?? [])
-    .filter((l: any) => l.included !== false)
-    .reduce((s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
-  return base + base * (Number(o.admin_cost_pct ?? 0) / 100);
-}
 
 function StatTile({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string; tone: string }) {
   return (
@@ -37,13 +31,17 @@ function StatTile({ icon: Icon, label, value, tone }: { icon: any; label: string
 function MobileDashboard() {
   const { branding } = useAuth();
   const { data: d, isLoading } = useDashboard();
+  const { data: appSettings } = useAppSettings();
+  const signedRefs = new Set(
+    (appSettings?.our_refs ?? []).filter((r) => r.signature).map((r) => r.name)
+  );
 
   const { data: offers } = useQuery({
     queryKey: ["mobil-offers"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("offers")
-        .select("id, offer_number, title, status, customer_name, valid_until, customer_signed_at, contract_signed, admin_cost_pct, offer_lines(quantity, unit_price, included)")
+        .select("id, offer_number, title, status, customer_name, valid_until, our_ref, customer_signed_at, contract_signed, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)")
         .order("offer_number", { ascending: false })
         .limit(15);
       if (error) throw error;
@@ -55,12 +53,16 @@ function MobileDashboard() {
     <div className="min-h-[100dvh] bg-background pb-8" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Header */}
       <header className="sticky top-0 z-10 flex items-center gap-2 border-b bg-background/95 px-4 py-3 backdrop-blur">
-        <img
-          src={branding?.logo_url || "/logo.png"}
-          alt={branding?.company_name || "Dashboard"}
-          className="h-7 w-auto"
-          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-        />
+        {/* Vis bare tenantens egen logo. /logo.png er Techauge sin, og
+            ble tidligere vist til alle firmaer som mangler egen logo. */}
+        {branding?.logo_url && (
+          <img
+            src={branding.logo_url}
+            alt={branding.company_name || ""}
+            className="h-7 w-auto"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+          />
+        )}
         <span className="text-sm font-bold truncate">{branding?.company_name || "Dashboard"}</span>
         <Link
           to="/"
@@ -127,21 +129,27 @@ function MobileDashboard() {
               <p className="px-3 py-5 text-center text-xs text-muted-foreground">Laster…</p>
             ) : offers.length === 0 ? (
               <p className="px-3 py-5 text-center text-xs text-muted-foreground">Ingen tilbud ennå</p>
-            ) : offers.map((o: any) => (
-              <Link key={o.id} to="/tilbud/$id" params={{ id: o.id }} className="flex items-center gap-2 px-3 py-2.5 active:bg-accent/40">
-                <span className="w-12 flex-shrink-0 tabular-nums text-xs text-muted-foreground">#{o.offer_number}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{o.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">{o.customer_name ?? "—"}</p>
-                </div>
-                {/* Signeringsindikatorer */}
-                <span className="flex flex-shrink-0 items-center gap-1" title="Kunde / kontrakt signert">
-                  <PenLine className={`h-3.5 w-3.5 ${o.customer_signed_at ? "text-green-600" : "text-muted-foreground/30"}`} />
-                  <FileCheck className={`h-3.5 w-3.5 ${o.contract_signed || o.customer_signed_at ? "text-green-600" : "text-muted-foreground/30"}`} />
-                </span>
-                <span className="flex-shrink-0 text-right text-xs font-semibold">{nok(sumOf(o))}</span>
-              </Link>
-            ))}
+            ) : offers.map((o: any) => {
+              // Samme regel som i Tilbud og Ordre: kundesignatur alene er ikke
+              // nok — vår referanse må også ha signaturbilde.
+              const autoSigned = !!o.customer_signed_at && signedRefs.has(o.our_ref);
+              const contractGreen = o.contract_signed || autoSigned;
+              return (
+                <Link key={o.id} to="/tilbud/$id" params={{ id: o.id }} className="flex items-center gap-2 px-3 py-2.5 active:bg-accent/40">
+                  <span className="w-12 flex-shrink-0 tabular-nums text-xs text-muted-foreground">#{o.offer_number}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{o.title}</p>
+                    <p className="truncate text-xs text-muted-foreground">{o.customer_name ?? "—"}</p>
+                  </div>
+                  {/* Signeringsindikatorer */}
+                  <span className="flex flex-shrink-0 items-center gap-1" title="Kunde / kontrakt signert">
+                    <PenLine className={`h-3.5 w-3.5 ${o.customer_signed_at ? "text-green-600" : "text-muted-foreground/30"}`} />
+                    <FileCheck className={`h-3.5 w-3.5 ${contractGreen ? "text-green-600" : "text-muted-foreground/30"}`} />
+                  </span>
+                  <span className="flex-shrink-0 text-right text-xs font-semibold">{nok(offerTotal(o.offer_lines, o.admin_cost_pct))}</span>
+                </Link>
+              );
+            })}
           </div>
         </section>
 

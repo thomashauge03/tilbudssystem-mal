@@ -1,12 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate , OFFER_WON_STATUSES } from "@/lib/format";
+import { nok, fmtDate, offerTotal, OFFER_WON_STATUSES } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Search, PenLine, FileCheck } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/ordre")({
   component: OrdrePage,
@@ -37,6 +38,7 @@ function ProgressBar({ pct }: { pct: number }) {
 
 function OrdrePage() {
   const [q, setQ] = useState("");
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: appSettings } = useAppSettings();
   const signedRefs = new Set(
@@ -48,7 +50,7 @@ function OrdrePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("offers")
-        .select("id, offer_number, title, customer_name, offer_date, valid_until, our_ref, project_number, offer_lines(quantity, unit_price, included), admin_cost_pct, invoiced_amount, customer_signed_at, contract_signed")
+        .select("id, offer_number, title, customer_name, offer_date, valid_until, our_ref, project_number, offer_lines(quantity, unit_price, discount_pct, included), admin_cost_pct, invoiced_amount, customer_signed_at, contract_signed")
         .in("status", OFFER_WON_STATUSES)
         .order("offer_number", { ascending: false });
       if (error) throw error;
@@ -56,13 +58,7 @@ function OrdrePage() {
     },
   });
 
-  const sumOf = (o: any) => {
-    const base = (o.offer_lines ?? [])
-      .filter((l: any) => l.included !== false)
-      .reduce((s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
-    const pct = Number(o.admin_cost_pct ?? 0);
-    return base + base * (pct / 100);
-  };
+  const sumOf = (o: any) => offerTotal(o.offer_lines, o.admin_cost_pct);
 
   const rows = (data ?? []).filter((o: any) => {
     if (!q) return true;
@@ -146,7 +142,7 @@ function OrdrePage() {
                 <tr
                   key={o.id}
                   className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
-                  onClick={() => (window.location.href = `/tilbud/${o.id}`)}
+                  onClick={() => navigate({ to: "/tilbud/$id", params: { id: o.id } })}
                 >
                   <td className="px-4 py-3 tabular-nums text-sm text-primary">#{o.offer_number}</td>
                   <td className="px-4 py-3">
@@ -177,7 +173,10 @@ function OrdrePage() {
                           }
                           onClick={async (e) => {
                             e.stopPropagation();
-                            await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
+                            const { error } = await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
+                            // Uten dette slo prikken tilbake ved neste henting
+                            // uten at noen fikk vite at lagringen feilet
+                            if (error) { toast.error(error.message); return; }
                             queryClient.invalidateQueries({ queryKey: ["offers-godkjent"] });
                           }}
                           className="inline-flex items-center justify-center"

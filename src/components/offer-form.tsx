@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
@@ -150,6 +150,22 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const [customerOpen, setCustomerOpen] = useState(false);
   const currentOfferIdRef = useRef<string | undefined>(offerId);
   const DRAFT_KEY = `offer-draft-${offerId ?? "new"}`;
+  // Alle knappene lagrer først. Uten en sperre rakk to raske klikk å starte to
+  // innsettinger før id-en fra den første var på plass — og tilbudet ble
+  // opprettet to ganger. Ref-en fanger klikk som kommer før neste opptegning.
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const withSaving = (fn: () => Promise<void>) => async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await fn();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!isEdit && !initialized && adminCost !== undefined && appSettings !== undefined) {
@@ -168,6 +184,18 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       setInitialized(true);
     }
     if (isEdit && loaded && !initialized) {
+      // Utkastet gjelder også redigering. Uten dette var alt man hadde skrevet
+      // borte uten varsel om man navigerte bort eller trykte F5 før lagring.
+      const saved = sessionStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        try {
+          const { offer: o, lines: l } = JSON.parse(saved);
+          setOffer(o);
+          setLines(l ?? []);
+          setInitialized(true);
+          return;
+        } catch { sessionStorage.removeItem(DRAFT_KEY); }
+      }
       const lo = loaded.offer as any;
       setOffer({ ...lo, forbehold: asArray(lo.forbehold), attachment_urls: asArray(lo.attachment_urls) });
       setLines(loaded.lines.length ? loaded.lines : []);
@@ -176,19 +204,18 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // L3: appSettings added to deps — it's read for offer_validity_days, our_refs, and default_offer_text
   }, [isEdit, loaded, adminCost, initialized, appSettings]);
 
-  // Lagre skjematilstand i sessionStorage ved hver endring (bare for nye tilbud)
+  // Lagre skjematilstand i sessionStorage ved hver endring
   useEffect(() => {
-    if (!initialized || isEdit) return;
+    if (!initialized) return;
+    // Er et nytt tilbud alt lagt inn (PDF-, e-post- og lenkeknappene lagrer uten
+    // å navigere bort), ville utkastet blitt en skygge av en rad som finnes:
+    // neste "Nytt tilbud" gjenopprettet alt, og "Lagre" laget tilbud nummer to.
+    if (!isEdit && currentOfferIdRef.current) return;
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ offer, lines }));
   }, [offer, lines, initialized, isEdit]);
 
-  const lineSum = (l: Line) => {
-    const gross = Number(l.quantity || 0) * Number(l.unit_price || 0);
-    return gross * (1 - Number(l.discount_pct || 0) / 100);
-  };
-
   const subtotal = useMemo(
-    () => lines.filter((l) => l.included).reduce((s, l) => s + lineSum(l), 0),
+    () => lines.filter((l) => l.included).reduce((s, l) => s + lineNet(l), 0),
     [lines]
   );
   const totalDiscount = useMemo(
@@ -276,7 +303,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (editing && id) {
       const { error } = await supabase.from("offers").update(payload).eq("id", id);
       if (error) { toast.error(error.message); return null; }
-      await supabase.from("offer_lines").delete().eq("offer_id", id);
+      // Linjene skrives som slett-og-sett-inn. Går slettingen galt uten at vi
+      // merker det, legges linjene inn dobbelt; går innsettingen galt etterpå,
+      // er linjene borte i basen mens skjermen fortsatt viser dem.
+      const { error: deleteError } = await supabase.from("offer_lines").delete().eq("offer_id", id);
+      if (deleteError) { toast.error(deleteError.message); return null; }
     } else {
       const { data, error } = await supabase.from("offers").insert({ ...payload, status: "utkast", tenant_id: tenantId }).select("id").single();
       if (error) { toast.error(error.message); return null; }
@@ -309,22 +340,49 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     return id!;
   };
 
-  const handleSave = async () => {
+  const handleSave = withSaving(async () => {
     const id = await save();
     if (id && !isEdit) navigate({ to: "/tilbud/$id", params: { id } });
+  });
+
+  const hasDeadline = offerHasDeadline(offer.status);
+
+  // Er tilbudet alt signert, skal ingen ny signeringslenke ut — den ville latt
+  // kunden signere en gang til og overskrive signaturen som ligger der.
+  const isSigned = !!(loaded?.offer as any)?.customer_signed_at;
+
+  // Hvert klikk lagde tidligere et nytt token. Et ubrukt token gjenbrukes, slik
+  // at lenker man alt har sendt ut fortsatt peker på det samme tilbudet.
+  const getSigningToken = async (id: string): Promise<string | null> => {
+    if (!tenantId) { toast.error("Ingen tenant"); return null; }
+    const { data: unused, error: lookupError } = await supabase
+      .from("offer_signing_tokens" as never)
+      .select("token")
+      .eq("offer_id" as never, id as never)
+      .is("used_at" as never, null as never)
+      .limit(1);
+    if (lookupError) { toast.error(lookupError.message); return null; }
+    const existing = (unused as any[])?.[0]?.token;
+    if (existing) return String(existing);
+
+    const { data, error } = await supabase
+      .from("offer_signing_tokens" as never)
+      .insert({ offer_id: id, tenant_id: tenantId } as never)
+      .select("token")
+      .single();
+    if (error || !data) { toast.error(error?.message ?? "Kunne ikke opprette signeringslenke"); return null; }
+    return String((data as any).token);
   };
 
   // Uten innstillingene blir firmanavn/logo tomme i PDF-en. Bedre å vente enn
   // å produsere et dokument med feil (eller manglende) merkevare.
-  const hasDeadline = offerHasDeadline(offer.status);
-
   const settingsReady = !!appSettings;
   const requireSettings = () => {
     if (!settingsReady) { toast.error("Firmainnstillingene er ikke lastet ennå – prøv igjen om et øyeblikk"); return false; }
     return true;
   };
 
-  const handlePdf = async () => {
+  const handlePdf = withSaving(async () => {
     if (!requireSettings()) return;
     const id = await save();
     if (!id) return;
@@ -354,60 +412,73 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         forbehold: (offer.forbehold ?? []).map((f: any) => typeof f === "string" ? { title: f, description: "" } : f),
       }
     );
-  };
+  });
 
-  const handleEmail = async () => {
+  const handleEmail = withSaving(async () => {
     if (!requireSettings()) return;
     const id = await save();
     if (!id) return;
     if (!offer.customer_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(offer.customer_email)) { toast.error("Kunden mangler gyldig e-postadresse"); return; }
 
-    // Opprett signeringslenke og inkluder i e-posten
+    // Opprett signeringslenke og inkluder i e-posten. Feiler den, sier vi fra og
+    // lar være å love en lenke i teksten som likevel ikke ble med.
     let signingLink = "";
-    if (tenantId) {
-      const { data: tokenData } = await supabase
-        .from("offer_signing_tokens" as never)
-        .insert({ offer_id: id, tenant_id: tenantId } as never)
-        .select("token")
-        .single();
-      if (tokenData) {
-        signingLink = `\n\nSigner tilbudet digitalt her:\n${window.location.origin}/signer/${(tokenData as any).token}`;
-      }
+    if (!isSigned) {
+      const token = await getSigningToken(id);
+      if (token) signingLink = `\n\nSigner tilbudet digitalt her:\n${window.location.origin}/signer/${token}`;
     }
+    const signingInfo = signingLink
+      ? "\n\nVia signeringslenken kan du lese gjennom tilbudet og kontrakten før du signerer digitalt."
+      : "";
 
-    const subject = `Tilbud nr. ${offer.offer_number ?? ""} – ${offer.title}`;
+    // Emnet er en mal i innstillingene: {nr}, {tittel} og {kunde}. Er den tom,
+    // faller vi tilbake på det innebygde emnet.
+    const template = (appSettings?.email_subject_template ?? "").trim();
+    const subjectVars: Record<string, string> = {
+      nr: String(offer.offer_number ?? ""),
+      tittel: offer.title ?? "",
+      kunde: offer.customer_name ?? "",
+    };
+    const subject = template
+      ? template.replace(/\{(nr|tittel|kunde)\}/g, (_m, key: string) => subjectVars[key])
+      : `Tilbud nr. ${offer.offer_number ?? ""} – ${offer.title}`;
     const senderName = appSettings?.company_name ?? "Tilbudssystem";
     // Et godkjent tilbud har ingen frist igjen, så da nevnes den ikke
     const gyldighet = hasDeadline ? `\n\nTilbudet er gyldig t.o.m. ${fmtDate(offer.valid_until)}.` : "";
-    const body = `Hei,\n\nVi sender herved tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.${gyldighet}${signingLink}\n\nVia signeringslenken kan du lese gjennom tilbudet og kontrakten før du signerer digitalt.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
+    const body = `Hei,\n\nVi sender herved tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.${gyldighet}${signingLink}${signingInfo}\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
     window.location.href = `mailto:${encodeURIComponent(offer.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  };
+  });
 
-  const handleSigningLink = async () => {
+  const handleSigningLink = withSaving(async () => {
     const id = await save();
     if (!id) return;
-    if (!tenantId) { toast.error("Ingen tenant"); return; }
-    const { data: tokenData, error } = await supabase
-      .from("offer_signing_tokens" as never)
-      .insert({ offer_id: id, tenant_id: tenantId } as never)
-      .select("token")
-      .single();
-    if (error || !tokenData) { toast.error("Kunne ikke opprette signeringslenke"); return; }
-    const link = `${window.location.origin}/signer/${(tokenData as any).token}`;
+    const token = await getSigningToken(id);
+    if (!token) return;
+    const link = `${window.location.origin}/signer/${token}`;
     await navigator.clipboard.writeText(link);
     toast.success("Signeringslenke kopiert til utklippstavlen!");
-  };
+  });
 
   const handleResetSignature = async () => {
     if (!offerId) return;
     if (!window.confirm("Er du sikker på at du vil nullstille kundesignaturen? Alle signeringslenker for dette tilbudet vil slutte å fungere.")) return;
-    await supabase.from("offer_signing_tokens" as never).delete().eq("offer_id" as never, offerId as never);
-    await supabase.from("offers").update({ customer_signed_at: null } as any).eq("id", offerId);
+    const { error: tokenError } = await supabase.from("offer_signing_tokens" as never).delete().eq("offer_id" as never, offerId as never);
+    if (tokenError) { toast.error(tokenError.message); return; }
+    // Uten signatur er tilbudet ikke godkjent lenger. Ble status stående på
+    // 'godkjent', telte tilbudet videre i kontraktssummen og fristen forble skjult.
+    const { error } = await supabase
+      .from("offers")
+      .update({ customer_signed_at: null, status: "sendt" } as any)
+      .eq("id", offerId);
+    if (error) { toast.error(error.message); return; }
+    setOffer((p) => ({ ...p, status: "sendt" }));
     qc.invalidateQueries({ queryKey: ["offer", offerId] });
+    qc.invalidateQueries({ queryKey: ["offers"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
     toast.success("Signatur nullstilt. Du kan nå sende ut en ny signeringslenke.");
   };
 
-  const handleContract = async () => {
+  const handleContract = withSaving(async () => {
     if (!requireSettings()) return;
     const id = await save();
     if (!id) return;
@@ -458,7 +529,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         typeof f === "string" ? { title: f, description: "" } : f
       ),
     });
-  };
+  });
 
   if (isEdit && !initialized) return <div className="text-muted-foreground">Laster…</div>;
 
@@ -473,21 +544,23 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         </div>
         <div className="flex gap-2 flex-wrap lg:justify-end">
           {isEdit && (
-            <Button variant="outline" onClick={handleContract}>
-              <FileSignature className="mr-2 h-4 w-4" />Kontrakt PDF
+            <Button variant="outline" onClick={handleContract} disabled={saving}>
+              <FileSignature className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Kontrakt PDF"}
             </Button>
           )}
-          <Button variant="outline" onClick={handleSigningLink} title="Generer signeringslenke og kopier til utklippstavle">
-            <Link2 className="mr-2 h-4 w-4" />Signeringslenke
-          </Button>
-          {isEdit && (loaded?.offer as any)?.customer_signed_at && (
-            <Button variant="outline" onClick={handleResetSignature} className="text-destructive border-destructive/50 hover:bg-destructive/10" title="Nullstill kundesignatur">
+          {!isSigned && (
+            <Button variant="outline" onClick={handleSigningLink} disabled={saving} title="Generer signeringslenke og kopier til utklippstavle">
+              <Link2 className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Signeringslenke"}
+            </Button>
+          )}
+          {isEdit && isSigned && (
+            <Button variant="outline" onClick={handleResetSignature} disabled={saving} className="text-destructive border-destructive/50 hover:bg-destructive/10" title="Nullstill kundesignatur">
               <RotateCcw className="mr-2 h-4 w-4" />Nullstill signatur
             </Button>
           )}
-          <Button variant="outline" onClick={handleEmail}><Mail className="mr-2 h-4 w-4" />Send på e-post</Button>
-          <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Last ned PDF</Button>
-          <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre tilbud</Button>
+          <Button variant="outline" onClick={handleEmail} disabled={saving}><Mail className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Send på e-post"}</Button>
+          <Button variant="outline" onClick={handlePdf} disabled={saving}><FileDown className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Last ned PDF"}</Button>
+          <Button onClick={handleSave} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Lagre tilbud"}</Button>
         </div>
       </div>
 
@@ -782,7 +855,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                       <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2"><Input type="number" step="0.1" min="0" max="100" className="text-right no-spinner" value={l.discount_pct || ""} placeholder="0" onChange={(e) => updLine(i, { discount_pct: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2 text-right font-medium">
-                        {nok(lineSum(l))}
+                        {nok(lineNet(l))}
                         {Number(l.discount_pct) > 0 && (
                           <div className="text-xs text-muted-foreground line-through">{nok(Number(l.quantity || 0) * Number(l.unit_price || 0))}</div>
                         )}
@@ -863,7 +936,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                     </div>
                     <div className="flex justify-between border-t pt-2 text-sm">
                       <span className="text-muted-foreground">Sum eks. mva</span>
-                      <span className="font-semibold">{nok(lineSum(l))}</span>
+                      <span className="font-semibold">{nok(lineNet(l))}</span>
                     </div>
                   </div>
                 );
@@ -936,8 +1009,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={addLine}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>
-            <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Last ned PDF</Button>
-            <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre tilbud</Button>
+            <Button variant="outline" onClick={handlePdf} disabled={saving}><FileDown className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Last ned PDF"}</Button>
+            <Button onClick={handleSave} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Lagre tilbud"}</Button>
           </div>
         </div>
       </div>

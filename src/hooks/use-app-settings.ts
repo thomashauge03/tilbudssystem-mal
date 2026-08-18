@@ -104,7 +104,7 @@ export function useAppSettings() {
 }
 
 export function useSaveSettings() {
-  const { tenantId } = useAuth();
+  const { tenantId, refreshBranding } = useAuth();
   const qc = useQueryClient();
   return async (patch: Partial<Omit<AppSettings, "id">>) => {
     if (!tenantId) { toast.error("Ingen tenant tilknyttet"); return false; }
@@ -113,6 +113,8 @@ export function useSaveSettings() {
       .upsert({ ...patch, tenant_id: tenantId }, { onConflict: "tenant_id" });
     if (error) { toast.error(error.message); return false; }
     qc.invalidateQueries({ queryKey: ["app-settings", tenantId] });
+    // Firmanavn og logo bor også i auth-konteksten, som toppmenyen leser fra.
+    await refreshBranding();
     toast.success("Innstillinger lagret");
     return true;
   };

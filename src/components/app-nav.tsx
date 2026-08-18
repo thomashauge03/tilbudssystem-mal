@@ -1,6 +1,6 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { useEffect, useState, useMemo } from "react";
+import { useMemo } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,8 +10,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Moon, Sun, Monitor, Settings, ChevronDown, Smartphone } from "lucide-react";
-import { THEME_STORAGE_KEY } from "@/lib/format";
+import { LogOut, Settings, ChevronDown, Smartphone } from "lucide-react";
+import { useTheme, THEME_OPTIONS } from "@/hooks/use-theme";
 
 const BASE_LINKS = [
   { to: "/", label: "Dashboard", exact: true },
@@ -27,24 +27,6 @@ const BASE_LINKS = [
 
 const ADMIN_LINK = { to: "/admin", label: "Admin" };
 
-type Theme = "light" | "dark" | "system";
-
-function useTheme() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    return (localStorage.getItem(THEME_STORAGE_KEY) as Theme) ?? "light";
-  });
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const isDark = theme === "dark" || (theme === "system" && prefersDark);
-    root.classList.toggle("dark", isDark);
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
-
-  return { theme, setTheme };
-}
-
 function initials(email: string | undefined) {
   if (!email) return "?";
   const name = email.split("@")[0];
@@ -53,12 +35,6 @@ function initials(email: string | undefined) {
     ? (parts[0][0] + parts[1][0]).toUpperCase()
     : name.slice(0, 2).toUpperCase();
 }
-
-const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "Lys modus", icon: Sun },
-  { value: "dark", label: "Mørk modus", icon: Moon },
-  { value: "system", label: "Systemstandard", icon: Monitor },
-];
 
 export function AppNav() {
   const { user, signOut, isAdmin, branding } = useAuth();

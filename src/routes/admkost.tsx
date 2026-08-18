@@ -20,8 +20,9 @@ function AdminCostsPage() {
   const [newPct, setNewPct] = useState(20);
   const [editId, setEditId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState(0);
+  const [saving, setSaving] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["admin-costs"],
     queryFn: async () => {
       const { data, error } = await supabase.from("admin_costs").select("*").order("year", { ascending: false });
@@ -31,7 +32,9 @@ function AdminCostsPage() {
   });
 
   const add = async () => {
+    setSaving(true);
     const { error } = await supabase.from("admin_costs").insert({ year: newYear, pct: newPct, tenant_id: tenantId });
+    setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success("Lagt til");
     qc.invalidateQueries({ queryKey: ["admin-costs"] });
@@ -39,7 +42,9 @@ function AdminCostsPage() {
   };
 
   const saveEdit = async (id: string) => {
+    setSaving(true);
     const { error } = await supabase.from("admin_costs").update({ pct: editVal }).eq("id", id);
+    setSaving(false);
     if (error) { toast.error(error.message); return; }
     setEditId(null);
     toast.success("Oppdatert");
@@ -59,9 +64,15 @@ function AdminCostsPage() {
         <div className="flex items-end gap-3">
           <div><label className="text-sm font-medium">År</label><Input type="number" value={newYear} onChange={(e) => setNewYear(Number(e.target.value))} className="w-32" /></div>
           <div><label className="text-sm font-medium">Adm.kostnader (%)</label><Input type="number" step="0.1" value={newPct} onChange={(e) => setNewPct(Number(e.target.value))} className="w-32" /></div>
-          <Button onClick={add}><Plus className="mr-2 h-4 w-4" />Legg til</Button>
+          <Button onClick={add} disabled={saving}><Plus className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Legg til"}</Button>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          Feil: {(error as Error).message}
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
         <table className="w-full">
@@ -85,7 +96,7 @@ function AdminCostsPage() {
                   </td>
                   <td className="px-4 py-3">
                     {editId === r.id ? (
-                      <Button size="sm" onClick={() => saveEdit(r.id)}><Check className="mr-1 h-3 w-3" />Lagre</Button>
+                      <Button size="sm" onClick={() => saveEdit(r.id)} disabled={saving}><Check className="mr-1 h-3 w-3" />{saving ? "Lagrer…" : "Lagre"}</Button>
                     ) : (
                       <Button size="sm" variant="ghost" onClick={() => { setEditId(r.id); setEditVal(Number(r.pct)); }}><Pencil className="h-3 w-3" /></Button>
                     )}

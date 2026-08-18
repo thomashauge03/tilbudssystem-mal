@@ -68,11 +68,14 @@ export function AttachmentField({
     }
   };
 
-  const remove = async (i: number) => {
+  // Filen blir liggende i bøtta med vilje: her fjernes den bare fra listen, og
+  // først når skjemaet lagres forsvinner referansen. Slettet vi den med én gang,
+  // ville et avbrutt lagringsforsøk latt basen peke på en fil som ikke finnes,
+  // og kunden ville fått 404 på vedlegget.
+  const remove = (i: number) => {
     const att = (value ?? [])[i];
     if (!att) return;
-    const path = att.url.split(`/${BUCKET}/`)[1]?.split("?")[0];
-    if (path) await supabase.storage.from(BUCKET).remove([path]);
+    if (!window.confirm(`Fjerne vedlegget «${att.name}»?`)) return;
     onChange((value ?? []).filter((_, idx) => idx !== i));
   };
 
@@ -108,7 +111,7 @@ export function AttachmentField({
             <a href={att.url} target="_blank" rel="noopener noreferrer" title="Åpne i ny fane" className="text-muted-foreground hover:text-primary">
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
-            <button type="button" onClick={() => void remove(i)} className="text-muted-foreground hover:text-destructive">
+            <button type="button" onClick={() => remove(i)} title="Fjern vedlegg" className="text-muted-foreground hover:text-destructive">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>

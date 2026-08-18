@@ -1,11 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { nok, fmtDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Check } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Plus, Search, Check, Trash2 } from "lucide-react";
 
 // Livssyklusen: en endring opprettes som "Krav om endring", og blir til
 // "Endringsmelding" i det kunden signerer. Verdiene lagres i databasen og
@@ -41,8 +45,31 @@ export const Route = createFileRoute("/endringsmeldinger/")({
 function AmendmentsList() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | AmendmentStatus>("all");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const navigate = useNavigate();
-  const { data, isLoading } = useQuery({
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      // Barneradene må bort først — uten kaskade ville slettingen av selve
+      // endringen stoppet på fremmednøkkelen.
+      const lines = await supabase.from("amendment_lines").delete().eq("amendment_id", id);
+      if (lines.error) throw lines.error;
+      const tokens = await supabase
+        .from("amendment_signing_tokens" as never)
+        .delete()
+        .eq("amendment_id" as never, id as never);
+      if (tokens.error) throw tokens.error;
+      const { error } = await supabase.from("amendments").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["amendments"] });
+      setDeleteTarget(null);
+    },
+  });
+
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["amendments"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -119,6 +146,18 @@ function AmendmentsList() {
         </div>
       </div>
 
+      {isError && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          Feil: {(error as Error).message}
+        </div>
+      )}
+
+      {deleteMutation.error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          Kunne ikke slette: {(deleteMutation.error as Error).message}
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
         <table className="w-full">
           <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -135,13 +174,14 @@ function AmendmentsList() {
               <th className="px-4 py-3 text-center">Tillegg</th>
               <th className="px-4 py-3 text-center">Pris↑</th>
               <th className="px-4 py-3 text-right">Sum eks. mva</th>
+              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={12} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
+              <tr><td colSpan={13} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={12} className="px-4 py-12 text-center text-muted-foreground">Ingen endringer funnet.</td></tr>
+              <tr><td colSpan={13} className="px-4 py-12 text-center text-muted-foreground">Ingen endringer funnet.</td></tr>
             ) : rows.map((a: any, i: number) => (
               <tr key={a.id}
                 className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
@@ -174,11 +214,48 @@ function AmendmentsList() {
                 <td className="px-4 py-3 text-center">{tick(a.is_additional_work)}</td>
                 <td className="px-4 py-3 text-center">{tick(a.is_price_increase)}</td>
                 <td className="px-4 py-3 text-right font-medium">{nok(sumOf(a))}</td>
+                <td className="px-4 py-3 text-right">
+                  {/* stopPropagation, ellers ville radklikket åpnet endringen i stedet */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteTarget({
+                        id: a.id,
+                        label: `${STATUS_LABEL[statusOf(a)]} ${a.amendment_number ?? ""}`.trim(),
+                      });
+                    }}
+                    className="text-muted-foreground transition-colors hover:text-destructive"
+                    title="Slett endring"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Slett endring</AlertDialogTitle>
+            <AlertDialogDescription>
+              Er du sikker på at du vil slette <strong>{deleteTarget?.label}</strong> med alle linjer og
+              signeringslenker? Dette kan ikke angres.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Avbryt</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+            >
+              Slett
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

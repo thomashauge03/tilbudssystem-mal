@@ -9,9 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2 } from "lucide-react";
-import { nok, num, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
-import { openPrintPdf, escapeHtml } from "@/lib/pdf";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { nok, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { openAmendmentPdf } from "@/lib/pdf";
 import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -95,7 +95,18 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
   // melding blitt lagt inn på nytt for hver knapp man trykket på, og
   // signeringslenken ville pekt på den første av kopiene.
   const currentAmendmentIdRef = useRef<string | undefined>(amendmentId);
-  const DRAFT_KEY = `amendment-draft-${amendmentId ?? "new"}`;
+  // Nummeret genereres inne i save(), og setA() rekker ikke å slå gjennom før
+  // PDF-en og e-posten leses av. Uten dette ville et nytt krav fått tomt
+  // nummer i dokumentet.
+  const currentNumberRef = useRef<string>("");
+  // Etter en vellykket lagring skal utkastet ikke skrives tilbake. save() gjør
+  // setA(), som ellers ville trigget utkastseffekten rett etter
+  // removeItem — og et utkast med nummer, men uten id, ble liggende igjen og
+  // ga en duplikat neste gang man laget et nytt krav.
+  const draftSavedRef = useRef(false);
+  // Kommer man fra et tilbud, hører utkastet til akkurat den kombinasjonen.
+  // Ellers ville utkastet fra ett tilbud dukket opp på et annet.
+  const DRAFT_KEY = `amendment-draft-${amendmentId ?? "new"}${initialOfferId ? `-${initialOfferId}` : ""}`;
 
   // Når kravet opprettes fra inne i et tilbud, hentes tilbudet slik at både
   // tilbudskoblingen og prosjektet kan fylles inn på forhånd.
@@ -117,26 +128,10 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     // Vent på tilbudet før skjemaet initialiseres, ellers ville det blitt tomt
     if (!isEdit && initialOfferId && !initialOffer) return;
 
-    if (!isEdit && !init && initialOfferId && initialOffer) {
-      const proj = initialOffer.projects;
-      setA({
-        ...empty(),
-        offer_id: initialOffer.id,
-        project_id: initialOffer.project_id ?? null,
-        project_ref: initialOffer.project_number || proj?.project_number || proj?.name || "",
-        internal_description: initialOffer.title ?? "",
-        customer_email: initialOffer.customer_email ?? "",
-        // Tilbudets "Vår referanse" er den samme personen som står som
-        // prosjektleder på endringen. Mangler den, brukes firmaets første
-        // referanse fra innstillingene.
-        project_manager: initialOffer.our_ref || appSettings?.our_refs?.[0]?.name || "",
-      });
-      setInit(true);
-      return;
-    }
-
     if (!isEdit && !init) {
-      // Gjenopprett utkast fra sessionStorage om det finnes (bare samme fane/økt)
+      // Utkastet har forrang framfor forhåndsutfyllingen fra tilbudet. Ellers
+      // ville alt man hadde skrevet blitt overskrevet hver gang man forlot
+      // siden og kom tilbake til det samme kravet.
       const saved = sessionStorage.getItem(DRAFT_KEY);
       if (saved) {
         try {
@@ -147,6 +142,25 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
           return;
         } catch { sessionStorage.removeItem(DRAFT_KEY); }
       }
+
+      if (initialOfferId && initialOffer) {
+        const proj = initialOffer.projects;
+        setA({
+          ...empty(),
+          offer_id: initialOffer.id,
+          project_id: initialOffer.project_id ?? null,
+          project_ref: initialOffer.project_number || proj?.project_number || proj?.name || "",
+          internal_description: initialOffer.title ?? "",
+          customer_email: initialOffer.customer_email ?? "",
+          // Tilbudets "Vår referanse" er den samme personen som står som
+          // prosjektleder på endringen. Mangler den, brukes firmaets første
+          // referanse fra innstillingene.
+          project_manager: initialOffer.our_ref || appSettings?.our_refs?.[0]?.name || "",
+        });
+        setInit(true);
+        return;
+      }
+
       setA(empty()); setInit(true);
     }
     if (isEdit && loaded && !init) {
@@ -159,7 +173,9 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
 
   // Lagre skjematilstand i sessionStorage ved hver endring (bare for nye endringsmeldinger)
   useEffect(() => {
-    if (!init || isEdit) return;
+    // draftSavedRef: er kravet lagret, finnes det i databasen, og et utkast
+    // ville bare blitt en skygge som ga duplikater senere.
+    if (!init || isEdit || draftSavedRef.current) return;
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ a, lines }));
   }, [a, lines, init, isEdit]);
 
@@ -200,6 +216,24 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
   const removeLine = (i: number) => setLines((p) => p.filter((_, idx) => idx !== i));
   const updLine = (i: number, patch: Partial<ALine>) => setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l));
 
+  // Flytt en linje fra en posisjon til en annen og oppdater sort_order
+  const moveLine = (from: number, to: number) =>
+    setLines((p) => {
+      if (from === to || to < 0 || to >= p.length) return p;
+      const next = [...p];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next.map((l, idx) => ({ ...l, sort_order: idx }));
+    });
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dropOn = (i: number) => {
+    if (dragIndex !== null) moveLine(dragIndex, i);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
   // Generer endringsmeldingsnummer: [prosjekt]-[løpenummer]
   async function nextNumber(project: string): Promise<string> {
     const prefix = (project || "0").trim();
@@ -229,6 +263,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
         return null;
       }
     }
+    currentNumberRef.current = number;
 
     // Status er bevisst utelatt fra payload: den styres av signeringen (triggeren
     // i databasen setter 'endringsmelding'). Ville vi sendt a.status med her,
@@ -276,6 +311,9 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     qc.invalidateQueries({ queryKey: ["amendment", id] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
     toast.success(`${docLabel} lagret`);
+    // Slå av utkastlagringen først, ellers skriver effekten under setA() over
+    // det vi nettopp fjernet.
+    draftSavedRef.current = true;
     sessionStorage.removeItem(DRAFT_KEY);
     return id!;
   };
@@ -291,7 +329,47 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     if (!requireSettings()) return;
     const id = await save();
     if (!id) return;
-    generatePdf({ ...a, id }, lines, subtotal, appSettings?.company_name ?? "");
+    // Referansen som hører til prosjektlederen — samme oppslag som tilbudet gjør
+    const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === a.project_manager);
+    openAmendmentPdf(
+      {
+        amendment_number: a.amendment_number || currentNumberRef.current,
+        project_ref: a.project_ref,
+        internal_description: a.internal_description,
+        change_description: a.change_description,
+        reason: a.reason,
+        other_notes: a.other_notes,
+        notified_date: a.notified_date,
+        revised_date: a.revised_date,
+        project_manager: a.project_manager,
+        customer_email: a.customer_email,
+        is_mass_settlement: a.is_mass_settlement,
+        is_additional_work: a.is_additional_work,
+        is_price_increase: a.is_price_increase,
+        status: a.status,
+        customer_signed_at: a.customer_signed_at,
+      },
+      lines.map((l) => ({
+        description: l.description,
+        quantity: Number(l.quantity || 0),
+        unit: l.unit,
+        unit_price: Number(l.unit_price || 0),
+      })),
+      // Endringsmeldingen har ingen adm.påslag, så totalen er summen av linjene
+      { subtotal, total: subtotal },
+      {
+        company_name: appSettings?.company_name ?? "",
+        company_tagline: appSettings?.company_tagline ?? "",
+        logo_url: appSettings?.logo_url ?? "",
+        company_org_nr: appSettings?.company_org_nr ?? "",
+        vat_pct: appSettings?.vat_pct ?? 25,
+        payment_terms: appSettings?.payment_terms ?? "30 dager netto",
+        ref_phone: refObj?.phone ?? "",
+        ref_email: refObj?.email ?? "",
+        ref_position: refObj?.position ?? "",
+        ref_signature: refObj?.signature ?? "",
+      },
+    );
   };
   const handleEmail = async () => {
     if (!requireSettings()) return;
@@ -312,12 +390,14 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     }
 
     const senderName = appSettings?.company_name ?? "Tilbudssystem";
+    // Nummeret ligger bare i referansen når kravet nettopp ble opprettet
+    const number = a.amendment_number || currentNumberRef.current;
     const subject = isSigned
-      ? `Endringsmelding nr. ${a.amendment_number} – Prosjekt ${a.project_ref}`
-      : `Krav om endring nr. ${a.amendment_number} – Prosjekt ${a.project_ref}`;
+      ? `Endringsmelding nr. ${number} – Prosjekt ${a.project_ref}`
+      : `Krav om endring nr. ${number} – Prosjekt ${a.project_ref}`;
     const body = isSigned
-      ? `Hei,\n\nVedlagt finner du endringsmelding nr. ${a.amendment_number} for prosjekt ${a.project_ref}.\n\nMed vennlig hilsen\n${senderName}`
-      : `Hei,\n\nVi sender herved krav om endring nr. ${a.amendment_number} for prosjekt ${a.project_ref}.${signingLink}\n\nVia signeringslenken kan du lese gjennom kravet før du signerer digitalt. Når kravet er signert, blir det en endringsmelding.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
+      ? `Hei,\n\nVedlagt finner du endringsmelding nr. ${number} for prosjekt ${a.project_ref}.\n\nMed vennlig hilsen\n${senderName}`
+      : `Hei,\n\nVi sender herved krav om endring nr. ${number} for prosjekt ${a.project_ref}.${signingLink}\n\nVia signeringslenken kan du lese gjennom kravet før du signerer digitalt. Når kravet er signert, blir det en endringsmelding.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
     const cc = a.project_manager && a.project_manager.includes("@") ? `&cc=${encodeURIComponent(a.project_manager)}` : "";
     window.location.href = `mailto:${encodeURIComponent(a.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}${cc}`;
   };
@@ -480,21 +560,36 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
             <table className="hidden w-full text-sm md:table">
               <thead className="border-b text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
+                  <th className="w-6 px-1 py-2"></th>
                   <th className="px-2 py-2 text-left">Beskrivelse</th>
                   <th className="w-20 px-2 py-2 text-right">Antall</th>
                   <th className="w-24 px-2 py-2">Enhet</th>
                   <th className="w-32 px-2 py-2 text-right">Pris/enhet</th>
                   <th className="w-32 px-2 py-2 text-right">Sum</th>
-                  <th className="w-8"></th>
+                  <th className="w-24 px-1 py-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {lines.length === 0 ? (
-                  <tr><td colSpan={6} className="px-2 py-6 text-center text-muted-foreground">Ingen linjer ennå.</td></tr>
+                  <tr><td colSpan={7} className="px-2 py-6 text-center text-muted-foreground">Ingen linjer ennå.</td></tr>
                 ) : lines.map((l, i) => {
                   const isCustomUnit = !!l.unit && !units.includes(l.unit);
                   return (
-                    <tr key={i} className="border-b align-top">
+                    <tr
+                      key={i}
+                      className={`border-b align-top transition-colors ${dragIndex === i ? "opacity-40" : ""} ${dragOverIndex === i && dragIndex !== i ? "bg-accent/40" : ""}`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
+                      onDrop={(e) => { e.preventDefault(); dropOn(i); }}
+                    >
+                      <td
+                        className="px-1 pt-3.5"
+                        draggable
+                        onDragStart={() => setDragIndex(i)}
+                        onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                        title="Dra for å flytte linjen"
+                      >
+                        <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />
+                      </td>
                       <td className="px-2 py-2"><Input value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} /></td>
                       <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.quantity} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2">
@@ -520,7 +615,19 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                       </td>
                       <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2 text-right font-medium">{nok(Number(l.quantity || 0) * Number(l.unit_price || 0))}</td>
-                      <td className="px-1 py-2"><Button size="icon" variant="ghost" onClick={() => removeLine(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button></td>
+                      <td className="px-1 py-2">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <div className="flex flex-col">
+                            <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett linje"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -537,7 +644,15 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                   <div key={i} className="space-y-3 rounded-lg border p-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Linje {i + 1}</span>
-                      <Button size="icon" variant="ghost" onClick={() => removeLine(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                      <div className="flex items-center gap-0.5">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett linje"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Beskrivelse</Label>
@@ -581,55 +696,21 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
           </div>
         </div>
       </div>
-    </div>
-  );
-}
 
-// companyName må sendes inn: denne funksjonen ligger utenfor komponenten og har
-// ikke tilgang til appSettings (den refererte den før, og krasjet med ReferenceError)
-function generatePdf(a: AState, lines: ALine[], subtotal: number, companyName: string) {
-  // Dokumentet heter "Krav om endring" til kunden har signert
-  const docLabel = a.customer_signed_at || a.status === "endringsmelding" ? "Endringsmelding" : "Krav om endring";
-  const chip = (on: boolean, label: string) => `<span class="chip ${on ? "on" : ""}">${label}</span>`;
-  const linesHtml = lines.map((l) => `
-    <tr>
-      <td>${escapeHtml(l.description)}</td>
-      <td class="num">${num(l.quantity)}</td>
-      <td>${escapeHtml(l.unit)}</td>
-      <td class="num">${nok(l.unit_price)}</td>
-      <td class="num">${nok(l.quantity * l.unit_price)}</td>
-    </tr>`).join("");
-
-  const html = `
-    <div class="header">
-      <div><h1>${escapeHtml(companyName)}</h1><div style="font-size:9.5pt;color:#555;margin-top:4px">${docLabel}</div></div>
-      <div class="meta">
-        <div>Nr.: <strong>${escapeHtml(a.amendment_number)}</strong></div>
-        <div>Prosjekt: ${escapeHtml(a.project_ref)}</div>
-        <div>Varslet: ${fmtDate(a.notified_date)}</div>
-        ${a.revised_date ? `<div>Revidert: ${fmtDate(a.revised_date)}</div>` : ""}
+      {/* Handlingslinje som alltid ligger i bunnen — nyttig på lange endringer */}
+      <div className="sticky bottom-0 z-20 -mx-4 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm">
+            <span className="text-muted-foreground">Total eks. mva </span>
+            <span className="font-bold text-primary">{nok(subtotal)}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={addLine}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>
+            <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF</Button>
+            <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre</Button>
+          </div>
+        </div>
       </div>
     </div>
-
-    <div class="box">
-      ${chip(a.is_mass_settlement, "Masseavregning")}
-      ${chip(a.is_additional_work, "Tilleggsarbeid")}
-      ${chip(a.is_price_increase, "Prisstigning")}
-    </div>
-
-    <h2>Beskrivelse av endring</h2>
-    <div class="text">${escapeHtml(a.change_description)}</div>
-    ${a.reason ? `<h2>Årsak</h2><div class="text">${escapeHtml(a.reason)}</div>` : ""}
-    ${a.other_notes ? `<h2>Andre konsekvenser</h2><div class="text">${escapeHtml(a.other_notes)}</div>` : ""}
-
-    <h2>Prisoverslag</h2>
-    <table>
-      <thead><tr><th>Beskrivelse</th><th class="num">Antall</th><th>Enhet</th><th class="num">Pris/enhet</th><th class="num">Sum</th></tr></thead>
-      <tbody>${linesHtml || `<tr><td colspan="5" style="text-align:center;color:#888;padding:10px">Ingen linjer</td></tr>`}</tbody>
-      <tfoot><tr class="total-row"><td colspan="4" class="num">Total eks. mva</td><td class="num">${nok(subtotal)}</td></tr></tfoot>
-    </table>
-
-    <div class="footer">Prosjektleder: ${escapeHtml(a.project_manager || "—")} · ${escapeHtml(companyName)}</div>
-  `;
-  openPrintPdf(`${docLabel.replace(/ /g, "-")}-${a.amendment_number}`, html);
+  );
 }

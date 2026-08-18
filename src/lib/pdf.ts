@@ -496,6 +496,74 @@ const PDF_REFLOW_SCRIPT = `(function() {
   // Pakk alle tilbudslinjer på nytt ut fra faktisk høyde. Serversiden deler på
   // fast radantall (22), så høye rader (lang beskrivelse + kommentar) rant over.
   // Her fyller vi hver side til den er full, og lager nye sider etter behov.
+  // Sider uten tabell (tekstsider) ble aldri brutt om: en lang beskrivelse
+  // vokste forbi 297 mm, og siden ble enten klippet av overflow:hidden på skjerm
+  // eller brukket vilkårlig av skriveren. Her flyttes hele blokker — avsnitt,
+  // overskrifter, merkerader — videre til en ny side til innholdet får plass.
+  function reflowTextPages() {
+    var tpl = document.getElementById('cont-page-tpl');
+    if (!tpl) return;
+    for (var runde = 0; runde < 40; runde++) {
+      var pages = Array.from(document.querySelectorAll('.page'));
+      var delte = false;
+      for (var i = 0; i < pages.length; i++) {
+        var page = pages[i];
+        // Linjesider eies av reflowLines; avslutningssiden skal stå som den er
+        if (page.querySelector('table.items')) continue;
+        if (page.classList.contains('page-closing')) continue;
+        var body = page.querySelector('.body');
+        if (!body) continue;
+
+        var container = body;
+        var kids = Array.from(body.children).filter(function(el) {
+          return !el.classList.contains('flex-fill') && !el.classList.contains('bottom-push');
+        });
+        // Tekstsiden har som regel én beholder (.doc-intro) med avsnittene inni.
+        // Uten dette steget fant vi bare ett element å flytte, og ingenting skjedde.
+        if (kids.length === 1 && kids[0].children.length > 1) {
+          container = kids[0];
+          kids = Array.from(container.children);
+        }
+        if (kids.length < 2) continue;
+
+        var avail = PAGE_MM
+          - mm(page.querySelector('.masthead, .cont-header'))
+          - mm(page.querySelector('footer'))
+          - mm(page.querySelector('.bottom-push'))
+          - SPLIT_BUFFER_MM;
+        if (bodyContentMm(page) <= avail) continue;
+
+        var moved = [];
+        while (kids.length > 1 && bodyContentMm(page) > avail) {
+          var last = kids.pop();
+          last.remove();
+          moved.unshift(last);
+        }
+        if (!moved.length) continue;
+
+        var np = tpl.content.firstElementChild.cloneNode(true);
+        // Malen er laget for linjesider — tabell og overføringsrader hører ikke
+        // hjemme på en ren tekstside
+        var tbl = np.querySelector('table.items');
+        if (tbl) tbl.remove();
+        Array.from(np.querySelectorAll('.carry')).forEach(function(c) { c.remove(); });
+        var sec = np.querySelector('.body');
+        if (container !== body) {
+          // Behold beholderen så avsnittene arver samme stil på den nye siden
+          var wrapper = container.cloneNode(false);
+          moved.forEach(function(el) { wrapper.appendChild(el); });
+          sec.appendChild(wrapper);
+        } else {
+          moved.forEach(function(el) { sec.appendChild(el); });
+        }
+        page.parentNode.insertBefore(np, page.nextSibling);
+        delte = true;
+        break;
+      }
+      if (!delte) return;
+    }
+  }
+
   function reflowLines() {
     var linePages = Array.from(document.querySelectorAll('.page'))
       .filter(function(p) { return p.querySelector('table.items tbody'); });
@@ -605,6 +673,9 @@ const PDF_REFLOW_SCRIPT = `(function() {
       ? document.fonts.ready
       : Promise.resolve();
     ready.then(function() {
+      // Tekstsidene brytes om først: flytter en lang beskrivelse videre, kan den
+      // nye siden i neste steg slås sammen med noe som faktisk får plass der.
+      reflowTextPages();
       // Pakk linjene etter faktisk høyde, slå deretter sammen sider som får plass sammen
       reflowLines();
       var changed = true;
@@ -1345,6 +1416,8 @@ interface AmendmentPdfData {
   notified_date: string;
   revised_date?: string | null;
   project_manager: string;
+  project_manager_email?: string;
+  customer_name?: string;
   customer_email: string;
   is_mass_settlement: boolean;
   is_additional_work: boolean;
@@ -1537,9 +1610,10 @@ export function openAmendmentPdf(
       </div>
     </div>`;
 
-  // flex-fill + bottom-push flyttes av kjøreskriptet til den siste linjesiden
-  const bottomPush = `<div class="flex-fill"></div>
-    <div class="bottom-push">
+  // Avslutningsblokken står på egen side og skal begynne rett under toppteksten.
+  // Med en flex-fill foran seg ble den skjøvet til bunnen, og siden så tom ut —
+  // 146 mm hvitt før det kom noe innhold.
+  const bottomPush = `<div class="bottom-push">
       <div class="totals-wrap">
         <div class="notes">
           <p class="label">Referanse</p>
@@ -1612,9 +1686,11 @@ export function openAmendmentPdf(
         <p class="name">${escapeHtml(amendment.project_manager) || "—"}</p>
         ${settings.ref_position ? `<p class="line">${escapeHtml(settings.ref_position)}</p>` : ""}
         ${settings.ref_phone ? `<p class="line">Tlf: ${escapeHtml(settings.ref_phone)}</p>` : ""}
+        ${amendment.project_manager_email ? `<p class="line">${escapeHtml(amendment.project_manager_email)}</p>` : ""}
       </div>
       <div class="info-cell">
         <p class="label">Kunde</p>
+        <p class="name">${escapeHtml(amendment.customer_name) || "—"}</p>
         <dl class="kv">
           <dt>E-post</dt><dd>${escapeHtml(amendment.customer_email) || "—"}</dd>
         </dl>

@@ -166,6 +166,7 @@ function AmendmentsList() {
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Prosjekt</th>
               <th className="px-4 py-3">Tilbud</th>
+              <th className="px-4 py-3">Kunde</th>
               <th className="px-4 py-3">Beskrivelse</th>
               <th className="px-4 py-3">Varslet</th>
               <th className="px-4 py-3">Revidert</th>
@@ -179,9 +180,9 @@ function AmendmentsList() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={13} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
+              <tr><td colSpan={14} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={13} className="px-4 py-12 text-center text-muted-foreground">Ingen endringer funnet.</td></tr>
+              <tr><td colSpan={14} className="px-4 py-12 text-center text-muted-foreground">Ingen endringer funnet.</td></tr>
             ) : rows.map((a: any, i: number) => (
               <tr key={a.id}
                 className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
@@ -206,6 +207,7 @@ function AmendmentsList() {
                     <span className="text-muted-foreground/50">—</span>
                   )}
                 </td>
+                <td className="px-4 py-3">{a.offers?.customer_name ?? <span className="text-muted-foreground/50">—</span>}</td>
                 <td className="px-4 py-3">{a.internal_description ?? "—"}</td>
                 <td className="px-4 py-3 text-sm">{fmtDate(a.notified_date)}</td>
                 <td className="px-4 py-3 text-sm">{fmtDate(a.revised_date)}</td>

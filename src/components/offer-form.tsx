@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, amendmentTotal, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
@@ -134,7 +134,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("amendments")
-        .select("id, amendment_number, internal_description, notified_date, amendment_lines(quantity, unit_price)")
+        .select("id, amendment_number, internal_description, notified_date, amendment_lines(quantity, unit_price, discount_pct)")
         .eq("offer_id", offerId!)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -155,6 +155,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // opprettet to ganger. Ref-en fanger klikk som kommer før neste opptegning.
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  // Skiller "skjemaet er lastet" fra "brukeren har skrevet noe" — se utkastseffekten
+  const userEditedRef = useRef(false);
   const withSaving = (fn: () => Promise<void>) => async () => {
     if (savingRef.current) return;
     savingRef.current = true;
@@ -207,6 +209,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // Lagre skjematilstand i sessionStorage ved hver endring
   useEffect(() => {
     if (!initialized) return;
+    // Bare når brukeren faktisk har endret noe. Uten dette ble det skrevet et
+    // utkast i det tilbudet ble åpnet, og et senere besøk gjenopprettet det
+    // øyeblikksbildet — hadde kunden signert i mellomtiden, rullet en lagring
+    // status og linjer tilbake uten varsel.
+    if (!userEditedRef.current) return;
     // Er et nytt tilbud alt lagt inn (PDF-, e-post- og lenkeknappene lagrer uten
     // å navigere bort), ville utkastet blitt en skygge av en rad som finnes:
     // neste "Nytt tilbud" gjenopprettet alt, og "Lagre" laget tilbud nummer to.
@@ -228,14 +235,18 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const admin = subtotal * (Number(offer.admin_cost_pct || 0) / 100);
   const total = subtotal + admin;
 
-  const set = <K extends keyof OfferState>(k: K, v: OfferState[K]) => setOffer((p) => ({ ...p, [k]: v }));
+  const set = <K extends keyof OfferState>(k: K, v: OfferState[K]) => {
+    userEditedRef.current = true;
+    setOffer((p) => ({ ...p, [k]: v }));
+  };
 
-  const addLine = () => setLines((p) => [...p, { sort_order: p.length, included: true, description: "", comment: "", quantity: 1, unit: units[0] ?? "", unit_price: 0, discount_pct: 0 }]);
-  const removeLine = (i: number) => setLines((p) => p.filter((_, idx) => idx !== i));
-  const updLine = (i: number, patch: Partial<Line>) => setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  const addLine = () => { userEditedRef.current = true; setLines((p) => [...p, { sort_order: p.length, included: true, description: "", comment: "", quantity: 1, unit: units[0] ?? "", unit_price: 0, discount_pct: 0 }]); };
+  const removeLine = (i: number) => { userEditedRef.current = true; setLines((p) => p.filter((_, idx) => idx !== i)); };
+  const updLine = (i: number, patch: Partial<Line>) => { userEditedRef.current = true; setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l)); };
 
   // Flytt en linje fra en posisjon til en annen og oppdater sort_order
-  const moveLine = (from: number, to: number) =>
+  const moveLine = (from: number, to: number) => {
+    userEditedRef.current = true;
     setLines((p) => {
       if (from === to || to < 0 || to >= p.length) return p;
       const next = [...p];
@@ -243,6 +254,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       next.splice(to, 0, item);
       return next.map((l, idx) => ({ ...l, sort_order: idx }));
     });
+  };
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -977,8 +989,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               ) : (
                 <div className="divide-y">
                   {amendments!.map((am: any) => {
-                    const sum = (am.amendment_lines ?? []).reduce(
-                      (s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
+                    const sum = amendmentTotal(am.amendment_lines);
                     return (
                       <Link
                         key={am.id}

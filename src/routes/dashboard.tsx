@@ -21,7 +21,7 @@ export function useDashboard() {
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
       const soon = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
-      const [offersRes, amendmentsRes, recentRes, expiringRes, expiredRes] = await Promise.all([
+      const [offersRes, amendmentsRes, recentRes, expiringRes, expiredRes, alleRes] = await Promise.all([
         // Uten .limit() henter vi alle rader. Et tak på 500 avkortet
         // kontraktssummen stille så snart firmaet passerte 500 tilbud.
         supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").in("status", OFFER_WON_STATUSES).order("offer_number", { ascending: false }),
@@ -31,6 +31,9 @@ export function useDashboard() {
         // tilbud er aktivt og kan ikke løpe ut.
         supabase.from("offers").select("id, offer_number, title, customer_name, status, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).gte("valid_until", today).lte("valid_until", soon),
         supabase.from("offers").select("id, status, valid_until").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).lt("valid_until", today),
+        // Alt vi har tilbudt, uansett hvordan det gikk — også avslåtte. Dette
+        // er den eneste plassen tapte tilbud er synlige i tall.
+        supabase.from("offers").select("id, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)"),
       ]);
 
       // Uten dette ville en feilet spørring bare gitt tomme lister, og
@@ -82,7 +85,17 @@ export function useDashboard() {
         daysLeft: Math.ceil((new Date(o.valid_until).getTime() - Date.now()) / 86400000),
       }));
 
+      // Alle tilbud uansett status, pluss alle endringer
+      const alleOffers = alleRes.data ?? [];
+      const totalTilbudt =
+        alleOffers.reduce((s: number, o: any) => s + offerTotal(o.offer_lines, o.admin_cost_pct), 0) +
+        amendments.reduce((s: number, a: any) => s + amendmentTotal(a.amendment_lines), 0);
+      const totalTilbudtFakturert =
+        [...alleOffers, ...amendments].reduce((s: number, x: any) => s + Number(x.invoiced_amount ?? 0), 0);
+
       return {
+        totalTilbudt,
+        totalTilbudtFakturert,
         totalKontraktssum,
         totalFakturert,
         totalGjenstår,
@@ -228,6 +241,12 @@ function Dashboard() {
         <StatCard icon={CheckCircle2} label="Fakturert" value={isLoading ? "…" : nok(d?.totalFakturert ?? 0)} hint={isLoading ? "" : `${fakturertPct.toFixed(1)} % av total`} accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" />
         <StatCard icon={TrendingUp} label="Gjenstår" value={isLoading ? "…" : nok(d?.totalGjenstår ?? 0)} hint="Ikke fakturert ennå" accent="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
         <StatCard icon={ClipboardEdit} label="Endringsmeldinger" value={isLoading ? "…" : String(d?.amendmentsCount ?? 0)} hint={isLoading ? "" : `${nok(d?.amendmentTotalSum ?? 0)} total`} to="/endringsmeldinger" />
+      </div>
+
+      {/* Alt vi har tilbudt, uansett utfall — avslåtte tilbud er ellers usynlige i tall */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <StatCard icon={FileText} label="Tilbudt totalt" value={isLoading ? "…" : nok(d?.totalTilbudt ?? 0)} hint="Alle tilbud og endringer, uansett status" />
+        <StatCard icon={CircleDollarSign} label="Fakturert totalt" value={isLoading ? "…" : nok(d?.totalTilbudtFakturert ?? 0)} hint="Alt som er fakturert" accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" />
       </div>
 
       {/* Rad 2: tallstatistikk */}

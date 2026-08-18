@@ -185,6 +185,9 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
   // Et krav om endring blir en endringsmelding først når kunden har signert.
   // Statusen settes av en trigger i databasen, men vi leser begge feltene her
   // slik at visningen stemmer også rett etter en nullstilling.
+  // Kunden ligger på det koblede tilbudet — endringen har bare e-postadressen
+  const kundeNavn = (offers ?? []).find((o: any) => o.id === a.offer_id)?.customer_name ?? "";
+
   const isSigned = !!a.customer_signed_at || a.status === "endringsmelding";
   const docLabel = isSigned ? "Endringsmelding" : "Krav om endring";
 
@@ -342,6 +345,9 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
         notified_date: a.notified_date,
         revised_date: a.revised_date,
         project_manager: a.project_manager,
+        // Kunden og prosjektlederens adresse skal stå i dokumentet, ikke bare i e-posten
+        project_manager_email: (appSettings?.our_refs ?? []).find((r) => r.name === a.project_manager)?.email ?? "",
+        customer_name: kundeNavn,
         customer_email: a.customer_email,
         is_mass_settlement: a.is_mass_settlement,
         is_additional_work: a.is_additional_work,
@@ -398,7 +404,13 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     const body = isSigned
       ? `Hei,\n\nVedlagt finner du endringsmelding nr. ${number} for prosjekt ${a.project_ref}.\n\nMed vennlig hilsen\n${senderName}`
       : `Hei,\n\nVi sender herved krav om endring nr. ${number} for prosjekt ${a.project_ref}.${signingLink}\n\nVia signeringslenken kan du lese gjennom kravet før du signerer digitalt. Når kravet er signert, blir det en endringsmelding.\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
-    const cc = a.project_manager && a.project_manager.includes("@") ? `&cc=${encodeURIComponent(a.project_manager)}` : "";
+    // Prosjektlederfeltet inneholder et navn, ikke en adresse, så den gamle
+    // sjekken på "@" traff aldri og kopien ble aldri sendt. Adressen slås nå opp
+    // blant referansene i innstillingene, med feltet selv som reserve dersom
+    // noen har skrevet en e-postadresse rett inn.
+    const pmRef = (appSettings?.our_refs ?? []).find((r) => r.name === a.project_manager);
+    const pmEpost = pmRef?.email || (a.project_manager.includes("@") ? a.project_manager : "");
+    const cc = pmEpost ? `&cc=${encodeURIComponent(pmEpost)}` : "";
     window.location.href = `mailto:${encodeURIComponent(a.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}${cc}`;
   };
 

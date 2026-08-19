@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Trophy, TrendingDown, Search, Save, Trash2 } from "lucide-react";
+import { Trophy, TrendingDown, Search, Save, Trash2, Inbox } from "lucide-react";
 import { nok, toISODate } from "@/lib/format";
 import { parseAnbudsprotokoll, finnEgetBud, type ParsedBid } from "@/lib/anbud";
 import { useAppSettings } from "@/hooks/use-app-settings";
@@ -54,6 +54,30 @@ function AnbudPage() {
     },
   });
 
+  // Meldinger videresendt fra mobilen, som venter på godkjenning
+  const { data: innboks } = useQuery({
+    queryKey: ["sms-innboks"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sms_inbox" as never)
+        .select("id, received_at, sender, body")
+        .eq("status" as never, "ny" as never)
+        .order("received_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
+  const [innboksId, setInnboksId] = useState<string | null>(null);
+
+  const merkHandtert = async (id: string, tenderId: string | null) => {
+    await supabase
+      .from("sms_inbox" as never)
+      .update({ status: tenderId ? "handtert" : "ignorert", tender_id: tenderId } as never)
+      .eq("id" as never, id as never);
+    qc.invalidateQueries({ queryKey: ["sms-innboks"] });
+  };
+
   // Tolkes mens du limer inn, så du ser med én gang om noe ble misforstått
   const tolk = (t: string) => {
     setTekst(t);
@@ -95,6 +119,8 @@ function AnbudPage() {
       if (e2) { toast.error(e2.message); return; }
 
       toast.success("Anbudsprotokoll lagret");
+      // Kom teksten fra innboksen, er den nå behandlet
+      if (innboksId) { await merkHandtert(innboksId, tenderId); setInnboksId(null); }
       setTekst(""); setTittel(""); setBud([]); setProjectId("__none");
       qc.invalidateQueries({ queryKey: ["anbud"] });
     } finally {
@@ -158,6 +184,35 @@ function AnbudPage() {
           <div className="rounded-xl border bg-card p-5 shadow-sm">
             <p className="text-sm text-muted-foreground">Snitt over vinner når vi taper</p>
             <p className="mt-1 text-2xl font-bold">{nok(stats.snittDiff)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Videresendt fra mobilen — venter på at noen ser over tolkingen */}
+      {(innboks ?? []).length > 0 && (
+        <div className="rounded-xl border border-primary/40 bg-primary/5 p-5 shadow-sm">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <Inbox className="h-4 w-4" />
+            {innboks!.length} ny{innboks!.length === 1 ? "" : "e"} melding{innboks!.length === 1 ? "" : "er"} fra mobilen
+          </h2>
+          <div className="space-y-2">
+            {innboks!.map((m: any) => (
+              <div key={m.id} className="flex items-start gap-3 rounded-lg border bg-card px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{m.body.split("\n")[0]}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(m.received_at).toLocaleString("nb-NO")}
+                    {m.sender ? ` · ${m.sender}` : ""} · {m.body.split("\n").length} linjer
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => { setInnboksId(m.id); tolk(m.body); }}>
+                  Se over
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void merkHandtert(m.id, null)} title="Ikke en anbudsprotokoll">
+                  Skjul
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
       )}

@@ -31,6 +31,8 @@ export interface AppSettings {
   vat_pct: number;
   closing_page_offset_mm: number;
   company_org_nr: string;
+  /** Nøkkel som identifiserer firmaet når mobilen videresender SMS */
+  sms_token?: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {

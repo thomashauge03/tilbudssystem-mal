@@ -280,6 +280,9 @@ function SettingsPage() {
     }
   };
 
+  // Bygges av prosjekt-URL-en, så den stemmer uansett hvilket Supabase-prosjekt appen peker på
+  const smsEndepunkt = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sms-inn`;
+
   if (isLoading) return <div className="text-muted-foreground">Laster innstillinger…</div>;
 
   return (
@@ -452,6 +455,33 @@ function SettingsPage() {
       </TabsContent>
 
       <TabsContent value="firma" className="space-y-6">
+      {/* Videresending av anbudsprotokoller fra mobil */}
+      <SectionCard
+        title="SMS til anbudsprotokoller"
+        description="La telefonen sende anbudsprotokollene rett inn i systemet"
+      >
+        <ol className="ml-4 list-decimal space-y-1.5 text-sm text-muted-foreground">
+          <li>Installer en videresendings-app på Android, for eksempel SmsForwarder fra F-Droid</li>
+          <li>Lag en regel som sender meldinger fra avsenderen av anbudsprotokollene</li>
+          <li>Lim inn adressen og nøkkelen under i appen</li>
+        </ol>
+        <div className="space-y-2">
+          <Label>Adresse (POST)</Label>
+          <Input readOnly value={smsEndepunkt} onFocus={(e) => e.target.select()} className="font-mono text-xs" />
+        </div>
+        <div className="space-y-2">
+          <Label>Nøkkel (header «x-sms-token», eller ?token= i adressen)</Label>
+          <Input readOnly value={saved?.sms_token ?? "— kjør migrasjonen først —"} onFocus={(e) => e.target.select()} className="font-mono text-xs" />
+          <p className="text-xs text-muted-foreground">
+            Nøkkelen gir skrivetilgang til innboksen din. Del den bare med din egen telefon.
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Meldinger legger seg som «nye» under Anbud. Ingenting havner i tallene før du har sett
+          over tolkingen og godkjent den.
+        </p>
+      </SectionCard>
+
       {/* Firma-info */}
       <SectionCard
         title="Firmainformasjon"

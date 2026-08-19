@@ -1,0 +1,38 @@
+name: Bygg SMS-videresending (APK)
+
+# Bygger appen i skyen, slik at APK-en kan lastes ned og installeres uten at
+# noen trenger Android Studio lokalt.
+on:
+  push:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  bygg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Bygg debug-APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon
+
+      # Debug-APK er signert med en standardnøkkel og kan installeres direkte.
+      # Den kan ikke legges i Google Play, men det skal den heller ikke — appen
+      # er til internt bruk på egne telefoner.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sms-videresending-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

@@ -20,6 +20,7 @@ const BASE_LINKS = [
   { to: "/endringsmeldinger", label: "Endringsmeldinger" },
   { to: "/status", label: "Status" },
   { to: "/prosjekter", label: "Prosjekt" },
+  { to: "/anbud", label: "Anbud" },
   { to: "/kunder", label: "Kunder" },
   { to: "/potensielle-kunder", label: "Potensielle kunder" },
   { to: "/admkost", label: "Adm.kost." },

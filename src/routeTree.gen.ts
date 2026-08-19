@@ -18,6 +18,7 @@ import { Route as MobilRouteImport } from './routes/mobil'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as KunderRouteImport } from './routes/kunder'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as AnbudRouteImport } from './routes/anbud'
 import { Route as AdmkostRouteImport } from './routes/admkost'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
@@ -73,6 +74,11 @@ const KunderRoute = KunderRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnbudRoute = AnbudRouteImport.update({
+  id: '/anbud',
+  path: '/anbud',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdmkostRoute = AdmkostRouteImport.update({
@@ -135,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/admkost': typeof AdmkostRoute
+  '/anbud': typeof AnbudRoute
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
@@ -157,6 +164,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/admkost': typeof AdmkostRoute
+  '/anbud': typeof AnbudRoute
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
@@ -180,6 +188,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/admkost': typeof AdmkostRoute
+  '/anbud': typeof AnbudRoute
   '/dashboard': typeof DashboardRoute
   '/kunder': typeof KunderRoute
   '/login': typeof LoginRoute
@@ -204,6 +213,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/admkost'
+    | '/anbud'
     | '/dashboard'
     | '/kunder'
     | '/login'
@@ -226,6 +236,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/admkost'
+    | '/anbud'
     | '/dashboard'
     | '/kunder'
     | '/login'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/admkost'
+    | '/anbud'
     | '/dashboard'
     | '/kunder'
     | '/login'
@@ -271,6 +283,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   AdmkostRoute: typeof AdmkostRoute
+  AnbudRoute: typeof AnbudRoute
   DashboardRoute: typeof DashboardRoute
   KunderRoute: typeof KunderRoute
   LoginRoute: typeof LoginRoute
@@ -353,6 +366,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/anbud': {
+      id: '/anbud'
+      path: '/anbud'
+      fullPath: '/anbud'
+      preLoaderRoute: typeof AnbudRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admkost': {
@@ -439,6 +459,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   AdmkostRoute: AdmkostRoute,
+  AnbudRoute: AnbudRoute,
   DashboardRoute: DashboardRoute,
   KunderRoute: KunderRoute,
   LoginRoute: LoginRoute,

@@ -1,13 +1,14 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate, offerTotal, amendmentTotal, OFFER_WON_STATUSES } from "@/lib/format";
+import { nok, fmtDate, offerTotal, amendmentTotal, compareAmendmentNumber, OFFER_WON_STATUSES } from "@/lib/format";
 import { Input } from "@/components/ui/input";
-import { Search, CheckCircle2, Circle } from "lucide-react";
+import { Search, CheckCircle2, Circle, ChevronDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { toast } from "sonner";
+import { PaymentsPanel } from "@/components/payments-panel";
 
 export const Route = createFileRoute("/ordre")({
   component: OrdrePage,
@@ -63,6 +64,9 @@ function SignertMerke({ pa, tekst }: { pa: boolean; tekst: string }) {
 
 function OrdrePage() {
   const [q, setQ] = useState("");
+  // Hvilken ordre som er utvidet, og hvilken endringsmelding som viser betalinger
+  const [apen, setApen] = useState<string | null>(null);
+  const [betaling, setBetaling] = useState<string | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: appSettings } = useAppSettings();
@@ -92,7 +96,7 @@ function OrdrePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("amendments")
-        .select("id, offer_id, amendment_number, status, customer_signed_at, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)")
+        .select("id, offer_id, amendment_number, internal_description, notified_date, status, customer_signed_at, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)")
         .not("offer_id", "is", null);
       if (error) throw error;
       return data ?? [];
@@ -103,9 +107,13 @@ function OrdrePage() {
   const endringerFor = (offerId: string) => {
     const mine = (endringer ?? []).filter((e: any) => e.offer_id === offerId);
     const erSignert = (e: any) => !!e.customer_signed_at || e.status === "endringsmelding";
-    const signert = mine.filter(erSignert);
-    const krav = mine.filter((e: any) => !erSignert(e));
+    const signert = mine.filter(erSignert).sort((x: any, y: any) =>
+      compareAmendmentNumber(x.amendment_number, y.amendment_number));
+    const krav = mine.filter((e: any) => !erSignert(e)).sort((x: any, y: any) =>
+      compareAmendmentNumber(x.amendment_number, y.amendment_number));
     return {
+      signert,
+      krav,
       antall: signert.length,
       sum: signert.reduce((s: number, e: any) => s + amendmentTotal(e.amendment_lines), 0),
       fakturert: signert.reduce((s: number, e: any) => s + Number(e.invoiced_amount ?? 0), 0),
@@ -228,6 +236,7 @@ function OrdrePage() {
               const pct = total > 0 ? (invoiced / total) * 100 : 0;
               const ordreStatus = getOrdreStatus(invoiced, total);
               return (
+                <Fragment key={o.id}>
                 <tr
                   key={o.id}
                   className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
@@ -235,7 +244,10 @@ function OrdrePage() {
                 >
                   <td className="px-4 py-3 tabular-nums text-sm text-primary">#{o.offer_number}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[ordreStatus]}`}>
+                    {/* whitespace-nowrap: uten den brekker «Ikke startet» og
+                        «Delvis utført» i to linjer så snart tabellen blir trang,
+                        og lappen får en høyde de andre radene ikke har. */}
+                    <span className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[ordreStatus]}`}>
                       {ordreStatus}
                     </span>
                   </td>
@@ -243,14 +255,22 @@ function OrdrePage() {
                   <td className="px-4 py-3">
                     {o.title}
                     {(e.antall > 0 || e.kravAntall > 0) && (
-                      <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-                        {e.antall > 0 && <span>+{e.antall} endring{e.antall === 1 ? "" : "er"}</span>}
+                      <button
+                        type="button"
+                        onClick={(ev) => { ev.stopPropagation(); setApen(apen === o.id ? null : o.id); }}
+                        aria-expanded={apen === o.id}
+                        className="mt-1 flex items-center gap-1.5 rounded-md px-1.5 py-0.5 -ml-1.5 text-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${apen === o.id ? "rotate-180" : ""}`} />
+                        {e.antall > 0 && (
+                          <span className="font-medium">{e.antall} endringsmelding{e.antall === 1 ? "" : "er"}</span>
+                        )}
                         {e.kravAntall > 0 && (
                           <span className="text-amber-700 dark:text-amber-500">
-                            {e.kravAntall} krav venter
+                            {e.antall > 0 && "· "}{e.kravAntall} krav venter
                           </span>
                         )}
-                      </span>
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{fmtDate(o.offer_date)}</td>
@@ -315,6 +335,75 @@ function OrdrePage() {
                     </div>
                   </td>
                 </tr>
+
+                {apen === o.id && (
+                  <tr className="border-b bg-muted/30">
+                    <td colSpan={11} className="px-4 py-4">
+                      <div className="space-y-2">
+                        {[...e.signert, ...e.krav].map((am: any) => {
+                          const amSum = amendmentTotal(am.amendment_lines);
+                          const amFak = Number(am.invoiced_amount ?? 0);
+                          const signert = !!am.customer_signed_at || am.status === "endringsmelding";
+                          return (
+                            <div key={am.id} className="rounded-lg border bg-card px-4 py-3">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                                <Link
+                                  to="/endringsmeldinger/$id"
+                                  params={{ id: am.id }}
+                                  onClick={(ev) => ev.stopPropagation()}
+                                  className="font-medium text-primary hover:underline"
+                                >
+                                  {am.amendment_number}
+                                </Link>
+                                <span className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                                  signert
+                                    ? "border-green-300 bg-green-100 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-300"
+                                    : "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                                }`}>
+                                  {signert ? "Endringsmelding" : "Krav – ikke signert"}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                                  {am.internal_description || "—"}
+                                </span>
+                                <span className="whitespace-nowrap text-sm font-medium tabular-nums">{nok(amSum)}</span>
+                                <span className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">
+                                  fakturert {nok(amFak)}
+                                </span>
+                                {/* Betaling registreres bare på det kunden har
+                                    signert. Fakturerer man et krav, fakturerer
+                                    man arbeid ingen har bestilt. */}
+                                {signert ? (
+                                  <button
+                                    type="button"
+                                    onClick={(ev) => { ev.stopPropagation(); setBetaling(betaling === am.id ? null : am.id); }}
+                                    aria-expanded={betaling === am.id}
+                                    className="whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  >
+                                    {betaling === am.id ? "Lukk" : amFak > 0 ? "Endre betalinger" : "Fakturer"}
+                                  </button>
+                                ) : (
+                                  <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                    Må signeres først
+                                  </span>
+                                )}
+                              </div>
+                              {betaling === am.id && (
+                                <div className="mt-3 border-t pt-3" onClick={(ev) => ev.stopPropagation()}>
+                                  <PaymentsPanel
+                                    parentId={am.id}
+                                    parentType="amendments"
+                                    onSaved={() => queryClient.invalidateQueries({ queryKey: ["ordre-endringer"] })}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

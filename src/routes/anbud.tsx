@@ -54,21 +54,32 @@ function AnbudPage() {
     },
   });
 
-  // Meldinger videresendt fra mobilen, som venter på godkjenning
+  // Meldinger videresendt fra mobilen. Som standard vises bare de ubehandlede,
+  // men de andre kan hentes fram for å ryddes bort.
+  const [visAlle, setVisAlle] = useState(false);
+
   const { data: innboks } = useQuery({
-    queryKey: ["sms-innboks"],
+    queryKey: ["sms-innboks", visAlle],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let sp = supabase
         .from("sms_inbox" as never)
-        .select("id, received_at, sender, body")
-        .eq("status" as never, "ny" as never)
-        .order("received_at", { ascending: false });
+        .select("id, received_at, sender, body, status");
+      if (!visAlle) sp = sp.eq("status" as never, "ny" as never);
+      const { data, error } = await sp.order("received_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as any[];
     },
   });
 
   const [innboksId, setInnboksId] = useState<string | null>(null);
+
+  const slettMelding = async (id: string) => {
+    if (!window.confirm("Slette denne meldingen? Originalteksten går tapt.")) return;
+    const { error } = await supabase.from("sms_inbox" as never).delete().eq("id" as never, id as never);
+    if (error) { toast.error(error.message); return; }
+    if (innboksId === id) setInnboksId(null);
+    qc.invalidateQueries({ queryKey: ["sms-innboks"] });
+  };
 
   const merkHandtert = async (id: string, tenderId: string | null) => {
     await supabase
@@ -189,11 +200,19 @@ function AnbudPage() {
       )}
 
       {/* Videresendt fra mobilen — venter på at noen ser over tolkingen */}
-      {(innboks ?? []).length > 0 && (
+      {((innboks ?? []).length > 0 || visAlle) && (
         <div className="rounded-xl border border-primary/40 bg-primary/5 p-5 shadow-sm">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
             <Inbox className="h-4 w-4" />
-            {innboks!.length} ny{innboks!.length === 1 ? "" : "e"} melding{innboks!.length === 1 ? "" : "er"} fra mobilen
+            {visAlle
+              ? `${innboks?.length ?? 0} melding${(innboks?.length ?? 0) === 1 ? "" : "er"} fra mobilen`
+              : `${innboks!.length} ny${innboks!.length === 1 ? "" : "e"} melding${innboks!.length === 1 ? "" : "er"} fra mobilen`}
+            <button
+              onClick={() => setVisAlle(!visAlle)}
+              className="ml-auto text-xs font-normal text-muted-foreground underline hover:text-foreground"
+            >
+              {visAlle ? "Vis bare nye" : "Vis også behandlede"}
+            </button>
           </h2>
           <div className="space-y-2">
             {innboks!.map((m: any) => (
@@ -208,9 +227,18 @@ function AnbudPage() {
                 <Button size="sm" variant="outline" onClick={() => { setInnboksId(m.id); tolk(m.body); }}>
                   Se over
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => void merkHandtert(m.id, null)} title="Ikke en anbudsprotokoll">
-                  Skjul
-                </Button>
+                {m.status === "ny" && (
+                  <Button size="sm" variant="ghost" onClick={() => void merkHandtert(m.id, null)} title="Ikke en anbudsprotokoll — skjul den">
+                    Skjul
+                  </Button>
+                )}
+                <button
+                  onClick={() => void slettMelding(m.id)}
+                  title="Slett meldingen permanent"
+                  className="p-1 text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             ))}
           </div>

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Trophy, TrendingDown, Search, Save, Trash2, Inbox } from "lucide-react";
+import { Trophy, TrendingDown, Search, Save, Trash2, Inbox, Pencil } from "lucide-react";
 import { nok, toISODate } from "@/lib/format";
 import { parseAnbudsprotokoll, finnEgetBud, type ParsedBid } from "@/lib/anbud";
 import { useAppSettings } from "@/hooks/use-app-settings";
@@ -133,6 +133,64 @@ function AnbudPage() {
       // Kom teksten fra innboksen, er den nå behandlet
       if (innboksId) { await merkHandtert(innboksId, tenderId); setInnboksId(null); }
       setTekst(""); setTittel(""); setBud([]); setProjectId("__none");
+      qc.invalidateQueries({ queryKey: ["anbud"] });
+    } finally {
+      setLagrer(false);
+    }
+  };
+
+  // Redigering av et lagret anbud. Prosjektkoblingen er den som oftest må
+  // endres i ettertid — prosjektet finnes gjerne ikke ennå når protokollen kommer.
+  const [redigerer, setRedigerer] = useState<string | null>(null);
+  const [redTittel, setRedTittel] = useState("");
+  const [redDato, setRedDato] = useState("");
+  const [redProsjekt, setRedProsjekt] = useState("__none");
+  const [redBud, setRedBud] = useState<Array<{ company: string; amount: number; is_us: boolean }>>([]);
+
+  const startRediger = (a: any) => {
+    setRedigerer(a.id);
+    setRedTittel(a.title ?? "");
+    setRedDato(a.opened_on ?? "");
+    setRedProsjekt(a.project_id ?? "__none");
+    setRedBud(
+      [...(a.tender_bids ?? [])]
+        .sort((x: any, y: any) => Number(x.amount) - Number(y.amount))
+        .map((b: any) => ({ company: b.company, amount: Number(b.amount), is_us: !!b.is_us })),
+    );
+  };
+
+  const lagreRediger = async () => {
+    if (!redigerer) return;
+    if (!redTittel.trim()) { toast.error("Anbudet mangler navn"); return; }
+    setLagrer(true);
+    try {
+      const { error } = await supabase
+        .from("tenders" as never)
+        .update({
+          title: redTittel.trim(),
+          opened_on: redDato || null,
+          project_id: redProsjekt === "__none" ? null : redProsjekt,
+        } as never)
+        .eq("id" as never, redigerer as never);
+      if (error) { toast.error(error.message); return; }
+
+      // Budene byttes ut samlet. Enklere og tryggere enn å spore hvilke rader
+      // som er endret, og antallet er lite.
+      const d = await supabase.from("tender_bids" as never).delete().eq("tender_id" as never, redigerer as never);
+      if (d.error) { toast.error(d.error.message); return; }
+
+      const rader = redBud
+        .filter((b) => b.company.trim())
+        .sort((x, y) => x.amount - y.amount)
+        .map((b, i) => ({
+          tenant_id: tenantId, tender_id: redigerer,
+          company: b.company.trim(), amount: b.amount, is_us: b.is_us, sort_order: i,
+        }));
+      const ins = await supabase.from("tender_bids" as never).insert(rader as never);
+      if (ins.error) { toast.error(ins.error.message); return; }
+
+      toast.success("Anbudet er oppdatert");
+      setRedigerer(null);
       qc.invalidateQueries({ queryKey: ["anbud"] });
     } finally {
       setLagrer(false);
@@ -325,8 +383,8 @@ function AnbudPage() {
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
             <Inbox className="h-4 w-4" />
             {visAlle
-              ? `${innboks?.length ?? 0} melding${(innboks?.length ?? 0) === 1 ? "" : "er"} fra mobilen`
-              : `${innboks!.length} ny${innboks!.length === 1 ? "" : "e"} melding${innboks!.length === 1 ? "" : "er"} fra mobilen`}
+              ? `${(innboks ?? []).length} melding${((innboks ?? []).length) === 1 ? "" : "er"} fra mobilen`
+              : `${(innboks ?? []).length} ny${(innboks ?? []).length === 1 ? "" : "e"} melding${(innboks ?? []).length === 1 ? "" : "er"} fra mobilen`}
             <button
               onClick={() => setVisAlle(!visAlle)}
               className="ml-auto text-xs font-normal text-muted-foreground underline hover:text-foreground"
@@ -335,7 +393,7 @@ function AnbudPage() {
             </button>
           </h2>
           <div className="space-y-2">
-            {innboks!.map((m: any) => (
+            {(innboks ?? []).map((m: any) => (
               <div key={m.id} className="flex items-start gap-3 rounded-lg border bg-card px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{m.body.split("\n")[0]}</p>
@@ -493,10 +551,95 @@ function AnbudPage() {
                     {vaart && !vant ? ` · ${nok(Number(vaart.amount) - Number(sortert[0].amount))} over vinneren` : ""}
                   </p>
                 </div>
-                <button onClick={() => void slett(a.id)} className="text-muted-foreground hover:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex flex-shrink-0 items-center gap-1">
+                  <button
+                    onClick={() => (redigerer === a.id ? setRedigerer(null) : startRediger(a))}
+                    title="Rediger anbudet"
+                    className="p-1 text-muted-foreground hover:text-primary"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => void slett(a.id)} title="Slett anbudet" className="p-1 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
+
+              {redigerer === a.id && (
+                <div className="space-y-3 border-b bg-muted/30 px-5 py-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Navn</Label>
+                      <Input value={redTittel} onChange={(e) => setRedTittel(e.target.value)} className="h-9" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Åpnet</Label>
+                      <Input type="date" value={redDato} onChange={(e) => setRedDato(e.target.value)} className="h-9" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Prosjekt</Label>
+                      <Select value={redProsjekt} onValueChange={setRedProsjekt}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none">— Ikke knyttet —</SelectItem>
+                          {(projects ?? []).map((p: any) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}{p.project_number ? ` (#${p.project_number})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border divide-y bg-card">
+                    {redBud.map((b, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                        <Input
+                          value={b.company}
+                          onChange={(e) => setRedBud(redBud.map((x, ix) => ix === i ? { ...x, company: e.target.value } : x))}
+                          className="h-8 flex-1"
+                        />
+                        <Input
+                          type="number"
+                          value={b.amount}
+                          onChange={(e) => setRedBud(redBud.map((x, ix) => ix === i ? { ...x, amount: Number(e.target.value) } : x))}
+                          className="h-8 w-36 text-right no-spinner"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setRedBud(redBud.map((x, ix) => ({ ...x, is_us: ix === i ? !x.is_us : false })))}
+                          title="Marker som vårt bud"
+                          className={b.is_us
+                            ? "rounded bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary"
+                            : "rounded px-2 py-0.5 text-xs font-semibold text-muted-foreground/40 hover:text-foreground"}
+                        >
+                          Oss
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRedBud(redBud.filter((_, ix) => ix !== i))}
+                          title="Fjern budet"
+                          className="p-1 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setRedBud([...redBud, { company: "", amount: 0, is_us: false }])}>
+                      Legg til bud
+                    </Button>
+                    <div className="flex-1" />
+                    <Button size="sm" variant="ghost" onClick={() => setRedigerer(null)}>Avbryt</Button>
+                    <Button size="sm" onClick={lagreRediger} disabled={lagrer}>
+                      <Save className="mr-1.5 h-3.5 w-3.5" />{lagrer ? "Lagrer…" : "Lagre"}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="divide-y">
                 {sortert.map((b: any, i: number) => (
                   <div key={i} className={`flex items-center gap-3 px-5 py-2 text-sm ${b.is_us ? "bg-primary/5 font-medium" : ""}`}>

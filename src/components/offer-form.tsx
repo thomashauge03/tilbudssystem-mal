@@ -328,6 +328,23 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     }
 
     if (lines.length) {
+      // Samme vakt som på endringsmeldinger: en inkludert linje som er
+      // beskrevet, men summerer til 0, er nesten alltid et uhell. Feltene
+      // markeres ved klikk, og ett tastetrykk tømmer dem — Number("") er 0.
+      const mistenkelige = lines.filter(
+        (l) => l.included && l.description.trim() &&
+          Number(l.quantity || 0) * Number(l.unit_price || 0) === 0,
+      );
+      if (mistenkelige.length) {
+        const liste = mistenkelige
+          .map((l) => `• ${l.description} — ${Number(l.quantity || 0)} × ${Number(l.unit_price || 0)}`)
+          .join("\n");
+        if (!window.confirm(
+          `${mistenkelige.length} linje(r) summerer til 0 kr:\n\n${liste}\n\n` +
+          `Lagrer du nå, er tallene borte. Trykk Avbryt for å fylle dem inn først.`,
+        )) return null;
+      }
+
       const linesInsert = lines.map((l, idx) => ({
         offer_id: id!,
         tenant_id: tenantId,

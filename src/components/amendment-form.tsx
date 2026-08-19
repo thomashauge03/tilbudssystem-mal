@@ -298,17 +298,23 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
       setA((p) => ({ ...p, amendment_number: number, status: "krav" }));
     }
     if (lines.length) {
-      // En linje med beskrivelse og pris, men antall 0, er nesten alltid et
-      // uhell: antall-feltet markeres ved klikk, og ett tastetrykk tømmer det.
-      // Da ble 0 skrevet til basen uten et ord, og summen forsvant.
+      // En linje som er beskrevet, men summerer til 0, er nesten alltid et
+      // uhell. Både antall og pris markeres ved klikk, så ett tastetrykk tømmer
+      // feltet — og Number("") er 0. Da ble 0 skrevet til basen uten et ord.
+      //
+      // Vakten ser på summen, ikke på ett av feltene: blir prisen nullet, eller
+      // begge, er tapet like reelt. Er linjen bevisst uprist, bekrefter man og
+      // går videre.
       const mistenkelige = lines.filter(
-        (l) => l.description.trim() && Number(l.unit_price) > 0 && !Number(l.quantity),
+        (l) => l.description.trim() && Number(l.quantity || 0) * Number(l.unit_price || 0) === 0,
       );
       if (mistenkelige.length) {
-        const liste = mistenkelige.map((l) => `• ${l.description}`).join("\n");
+        const liste = mistenkelige
+          .map((l) => `• ${l.description} — ${Number(l.quantity || 0)} × ${Number(l.unit_price || 0)}`)
+          .join("\n");
         if (!window.confirm(
-          `${mistenkelige.length} linje(r) har pris, men antall 0 — summen blir da 0 kr:\n\n${liste}\n\n` +
-          `Er dette riktig? Trykk Avbryt for å fylle inn antall først.`,
+          `${mistenkelige.length} linje(r) summerer til 0 kr:\n\n${liste}\n\n` +
+          `Lagrer du nå, er tallene borte. Trykk Avbryt for å fylle dem inn først.`,
         )) return null;
       }
 

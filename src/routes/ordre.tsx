@@ -4,7 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { nok, fmtDate, offerTotal, OFFER_WON_STATUSES } from "@/lib/format";
 import { Input } from "@/components/ui/input";
-import { Search, PenLine, FileCheck } from "lucide-react";
+import { Search, CheckCircle2, Circle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { toast } from "sonner";
@@ -33,6 +33,31 @@ function ProgressBar({ pct }: { pct: number }) {
     <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
       <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
     </div>
+  );
+}
+
+/**
+ * Signert / ikke signert, med ikonform i tillegg til farge.
+ *
+ * Sto tidligere som en naken fargeprikk uten tekst. Da måtte man holde musen
+ * over hver enkelt for å vite hva den betydde, og rød gjorde at en helt vanlig
+ * rad — ikke signert ennå — så ut som en feil. Nå bærer formen på ikonet
+ * beskjeden, teksten står ved siden av, og «ikke signert» er nøytralt grå.
+ */
+function SignertMerke({ pa, tekst }: { pa: boolean; tekst: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${
+        pa ? "text-green-700 dark:text-green-400" : "text-muted-foreground"
+      }`}
+    >
+      {pa ? (
+        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+      ) : (
+        <Circle className="h-3.5 w-3.5 shrink-0 opacity-50" />
+      )}
+      {tekst}
+    </span>
   );
 }
 
@@ -117,12 +142,8 @@ function OrdrePage() {
               <th className="px-4 py-3">Beskrivelse</th>
               <th className="px-4 py-3">Dato</th>
               <th className="px-4 py-3">Vår ref.</th>
-              <th className="px-4 py-3 text-center" title="Kunde signert">
-                <PenLine className="inline h-3.5 w-3.5" />
-              </th>
-              <th className="px-4 py-3 text-center" title="Kontrakt signert">
-                <FileCheck className="inline h-3.5 w-3.5" />
-              </th>
+              <th className="px-4 py-3 text-center">Signert</th>
+              <th className="px-4 py-3 text-center">Kontrakt</th>
               <th className="px-4 py-3 text-right">Totalt</th>
               <th className="px-4 py-3 text-right">Fakturert</th>
               <th className="px-4 py-3">Fremdrift</th>
@@ -130,9 +151,9 @@ function OrdrePage() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
+              <tr><td colSpan={11} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Ingen godkjente tilbud.</td></tr>
+              <tr><td colSpan={11} className="px-4 py-12 text-center text-muted-foreground">Ingen godkjente tilbud.</td></tr>
             ) : rows.map((o: any, i: number) => {
               const total = sumOf(o);
               const invoiced = Number(o.invoiced_amount ?? 0);
@@ -155,33 +176,45 @@ function OrdrePage() {
                   <td className="px-4 py-3 text-sm text-muted-foreground">{fmtDate(o.offer_date)}</td>
                   <td className="px-4 py-3 text-sm">{o.our_ref ?? "—"}</td>
 
-                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()} title={o.customer_signed_at ? "Signert av kunde" : "Ikke signert av kunde"}>
-                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.customer_signed_at ? "bg-green-500" : "bg-red-400"}`} />
+                  {/* Ikon, ikke bare farge: rød og grønn er nettopp det paret
+                      flest ikke skiller, og en naken prikk sier ingenting før
+                      man holder musen over den. Usignert er dessuten det
+                      normale — det skal ikke se ut som en feil. */}
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <SignertMerke pa={!!o.customer_signed_at} tekst={
+                      o.customer_signed_at ? `Signert ${fmtDate(o.customer_signed_at)}` : "Ikke signert"
+                    } />
                   </td>
                   {(() => {
                     const autoSigned = !!o.customer_signed_at && signedRefs.has(o.our_ref);
                     const contractGreen = o.contract_signed || autoSigned;
                     return (
-                      <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        {/* Denne er en bryter, ikke bare et merke — da må den se
+                            ut som noe man kan trykke på. Før var den en knapp
+                            uten hover, uten pekefinger og uten fokusmarkering,
+                            så det var ikke til å gjette. */}
                         <button
+                          type="button"
+                          aria-pressed={contractGreen}
                           title={
-                            contractGreen
-                              ? autoSigned
-                                ? "Kontrakt signert (vår referanse + kunde)"
-                                : "Kontrakt signert"
-                              : "Kontrakt ikke signert — klikk for å endre"
+                            autoSigned && !o.contract_signed
+                              ? "Signert av både kunde og vår referanse"
+                              : contractGreen
+                                ? "Kontrakt signert — klikk for å angre"
+                                : "Klikk når kontrakten er signert"
                           }
                           onClick={async (e) => {
                             e.stopPropagation();
                             const { error } = await supabase.from("offers").update({ contract_signed: !o.contract_signed }).eq("id", o.id);
-                            // Uten dette slo prikken tilbake ved neste henting
+                            // Uten dette slo merket tilbake ved neste henting
                             // uten at noen fikk vite at lagringen feilet
                             if (error) { toast.error(error.message); return; }
                             queryClient.invalidateQueries({ queryKey: ["offers-godkjent"] });
                           }}
-                          className="inline-flex items-center justify-center"
+                          className="cursor-pointer rounded-md px-1.5 py-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          <span className={`inline-block h-2.5 w-2.5 rounded-full ${contractGreen ? "bg-green-500" : "bg-red-400"}`} />
+                          <SignertMerke pa={contractGreen} tekst={contractGreen ? "Signert" : "Ikke signert"} />
                         </button>
                       </td>
                     );

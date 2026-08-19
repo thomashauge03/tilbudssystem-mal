@@ -411,10 +411,21 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     return true;
   };
 
+  // PDF-vinduet må åpnes i selve klikket. Åpnet vi det etter await save(), regnet
+  // nettleseren det ikke lenger som brukerutløst og blokkerte det stille — knappen
+  // så da ut som om den ikke gjorde noe i det hele tatt.
+  const openPdfWindow = (): Window | null => {
+    const win = window.open("", "_blank", "width=1000,height=1200");
+    if (!win) toast.error("Nettleseren blokkerte PDF-vinduet. Tillat popup-vinduer for denne siden og prøv igjen.");
+    return win;
+  };
+
   const handlePdf = withSaving(async () => {
     if (!requireSettings()) return;
+    const win = openPdfWindow();
+    if (!win) return;
     const id = await save();
-    if (!id) return;
+    if (!id) { win.close(); return; }
     const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === offer.our_ref);
     const customerObj = (customers ?? []).find((c: any) => c.id === offer.customer_id);
     openOfferPdf(
@@ -439,7 +450,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         ref_signature: refObj?.signature ?? "",
         closing_page_offset_mm: appSettings?.closing_page_offset_mm ?? 90,
         forbehold: (offer.forbehold ?? []).map((f: any) => typeof f === "string" ? { title: f, description: "" } : f),
-      }
+      },
+      win
     );
   });
 
@@ -509,8 +521,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   const handleContract = withSaving(async () => {
     if (!requireSettings()) return;
+    const win = openPdfWindow();
+    if (!win) return;
     const id = await save();
-    if (!id) return;
+    if (!id) { win.close(); return; }
     const customerObj = (customers ?? []).find((c: any) => c.id === offer.customer_id);
     const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === offer.our_ref);
     const vatPct = appSettings?.vat_pct ?? 25;
@@ -547,6 +561,14 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       company_name: appSettings?.company_name ?? "Tilbudssystem",
       logo_url: appSettings?.logo_url ?? "",
       company_org_nr: appSettings?.company_org_nr ?? "",
+      // Kontrakten går foran tilbudet ved motstrid (§2), så §5 må si samme
+      // betalingsfrist som tilbuds-PDF-en. Uten dette feltet skrev kontrakten
+      // alltid 14 dager, mens tilbudet sto med firmaets egne vilkår.
+      payment_terms: appSettings?.payment_terms ?? "30 dager netto",
+      // Kolonnene finnes i app_settings, men innstillingssiden har ingen felt for
+      // dem ennå — derfor står entreprenørens adresse tom i §1 inntil videre.
+      company_address: (appSettings as any)?.company_address ?? "",
+      company_phone: (appSettings as any)?.company_phone ?? "",
       ref_name: refObj?.name ?? offer.our_ref,
       ref_position: refObj?.position ?? "",
       ref_phone: refObj?.phone ?? "",
@@ -557,7 +579,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       forbehold: (offer.forbehold ?? []).map((f: any) =>
         typeof f === "string" ? { title: f, description: "" } : f
       ),
-    });
+    }, win);
   });
 
   if (isEdit && !initialized) return <div className="text-muted-foreground">Laster…</div>;

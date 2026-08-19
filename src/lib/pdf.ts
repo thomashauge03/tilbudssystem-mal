@@ -35,7 +35,21 @@ export const escapeHtml = (s: string | null | undefined) =>
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+/**
+ * Signaturbildene limes rett inn i et src-attributt, og kundesignaturen skrives av
+ * en uinnlogget kunde via signeringslenken. PDF-vinduet åpnes med window.open("") og
+ * arver dermed appens origin, så en verdi som lukker attributtet ville fått kode til
+ * å kjøre med brukerens sesjon. Vi slipper derfor bare gjennom innebygde bilder —
+ * alt annet blir tom streng, og signaturfeltet står blankt i stedet.
+ * SVG er holdt utenfor med vilje: det er det eneste bildeformatet som kan bære skript.
+ */
+const safeImageSrc = (s: string | null | undefined) => {
+  const v = String(s ?? "").trim();
+  return /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=\s]*$/.test(v) ? v : "";
+};
 
 interface OfferLine {
   description: string;
@@ -249,15 +263,19 @@ const PDF_STYLES = `  :root {
   .items tbody td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .items tbody td.desc-cell { font-weight: 500; color: var(--ink); max-width: 0; overflow: hidden; }
   .items tbody td.discount-cell { color: var(--slate-600); font-size: 9pt; }
-  /* Beskrivelse: maks 3 linjer, kommentar: maks 2 linjer */
-  .desc-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .comment { font-size: 8.5pt; color: var(--slate-600); font-weight: 400; font-style: italic; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 2px; }
+  /* Beskrivelse og kommentar vises i sin helhet. En klipping her fjernet tekst fra
+     dokumentet kunden signerer, mens prisen sto uavkortet. Kjøreskriptet pakker
+     radene etter faktisk høyde, så en høy rad flytter seg bare til neste side. */
+  .desc-text { display: block; }
+  .comment { font-size: 8.5pt; color: var(--slate-600); font-weight: 400; font-style: italic; display: block; margin-top: 2px; }
   .strikethrough { font-size: 8pt; color: var(--slate-400); text-decoration: line-through; display: block; }
 
   /* Skyver avslutning til bunnen på siste side */
   .flex-fill { flex: 1; }
   .bottom-push { padding-top: 4mm; }
-  /* Avslutningsside uten linjer: stor toppadding for å simulere bunn-plassering */
+  /* Avslutningsside uten linjer: avstanden fra toppen styres av innstillingen.
+     Siden har ingen flex-fill foran seg, så denne paddingen er det som faktisk
+     bestemmer hvor summer, vilkår og signatur havner. */
   .closing-push { padding-top: {{CLOSING_OFFSET}}mm; }
 
   .totals-wrap { display: grid; grid-template-columns: 1fr 92mm; gap: 8mm; margin-bottom: 6mm; }
@@ -425,7 +443,12 @@ const PDF_STYLES = `  :root {
 
 /** CSS-en med toppmargen for avslutningssiden satt inn (bare tilbudet bruker den siden). */
 function pdfStyles(closingPageOffsetMm?: number) {
-  return PDF_STYLES.replace("{{CLOSING_OFFSET}}", String(closingPageOffsetMm ?? 90));
+  // Avslutningsblokken er rundt 130 mm høy, og arket har snaut 235 mm igjen etter
+  // topptekst og bunntekst. Over taket her blir summer, vilkår og signatur skjøvet
+  // ut på et eget, nesten tomt ark — målt til 340 mm sidehøyde ved 150 mm.
+  const raw = Number(closingPageOffsetMm);
+  const offset = Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 100) : 90;
+  return PDF_STYLES.replace("{{CLOSING_OFFSET}}", String(offset));
 }
 
 /**
@@ -547,6 +570,11 @@ const PDF_REFLOW_SCRIPT = `(function() {
         var tbl = np.querySelector('table.items');
         if (tbl) tbl.remove();
         Array.from(np.querySelectorAll('.carry')).forEach(function(c) { c.remove(); });
+        // Endringsmeldingens mal er merket page-closing for å hindre at to
+        // linjesider slås sammen. Uten tabell er dette en ren tekstside, og
+        // flagget ville fått løkka over til å hoppe over den — halen kunne da
+        // aldri brytes en gang til, og rant forbi arkkanten.
+        np.classList.remove('page-closing');
         var sec = np.querySelector('.body');
         if (container !== body) {
           // Behold beholderen så avsnittene arver samme stil på den nye siden
@@ -696,7 +724,8 @@ export function openOfferPdf(
 ) {
   // Ingen fallback til /logo.png — den er Techauge sin, og ville havnet i andre
   // firmaers tilbud når innstillingene ikke var lastet enda.
-  const logoUrl = settings.logo_url || "";
+  const logoUrl = escapeHtml(settings.logo_url || "");
+  const refSignatureSrc = safeImageSrc(settings.ref_signature);
   // Godkjent tilbud er aktivt — da har "gyldig t.o.m." ingen betydning
   const hasDeadline = offerHasDeadline(offer.status);
   const included = lines.filter((l) => l.included);
@@ -942,8 +971,11 @@ export function openOfferPdf(
          </div>`;
 
     const hasAdmin = totals.admin > 0;
+    // Avslutningssiden plasseres av innstillingen "avstand fra topp" (.closing-push).
+    // Med en flex-fill foran seg havnet blokken uansett på bunnen, og innstillingen
+    // gjorde ingenting før verdien ble så høy at siden rant over.
     const totalsBlock = isLast ? `
-      <div class="flex-fill"></div>
+      ${isClosingPage ? "" : `<div class="flex-fill"></div>`}
       <div class="bottom-push${isClosingPage ? " closing-push" : ""}">
         <div class="totals-wrap">
           <!-- Betalingsbetingelsene står i .condition rett under. Den tomme cellen
@@ -984,8 +1016,8 @@ export function openOfferPdf(
             <div class="by-company">${escapeHtml(settings.company_name)}</div>
           </div>
           <div class="stamp">
-            ${settings.ref_signature
-              ? `<img src="${settings.ref_signature}" alt="Signatur" class="sig-img" />`
+            ${refSignatureSrc
+              ? `<img src="${refSignatureSrc}" alt="Signatur" class="sig-img" />`
               : ""}
             <div class="line">Signatur / dato</div>
           </div>
@@ -1199,10 +1231,18 @@ const CONTRACT_STYLES = `
  * Hver paragraf legges ut som sin egen .page. Skriptets tryMerge slår deretter
  * sammen sidene som får plass sammen, så korte kontrakter blir få sider og lange
  * får så mange de trenger — uten at en paragraf blir delt på tvers av arkene.
+ *
+ * En paragraf som er høyere enn arket flyttes videre blokk for blokk (overskrift,
+ * avsnitt). Er ett enkelt avsnitt alene høyere enn arket — §3 limer inn hele
+ * tilbudsteksten som én <p> — finnes det ingen mindre bit å flytte, og den siden
+ * renner fortsatt over.
  */
-export function openContractPdf(d: ContractData) {
+export function openContractPdf(d: ContractData, targetWin?: Window | null) {
   // Se kommentaren i openOfferPdf — ingen fallback til Techauge-logoen
-  const logoUrl = d.logo_url || "";
+  const logoUrl = escapeHtml(d.logo_url || "");
+  // Kundesignaturen er skrevet av en uinnlogget kunde — se safeImageSrc
+  const customerSignatureSrc = safeImageSrc(d.customer_signature);
+  const refSignatureSrc = safeImageSrc(d.ref_signature);
   const nokFmt = (n: number) =>
     new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " kr";
   const dateFmt = (s: string) =>
@@ -1210,11 +1250,14 @@ export function openContractPdf(d: ContractData) {
 
   const offerNo = escapeHtml(String(d.offer_number));
 
+  // Tomt forbehold er en helt normal tilstand, og kontrakten går foran tilbudet ved
+  // motstrid (§2). Hardkodede forbehold her ville derfor pålagt kunden vilkår som
+  // verken står i tilbudet eller er avtalt.
   const forbeholdHtml = (d.forbehold ?? []).length > 0
     ? (d.forbehold!).map((f) =>
         `<li><strong>${escapeHtml(f.title)}</strong>${f.description ? ` – ${escapeHtml(f.description)}` : ""}</li>`
       ).join("")
-    : "<li>Værforhold og naturhendelser.</li><li>Uforutsette grunnforhold, kabler, rør eller fundamenter.</li>";
+    : "<li>Ingen særskilte forbehold.</li>";
 
   // Omfanget står som eget avsnitt med pre-wrap. Limt inn midt i en setning
   // kollapset avsnittene og punktlistene i tilbudsteksten til én lang linje.
@@ -1328,8 +1371,8 @@ export function openContractPdf(d: ContractData) {
         <div class="sig-box">
           <div class="lbl">For kunden</div>
           <div class="name">${escapeHtml(d.customer_signed_name ?? d.customer_name)}</div>
-          ${d.customer_signature
-            ? `<img src="${d.customer_signature}" alt="Kundesignatur" class="sig-img" />`
+          ${customerSignatureSrc
+            ? `<img src="${customerSignatureSrc}" alt="Kundesignatur" class="sig-img" />`
             : `<div class="sig-blank"></div>`}
           <div class="sig-line">Dato: ${d.customer_signed_at ? dateFmt(d.customer_signed_at) : "_______________________"}</div>
           <div class="sig-line">Navn: ${escapeHtml(d.customer_signed_name ?? "_______________________")}</div>
@@ -1337,8 +1380,8 @@ export function openContractPdf(d: ContractData) {
         <div class="sig-box">
           <div class="lbl">For ${escapeHtml(d.company_name)}</div>
           <div class="name">${escapeHtml(d.ref_name ?? d.company_ceo ?? "")}</div>
-          ${d.ref_signature
-            ? `<img src="${d.ref_signature}" alt="Signatur" class="sig-img" />`
+          ${refSignatureSrc
+            ? `<img src="${refSignatureSrc}" alt="Signatur" class="sig-img" />`
             : `<div class="sig-blank"></div>`}
           ${d.ref_position ? `<div class="role">${escapeHtml(d.ref_position)}</div>` : ""}
           ${d.ref_phone ? `<div class="role">Tlf. ${escapeHtml(d.ref_phone)}</div>` : ""}
@@ -1374,8 +1417,11 @@ ${CONTRACT_STYLES}
 <!--
   Forsiden fyller arket alene, slik at kjøreskriptet aldri drar avtaletekst opp på
   den. Paragrafene under starter som én side hver og blir slått sammen av tryMerge.
+  page-closing er flagget kjøreskriptet respekterer: uten det ville reflowTextPages
+  ha prøvd å dele forsiden, som alltid måler fulle 297 mm fordi .cover-inner er
+  flex-fylt — og hele forsiden hadde blitt flyttet til et nytt ark.
 -->
-<main class="page page-cover">
+<main class="page page-cover page-closing">
   <section class="body">
     <div class="cover-inner">
       ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="${escapeHtml(d.company_name)}" onerror="this.style.display='none'" />` : ""}
@@ -1394,13 +1440,23 @@ ${CONTRACT_STYLES}
   </section>
 </main>
 ${contentPages}
+<!--
+  Malen reflowTextPages bygger overflytssider av. Uten den gjorde skriptet ingenting
+  på kontrakten: en lang §3 (hele tilbudsteksten limes inn der) vokste forbi arket,
+  og sidetallene talte .page-elementer som ikke stemte med arkene som kom ut.
+-->
+<template id="cont-page-tpl"><main class="page">
+  ${contHeader}
+  <section class="body"></section>
+  ${footer}
+</main></template>
 <script>
 ${PDF_REFLOW_SCRIPT}
 </script>
 </body>
 </html>`;
 
-  const win = window.open("", "_blank", "width=1000,height=1200");
+  const win = targetWin ?? window.open("", "_blank", "width=1000,height=1200");
   if (!win) return;
   win.document.write(html);
   win.document.close();
@@ -1468,7 +1524,8 @@ export function openAmendmentPdf(
   targetWin?: Window | null,
 ) {
   // Ingen fallback til /logo.png — se kommentaren i openOfferPdf
-  const logoUrl = settings.logo_url || "";
+  const logoUrl = escapeHtml(settings.logo_url || "");
+  const refSignatureSrc = safeImageSrc(settings.ref_signature);
 
   // Statusen 'endringsmelding' betyr at kravet er sendt som formell melding.
   // Alt annet (bl.a. 'krav') er fortsatt et krav om endring.
@@ -1582,8 +1639,8 @@ export function openAmendmentPdf(
   const signBlock = `<div class="sign two-col">
       <div class="stamp">
         <p class="stamp-label">For ${escapeHtml(settings.company_name)}</p>
-        ${settings.ref_signature
-          ? `<img src="${settings.ref_signature}" alt="Signatur" class="sig-img" />`
+        ${refSignatureSrc
+          ? `<img src="${refSignatureSrc}" alt="Signatur" class="sig-img" />`
           : ""}
         <div class="line">${escapeHtml(amendment.project_manager) || "Signatur / dato"}</div>
       </div>
@@ -1701,11 +1758,16 @@ export function openAmendmentPdf(
   // malsidene — ellers får den første linjesiden 8 mm mer å gå på enn de andre og
   // klemmer inn en rad for mye. recalcCarries skjuler dem igjen der de ikke hører
   // hjemme (øverst på første linjeside, nederst på den siste).
-  const carryIn = `<div class="carry carry-in">
+  // Uten linjer finnes ingen tr[data-sum], og da hopper recalcCarries over siden og
+  // rekker aldri å skjule radene. En endringsmelding uten prisoverslag ble derfor
+  // sendt til kunden med "Overført/Overføres 0,00 kr". Tilbudet skjuler dem i
+  // markupen på samme måte.
+  const carryHidden = lines.length === 0 ? ` style="display:none"` : "";
+  const carryIn = `<div class="carry carry-in"${carryHidden}>
       <span>Overført fra forrige side</span>
       <span>${fmtNok(0)}</span>
      </div>`;
-  const carryOut = `<div class="carry carry-out">
+  const carryOut = `<div class="carry carry-out"${carryHidden}>
       <span>Overføres til neste side</span>
       <span>${fmtNok(linesTotal)}</span>
      </div>`;

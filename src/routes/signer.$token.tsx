@@ -178,8 +178,18 @@ function SignerPage() {
     return { exVat, inclVat: exVat * (1 + vatPct / 100) };
   }, [pdfData]);
 
+  // Blokkerer nettleseren popup-vinduet, skjedde det ingenting da kunden trykket
+  // "Se tilbud" — verken feilmelding eller dokument. Da er det bedre å si fra.
+  const openPdfWindow = (): Window | null => {
+    const win = window.open("", "_blank", "width=1000,height=1200");
+    if (!win) alert("Nettleseren blokkerte vinduet med dokumentet. Tillat popup-vinduer for denne siden og prøv igjen.");
+    return win;
+  };
+
   const handleViewPdf = () => {
     if (!pdfData) return;
+    const win = openPdfWindow();
+    if (!win) return;
     const lines = pdfData.lines ?? [];
     const settings = pdfData.settings ?? {};
     const offer = pdfData.offer ?? {};
@@ -197,11 +207,13 @@ function SignerPage() {
       ref_position: refObj.position ?? "",
       ref_signature: refObj.signature ?? "",
       forbehold: forbeholdOf(offer, settings),
-    });
+    }, win);
   };
 
   const handleViewContract = () => {
     if (!pdfData) return;
+    const win = openPdfWindow();
+    if (!win) return;
     const lines = (pdfData.lines ?? []).filter((l: any) => l.included !== false);
     const settings = pdfData.settings ?? {};
     const offer = pdfData.offer ?? {};
@@ -231,6 +243,10 @@ function SignerPage() {
       company_address: settings.company_address,
       company_phone: settings.company_phone,
       logo_url: settings.logo_url,
+      // Kontrakten går foran tilbudet ved motstrid (§2), så §5 må gjenta tilbudets
+      // betalingsvilkår. Uten feltet sto det alltid 14 dager i kontrakten, mens
+      // kunden hadde fått firmaets egne vilkår i tilbuds-PDF-en.
+      payment_terms: settings.payment_terms,
       ref_name: refObj.name,
       ref_position: refObj.position,
       ref_phone: refObj.phone,
@@ -238,7 +254,7 @@ function SignerPage() {
       // Faller tilbake på firmaets standardforbehold så lenge RPC-en ikke
       // returnerer offers.forbehold — den bør utvides med feltet.
       forbehold: forbeholdOf(offer, settings),
-    });
+    }, win);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -38,3 +38,6 @@ dist-ssr
 
 # Supabase CLI-temp
 supabase/.temp/
+
+# Sikkerhetskopier av produksjonsdata skal aldri i git
+tilbudssystem-backup/

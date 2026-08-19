@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -40,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // C2: cancel flag prevents stale async results from applying after unmount/sign-out
   const cancelRef = useRef(false);
+
+  const qc = useQueryClient();
 
   const loadBranding = async (tid: string) => {
     const { data: settings } = await supabase
@@ -112,6 +115,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBranding(null);
         setAuthError(null);
         setRoleLoading(false); // reset if fetchRole was in-flight when sign-out fired
+
+        // Både utlogging og innlogging er ren SPA-navigasjon, så query-cachen
+        // overlever byttet. Uten denne tømmingen viser anbud, endringsmeldinger
+        // og dashbordet forrige firmas tall og konkurrentpriser til refetchen er
+        // ferdig. Den ligger her og ikke i signOut, så også en utløpt økt og en
+        // utlogging fra en annen fane blir dekket.
+        qc.clear();
       }
 
       // Mark initial load done after first auth event

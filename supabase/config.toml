@@ -1,1 +1,8 @@
 project_id = "rmlczuhipndlvfvkpznm"
+
+# Telefonen som videresender anbudsprotokollene har ingen Supabase-innlogging og
+# sender verken apikey eller Authorization. Uten denne linja avviser gatewayen
+# hver eneste melding med 401 så snart noen ruller ut funksjonen på nytt uten
+# --no-verify-jwt. Tilgangen styres i stedet av sms_token, som er unik per firma.
+[functions.sms-inn]
+verify_jwt = false

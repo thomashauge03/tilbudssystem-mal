@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -34,10 +34,14 @@ function AnbudPage() {
   // Da peker du selv ut hvilket bud som er deres.
   const [manueltOss, setManueltOss] = useState<number | null>(null);
   const [utenPris, setUtenPris] = useState<Array<{ company: string; note: string }>>([]);
+  // Linjer tolkeren ikke fikk noe ut av. De vises under budene, ellers har
+  // brukeren ingen måte å se hvilke linjer som mangler.
+  const [ignorerte, setIgnorerte] = useState<string[]>([]);
   const [q, setQ] = useState("");
 
   const { data: projects } = useQuery({
-    queryKey: ["projects-simple"],
+    queryKey: ["projects-simple", tenantId],
+    enabled: !!tenantId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects").select("id, name, project_number, status").eq("status", "aktiv").order("name");
@@ -61,8 +65,11 @@ function AnbudPage() {
     },
   });
 
+  // Tenanten er med i nøkkelen slik at ingenting fra forrige innlogging blir
+  // stående igjen i cachen når noen andre logger på samme maskin.
   const { data: anbud, isLoading, isError, error } = useQuery({
-    queryKey: ["anbud"],
+    queryKey: ["anbud", tenantId],
+    enabled: !!tenantId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tenders" as never)
@@ -78,7 +85,8 @@ function AnbudPage() {
   const [visAlle, setVisAlle] = useState(false);
 
   const { data: innboks } = useQuery({
-    queryKey: ["sms-innboks", visAlle],
+    queryKey: ["sms-innboks", tenantId, visAlle],
+    enabled: !!tenantId,
     queryFn: async () => {
       let sp = supabase
         .from("sms_inbox" as never)
@@ -108,17 +116,40 @@ function AnbudPage() {
     qc.invalidateQueries({ queryKey: ["sms-innboks"] });
   };
 
+  // Radene er endret for hånd etter at teksten ble tolket. Da kan de ikke
+  // bygges på nytt uten å spørre først.
+  const [budRettet, setBudRettet] = useState(false);
+  const sistTolket = useRef("");
+
   // Tolkes mens du limer inn, så du ser med én gang om noe ble misforstått
   const tolk = (t: string) => {
     setTekst(t);
+    sistTolket.current = t;
     const r = parseAnbudsprotokoll(t);
     if (r.title) setTittel(r.title);
     setBud(r.bids);
     setUtenPris(r.disqualified);
+    setIgnorerte(r.ignored);
     setManueltOss(null);
+    setBudRettet(false);
     if (r.ignored.length) {
       toast.warning(`${r.ignored.length} linje(r) ble ikke forstått og er utelatt`);
     }
+  };
+
+  // Teksten tolkes på nytt ved innliming og når du forlater feltet, ikke på
+  // hvert tastetrykk: ellers ble en manuell retting i radene bygget bort mens
+  // du skrev, og varselet om uforståtte linjer kom én gang per tegn.
+  const tolkPaNytt = (t: string) => {
+    if (t === sistTolket.current) { setTekst(t); return; }
+    if (budRettet && !window.confirm(
+      "Budene under er rettet for hånd. Tolkes teksten på nytt, går rettelsene tapt. Fortsette?",
+    )) {
+      setTekst(t);
+      sistTolket.current = t;
+      return;
+    }
+    tolk(t);
   };
 
   const egetBud = useMemo(
@@ -126,9 +157,20 @@ function AnbudPage() {
     [bud, appSettings, manueltOss],
   );
 
+  // Et bud på 0 kr er alltid en glipp — feltet ble tømt, og Number("") er 0.
+  // Lagres det, sorteres nullbudet først og blir «vinneren»: anbudet regnes som
+  // tapt, avstanden til vinneren blir 0 %, og statistikken på toppen blir feil.
+  const ufullstendige = (rader: Array<{ company: string; amount: number }>) =>
+    rader.filter((b) => !b.company.trim() || !(b.amount > 0));
+
   const lagre = async () => {
     if (!tittel.trim()) { toast.error("Anbudet mangler navn"); return; }
     if (bud.length < 2) { toast.error("Lim inn en protokoll med minst to bud"); return; }
+    const mangler = ufullstendige(bud);
+    if (mangler.length) {
+      toast.error(`${mangler.length} bud mangler firmanavn eller beløp — fyll dem inn før du lagrer`);
+      return;
+    }
     setLagrer(true);
     try {
       const { data, error } = await supabase
@@ -154,6 +196,7 @@ function AnbudPage() {
       // Kom teksten fra innboksen, er den nå behandlet
       if (innboksId) { await merkHandtert(innboksId, tenderId); setInnboksId(null); }
       setTekst(""); setTittel(""); setBud([]); setProjectId("__none"); setOfferId("__none");
+      setUtenPris([]); setIgnorerte([]); setBudRettet(false); sistTolket.current = "";
       qc.invalidateQueries({ queryKey: ["anbud"] });
     } finally {
       setLagrer(false);
@@ -166,11 +209,19 @@ function AnbudPage() {
   const [masseApen, setMasseApen] = useState(false);
   const [massetekst, setMassetekst] = useState("");
   const [masse, setMasse] = useState<
-    Array<{ tekst: string; tittel: string; dato: string; bids: ParsedBid[]; egetIdx: number; valgt: boolean }>
+    Array<{
+      tekst: string; tittel: string; dato: string; bids: ParsedBid[]; egetIdx: number; valgt: boolean;
+      ignorerte: string[]; utenPris: Array<{ company: string; note: string }>;
+    }>
   >([]);
+  // Hvilken rad som er slått ut for å vise hva tolkeren ikke fikk med seg
+  const [masseDetalj, setMasseDetalj] = useState<number | null>(null);
+  const [masseRettet, setMasseRettet] = useState(false);
+  const sistTolketMasse = useRef("");
 
   const tolkMasse = (t: string) => {
     setMassetekst(t);
+    sistTolketMasse.current = t;
     const deler = splittProtokoller(t);
     setMasse(deler.map((tekst) => {
       const r = parseAnbudsprotokoll(tekst);
@@ -178,16 +229,55 @@ function AnbudPage() {
       return {
         tekst, tittel: r.title, dato: "", bids: r.bids,
         egetIdx: eget ? r.bids.indexOf(eget) : -1,
-        valgt: true,
+        valgt: true, ignorerte: r.ignored, utenPris: r.disqualified,
       };
     }));
+    setMasseDetalj(null);
+    setMasseRettet(false);
   };
+
+  // Samme grunn som for enkeltinnlimingen, og verre her: datoen kan ikke leses
+  // ut av teksten, så den er alltid satt for hånd og ville forsvunnet på det
+  // første tastetrykket i tekstfeltet over.
+  const tolkMassePaNytt = (t: string) => {
+    if (t === sistTolketMasse.current) { setMassetekst(t); return; }
+    if (masseRettet && !window.confirm(
+      "Radene under er rettet for hånd. Tolkes teksten på nytt, går titler og datoer tapt. Fortsette?",
+    )) {
+      setMassetekst(t);
+      sistTolketMasse.current = t;
+      return;
+    }
+    tolkMasse(t);
+  };
+
+  const rettMasse = (i: number, endring: Partial<(typeof masse)[number]>) => {
+    setMasse(masse.map((x, ix) => (ix === i ? { ...x, ...endring } : x)));
+    setMasseRettet(true);
+  };
+
+  // Titler som allerede er lagret. Den samme tråden limes ofte inn på nytt
+  // etter en delvis import, og et duplikat teller som et eget møte i
+  // konkurransetabellen — altså feil tall, ikke bare en dobbel rad.
+  const lagredeTitler = useMemo(
+    () => new Set((anbud ?? []).map((a: any) => String(a.title ?? "").trim().toLowerCase())),
+    [anbud],
+  );
+  const finnesFraFor = (t: string) => !!t.trim() && lagredeTitler.has(t.trim().toLowerCase());
 
   const importerAlle = async () => {
     const valgte = masse.filter((m) => m.valgt && m.tittel.trim() && m.bids.length >= 2);
     if (!valgte.length) return;
+
+    const duplikater = valgte.filter((m) => finnesFraFor(m.tittel));
+    if (duplikater.length && !window.confirm(
+      `${duplikater.length} av protokollene finnes fra før:\n\n${duplikater.map((m) => `• ${m.tittel}`).join("\n")}\n\n` +
+      `Importerer du dem nå, blir de liggende dobbelt og teller dobbelt i statistikken. Fortsette likevel?`,
+    )) return;
+
     setLagrer(true);
     let ok = 0;
+    const feilet = new Set<(typeof masse)[number]>();
     try {
       for (const m of valgte) {
         const { data, error } = await supabase
@@ -197,7 +287,7 @@ function AnbudPage() {
             opened_on: m.dato || null, source_text: m.tekst,
           } as never)
           .select("id").single();
-        if (error) { toast.error(`${m.tittel}: ${error.message}`); continue; }
+        if (error) { toast.error(`${m.tittel}: ${error.message}`); feilet.add(m); continue; }
 
         const rader = m.bids.map((b, i) => ({
           tenant_id: tenantId, tender_id: (data as any).id,
@@ -205,11 +295,26 @@ function AnbudPage() {
           is_us: i === m.egetIdx, sort_order: i,
         }));
         const ins = await supabase.from("tender_bids" as never).insert(rader as never);
-        if (ins.error) { toast.error(`${m.tittel}: ${ins.error.message}`); continue; }
+        if (ins.error) {
+          toast.error(`${m.tittel}: ${ins.error.message}`);
+          // Anbudsraden er alt skrevet. Uten bud er den et tomt skall som verken
+          // viser noe eller teller i statistikken, så den ryddes bort igjen —
+          // ellers ligger den i veien når raden importeres på nytt.
+          await supabase.from("tenders" as never).delete().eq("id" as never, (data as any).id as never);
+          feilet.add(m);
+          continue;
+        }
         ok++;
       }
       toast.success(`${ok} av ${valgte.length} anbud importert`);
-      if (ok) { setMassetekst(""); setMasse([]); qc.invalidateQueries({ queryKey: ["anbud"] }); }
+      // Bare de som gikk gjennom fjernes fra lista. Ble noe liggende igjen,
+      // beholdes råteksten også — ellers måtte hele tråden limes inn på nytt,
+      // og de som alt er importert ville kommet inn en gang til.
+      const igjen = masse.filter((m) => !valgte.includes(m) || feilet.has(m));
+      setMasse(igjen);
+      setMasseDetalj(null);
+      if (!igjen.length) { setMassetekst(""); sistTolketMasse.current = ""; }
+      if (ok) qc.invalidateQueries({ queryKey: ["anbud"] });
     } finally {
       setLagrer(false);
     }
@@ -240,6 +345,16 @@ function AnbudPage() {
   const lagreRediger = async () => {
     if (!redigerer) return;
     if (!redTittel.trim()) { toast.error("Anbudet mangler navn"); return; }
+    // En rad som verken har navn eller beløp er «Legg til bud» som aldri ble
+    // fylt ut. Er bare det ene feltet utfylt, er rettingen halvferdig — og et
+    // bud uten beløp eller uten navn ødelegger regnestykket for hele anbudet.
+    const utfylte = redBud.filter((b) => b.company.trim() || b.amount > 0);
+    const mangler = ufullstendige(utfylte);
+    if (mangler.length) {
+      toast.error(`${mangler.length} bud mangler firmanavn eller beløp — fyll dem inn før du lagrer`);
+      return;
+    }
+    if (!utfylte.length) { toast.error("Anbudet må ha minst ett bud"); return; }
     setLagrer(true);
     try {
       const { error } = await supabase
@@ -254,12 +369,19 @@ function AnbudPage() {
       if (error) { toast.error(error.message); return; }
 
       // Budene byttes ut samlet. Enklere og tryggere enn å spore hvilke rader
-      // som er endret, og antallet er lite.
-      const d = await supabase.from("tender_bids" as never).delete().eq("tender_id" as never, redigerer as never);
-      if (d.error) { toast.error(d.error.message); return; }
+      // som er endret, og antallet er lite. Rekkefølgen er viktig: de nye
+      // radene settes inn FØR de gamle slettes. Feiler innsettingen — nettbrudd,
+      // RLS, et beløp som sprenger numeric(14,2) — står de gamle budene igjen.
+      // Motsatt vei ville anbudet stått igjen uten et eneste bud, uten noen vei
+      // tilbake: det finnes ingen historikk for tender_bids.
+      const gamle = await supabase
+        .from("tender_bids" as never)
+        .select("id")
+        .eq("tender_id" as never, redigerer as never);
+      if (gamle.error) { toast.error(gamle.error.message); return; }
 
-      const rader = redBud
-        .filter((b) => b.company.trim())
+      const rader = utfylte
+        .slice()
         .sort((x, y) => x.amount - y.amount)
         .map((b, i) => ({
           tenant_id: tenantId, tender_id: redigerer,
@@ -268,7 +390,15 @@ function AnbudPage() {
       const ins = await supabase.from("tender_bids" as never).insert(rader as never);
       if (ins.error) { toast.error(ins.error.message); return; }
 
-      toast.success("Anbudet er oppdatert");
+      const gamleIder = ((gamle.data ?? []) as any[]).map((r) => r.id);
+      const d = gamleIder.length
+        ? await supabase.from("tender_bids" as never).delete().in("id" as never, gamleIder as never)
+        : { error: null };
+      // Blir de gamle radene stående, ligger budene dobbelt. Det er synlig og
+      // kan ryddes opp for hånd, til forskjell fra bud som er slettet for godt.
+      if (d.error) toast.error(`Budene ble lagret, men de gamle ble stående: ${d.error.message}`);
+      else toast.success("Anbudet er oppdatert");
+
       setRedigerer(null);
       qc.invalidateQueries({ queryKey: ["anbud"] });
     } finally {
@@ -278,8 +408,9 @@ function AnbudPage() {
 
   const slett = async (id: string) => {
     if (!window.confirm("Slette denne anbudsprotokollen?")) return;
-    const b = await supabase.from("tender_bids" as never).delete().eq("tender_id" as never, id as never);
-    if (b.error) { toast.error(b.error.message); return; }
+    // Budene følger med av seg selv: tender_bids.tender_id har on delete
+    // cascade. Å slette dem først ville bare skapt et vindu der anbudet blir
+    // stående igjen tomt om slettingen under feiler.
     const { error } = await supabase.from("tenders" as never).delete().eq("id" as never, id as never);
     if (error) { toast.error(error.message); return; }
     qc.invalidateQueries({ queryKey: ["anbud"] });
@@ -561,22 +692,33 @@ function AnbudPage() {
         </>
       )}
 
-      {/* Videresendt fra mobilen — venter på at noen ser over tolkingen */}
-      {((innboks ?? []).length > 0 || visAlle) && (
-        <div className="rounded-xl border border-primary/40 bg-primary/5 p-5 shadow-sm">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Inbox className="h-4 w-4" />
+      {/* Videresendt fra mobilen — venter på at noen ser over tolkingen.
+          Boksen vises også når lista er tom: vekslebryteren er eneste vei inn
+          til de behandlede meldingene, og forsvinner den, er arkivet stengt til
+          det tilfeldigvis kommer en ny SMS. */}
+      <div className={(innboks ?? []).length > 0
+        ? "rounded-xl border border-primary/40 bg-primary/5 p-5 shadow-sm"
+        : "rounded-xl border bg-card p-5 shadow-sm"}>
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Inbox className="h-4 w-4" />
+          {visAlle
+            ? `${(innboks ?? []).length} melding${((innboks ?? []).length) === 1 ? "" : "er"} fra mobilen`
+            : `${(innboks ?? []).length} ny${(innboks ?? []).length === 1 ? "" : "e"} melding${(innboks ?? []).length === 1 ? "" : "er"} fra mobilen`}
+          <button
+            onClick={() => setVisAlle(!visAlle)}
+            className="ml-auto text-xs font-normal text-muted-foreground underline hover:text-foreground"
+          >
+            {visAlle ? "Vis bare nye" : "Vis også behandlede"}
+          </button>
+        </h2>
+        {(innboks ?? []).length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
             {visAlle
-              ? `${(innboks ?? []).length} melding${((innboks ?? []).length) === 1 ? "" : "er"} fra mobilen`
-              : `${(innboks ?? []).length} ny${(innboks ?? []).length === 1 ? "" : "e"} melding${(innboks ?? []).length === 1 ? "" : "er"} fra mobilen`}
-            <button
-              onClick={() => setVisAlle(!visAlle)}
-              className="ml-auto text-xs font-normal text-muted-foreground underline hover:text-foreground"
-            >
-              {visAlle ? "Vis bare nye" : "Vis også behandlede"}
-            </button>
-          </h2>
-          <div className="space-y-2">
+              ? "Ingen meldinger er videresendt hit ennå."
+              : "Ingen nye. Behandlede meldinger ligger fortsatt lagret — hent dem fram med lenken over."}
+          </p>
+        ) : (
+          <div className="mt-3 space-y-2">
             {(innboks ?? []).map((m: any) => (
               <div key={m.id} className="flex items-start gap-3 rounded-lg border bg-card px-3 py-2">
                 <div className="min-w-0 flex-1">
@@ -604,8 +746,8 @@ function AnbudPage() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Masseimport: lim inn hele SMS-tråden på én gang */}
       <div className="rounded-xl border bg-card p-5 shadow-sm">
@@ -629,7 +771,14 @@ function AnbudPage() {
             <Textarea
               rows={6}
               value={massetekst}
-              onChange={(e) => tolkMasse(e.target.value)}
+              // Samme som over: innliming tolkes med én gang, skriving venter
+              // til du forlater feltet.
+              onChange={(e) => {
+                const ny = e.target.value;
+                if (Math.abs(ny.length - massetekst.length) > 1) tolkMassePaNytt(ny);
+                else setMassetekst(ny);
+              }}
+              onBlur={(e) => tolkMassePaNytt(e.target.value)}
               placeholder={"tirsdag 17. feb. • 16:56\nAnbudsprotokoll Eksempelveien\nEntreprenør A AS 1.250.000,-\nEntreprenør B AS 1.480.000,-\n…"}
               className="font-mono text-xs"
             />
@@ -637,39 +786,81 @@ function AnbudPage() {
             {masse.length > 0 && (
               <>
                 <div className="rounded-lg border divide-y">
-                  {masse.map((m, i) => (
-                    <div key={i} className="flex items-center gap-3 px-3 py-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={m.valgt}
-                        onChange={() => setMasse(masse.map((x, ix) => ix === i ? { ...x, valgt: !x.valgt } : x))}
-                        className="h-4 w-4 accent-primary"
-                      />
-                      <Input
-                        value={m.tittel}
-                        onChange={(e) => setMasse(masse.map((x, ix) => ix === i ? { ...x, tittel: e.target.value } : x))}
-                        className="h-8 flex-1"
-                      />
-                      <Input
-                        type="date"
-                        value={m.dato}
-                        onChange={(e) => setMasse(masse.map((x, ix) => ix === i ? { ...x, dato: e.target.value } : x))}
-                        className="h-8 w-40"
-                      />
-                      <span className="w-28 text-right text-xs text-muted-foreground">
-                        {m.bids.length} bud
-                        {m.egetIdx >= 0 ? ` · plass ${m.egetIdx + 1}` : " · ukjent"}
-                      </span>
-                    </div>
-                  ))}
+                  {masse.map((m, i) => {
+                    const uklart = m.ignorerte.length + m.utenPris.length;
+                    const finnes = finnesFraFor(m.tittel);
+                    return (
+                      <div key={i} className="px-3 py-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={m.valgt}
+                            onChange={() => setMasse(masse.map((x, ix) => ix === i ? { ...x, valgt: !x.valgt } : x))}
+                            className="h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <Input
+                            value={m.tittel}
+                            onChange={(e) => rettMasse(i, { tittel: e.target.value })}
+                            className="h-8 min-w-0 flex-1 basis-40"
+                          />
+                          <div className="flex min-w-0 flex-1 basis-56 items-center gap-2">
+                            <Input
+                              type="date"
+                              value={m.dato}
+                              onChange={(e) => rettMasse(i, { dato: e.target.value })}
+                              className="h-8 min-w-0 flex-1 sm:w-40 sm:flex-none"
+                            />
+                            <span className="shrink-0 text-right text-xs text-muted-foreground">
+                              {m.bids.length} bud
+                              {m.egetIdx >= 0 ? ` · plass ${m.egetIdx + 1}` : " · ukjent"}
+                            </span>
+                          </div>
+                        </div>
+                        {(uklart > 0 || finnes) && (
+                          <div className="mt-1 flex flex-wrap items-center gap-3 pl-6 text-xs">
+                            {uklart > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setMasseDetalj(masseDetalj === i ? null : i)}
+                                className="flex items-center gap-1 text-amber-700 underline dark:text-amber-400"
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                {uklart} linje(r) kom ikke med
+                              </button>
+                            )}
+                            {finnes && (
+                              <span className="text-amber-700 dark:text-amber-400">
+                                Et anbud med samme navn finnes fra før
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {masseDetalj === i && uklart > 0 && (
+                          <div className="mt-2 space-y-1 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 pl-3 text-xs">
+                            {m.utenPris.map((u, ix) => (
+                              <p key={`u${ix}`}>
+                                <span className="font-medium">{u.company}</span> — {u.note} (uten pris, lagres ikke)
+                              </p>
+                            ))}
+                            {m.ignorerte.map((l, ix) => (
+                              <p key={`i${ix}`} className="break-words font-mono">{l}</p>
+                            ))}
+                            <p className="text-muted-foreground">
+                              Rett linjene i teksten over om de skulle vært med som bud.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-xs text-muted-foreground">
                     {masse.filter((m) => m.valgt).length} av {masse.length} valgt.
                     {masse.some((m) => m.egetIdx < 0) &&
                       " Noen mangler vårt eget bud — de kan rettes etterpå med blyantikonet."}
                   </p>
-                  <Button onClick={importerAlle} disabled={lagrer || !masse.some((m) => m.valgt)}>
+                  <Button onClick={importerAlle} disabled={lagrer || !tenantId || !masse.some((m) => m.valgt)}>
                     <Save className="mr-2 h-4 w-4" />
                     {lagrer ? "Importerer…" : `Importer ${masse.filter((m) => m.valgt).length}`}
                   </Button>
@@ -687,11 +878,59 @@ function AnbudPage() {
           <Textarea
             rows={6}
             value={tekst}
-            onChange={(e) => tolk(e.target.value)}
+            // Ett tegn om gangen er skriving; hopper teksten flere tegn, er den
+            // limt inn — og da tolkes den med én gang, som før. Skriving venter
+            // til du forlater feltet, slik at en retting i budradene ikke
+            // bygges bort på det neste tastetrykket.
+            onChange={(e) => {
+              const ny = e.target.value;
+              if (Math.abs(ny.length - tekst.length) > 1) tolkPaNytt(ny);
+              else setTekst(ny);
+            }}
+            onBlur={(e) => tolkPaNytt(e.target.value)}
             placeholder={"Anbudsprotokoll Eksempelveien :\nEntreprenør A AS 1.250.000\nEntreprenør B AS 1.480.000\nEntreprenør C AS 1.610.000"}
             className="font-mono text-sm"
           />
         </div>
+
+        {/* Det tolkeren ikke fikk noe ut av. Uten dette er eneste spor en toast
+            som forsvinner — og en avvist tilbyder ser ut som om firmaet aldri
+            var med i konkurransen. */}
+        {(utenPris.length > 0 || ignorerte.length > 0) && (
+          <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            {utenPris.length > 0 && (
+              <div>
+                <p className="flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Med i konkurransen, men uten pris
+                </p>
+                <ul className="mt-1 space-y-0.5 text-xs">
+                  {utenPris.map((u, i) => (
+                    <li key={i}><span className="font-medium">{u.company}</span> — {u.note}</li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  De lagres ikke sammen med budene og teller ikke i statistikken — et bud
+                  uten beløp kan ikke rangeres.
+                </p>
+              </div>
+            )}
+            {ignorerte.length > 0 && (
+              <div>
+                <p className="flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {ignorerte.length} linje(r) ble ikke forstått
+                </p>
+                <ul className="mt-1 space-y-0.5 break-words font-mono text-xs">
+                  {ignorerte.map((l, i) => <li key={i}>{l}</li>)}
+                </ul>
+                <p className="mt-1 font-sans text-xs text-muted-foreground">
+                  Rett dem i teksten over om de skulle vært med som bud.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {bud.length > 0 && (
           <>
@@ -739,38 +978,46 @@ function AnbudPage() {
                 const oss = egetBud && b.company === egetBud.company && b.amount === egetBud.amount;
                 const diff = b.amount - bud[0].amount;
                 return (
-                  <div key={i} className={`flex items-center gap-3 px-3 py-2 text-sm ${oss ? "bg-primary/5" : ""}`}>
-                    <span className="w-6 text-muted-foreground tabular-nums">{i + 1}.</span>
+                  <div key={i} className={`flex flex-wrap items-center gap-2 px-3 py-2 text-sm sm:gap-3 ${oss ? "bg-primary/5" : ""}`}>
+                    <span className="w-6 shrink-0 text-muted-foreground tabular-nums">{i + 1}.</span>
                     <Input
                       value={b.company}
-                      onChange={(e) => setBud(bud.map((x, ix) => ix === i ? { ...x, company: e.target.value } : x))}
-                      className="h-8 flex-1"
+                      onChange={(e) => { setBudRettet(true); setBud(bud.map((x, ix) => ix === i ? { ...x, company: e.target.value } : x)); }}
+                      className="h-8 min-w-0 flex-1 basis-40"
                     />
-                    <Input
-                      type="number"
-                      value={b.amount}
-                      onChange={(e) => setBud(bud.map((x, ix) => ix === i ? { ...x, amount: Number(e.target.value) } : x))}
-                      className="h-8 w-40 text-right no-spinner"
-                    />
-                    <span className="w-32 text-right text-xs text-muted-foreground tabular-nums">
-                      {i === 0 ? "laveste" : `+${nok(diff)}`}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setManueltOss(oss ? null : i)}
-                      title={oss ? "Fjern markeringen" : "Marker som vårt bud"}
-                      className={oss
-                        ? "rounded bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary"
-                        : "rounded px-2 py-0.5 text-xs font-semibold text-muted-foreground/40 transition-colors hover:text-foreground"}
-                    >
-                      Oss
-                    </button>
+                    {/* Feltene brekker ned på egen linje på telefon. Uten
+                        min-w-0 kan de ikke krympe, og beløp og «Oss» havner
+                        utenfor skjermkanten — der de ikke er til å nå, siden
+                        siden ikke kan scrolles sidelengs. */}
+                    <div className="flex min-w-0 flex-1 basis-56 items-center gap-2 sm:gap-3">
+                      <Input
+                        type="number"
+                        value={b.amount || ""}
+                        placeholder="0"
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => { setBudRettet(true); setBud(bud.map((x, ix) => ix === i ? { ...x, amount: Number(e.target.value) } : x)); }}
+                        className="h-8 min-w-0 flex-1 text-right no-spinner sm:w-40 sm:flex-none"
+                      />
+                      <span className="w-24 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:w-32">
+                        {i === 0 ? "laveste" : `+${nok(diff)}`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { setBudRettet(true); setManueltOss(oss ? null : i); }}
+                        title={oss ? "Fjern markeringen" : "Marker som vårt bud"}
+                        className={oss
+                          ? "shrink-0 rounded bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary"
+                          : "shrink-0 rounded px-2 py-0.5 text-xs font-semibold text-muted-foreground/40 transition-colors hover:text-foreground"}
+                      >
+                        Oss
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
                 {egetBud
                   ? egetBud.amount === bud[0].amount
@@ -878,47 +1125,53 @@ function AnbudPage() {
 
                   <div className="rounded-lg border divide-y bg-card">
                     {redBud.map((b, i) => (
-                      <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                      <div key={i} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
                         <Input
                           value={b.company}
                           onChange={(e) => setRedBud(redBud.map((x, ix) => ix === i ? { ...x, company: e.target.value } : x))}
-                          className="h-8 flex-1"
+                          className="h-8 min-w-0 flex-1 basis-40"
                         />
-                        <Input
-                          type="number"
-                          value={b.amount}
-                          onChange={(e) => setRedBud(redBud.map((x, ix) => ix === i ? { ...x, amount: Number(e.target.value) } : x))}
-                          className="h-8 w-36 text-right no-spinner"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setRedBud(redBud.map((x, ix) => ({ ...x, is_us: ix === i ? !x.is_us : false })))}
-                          title="Marker som vårt bud"
-                          className={b.is_us
-                            ? "rounded bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary"
-                            : "rounded px-2 py-0.5 text-xs font-semibold text-muted-foreground/40 hover:text-foreground"}
-                        >
-                          Oss
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRedBud(redBud.filter((_, ix) => ix !== i))}
-                          title="Fjern budet"
-                          className="p-1 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex min-w-0 flex-1 basis-52 items-center gap-2">
+                          <Input
+                            type="number"
+                            value={b.amount || ""}
+                            placeholder="0"
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => setRedBud(redBud.map((x, ix) => ix === i ? { ...x, amount: Number(e.target.value) } : x))}
+                            className="h-8 min-w-0 flex-1 text-right no-spinner sm:w-36 sm:flex-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setRedBud(redBud.map((x, ix) => ({ ...x, is_us: ix === i ? !x.is_us : false })))}
+                            title="Marker som vårt bud"
+                            className={b.is_us
+                              ? "shrink-0 rounded bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary"
+                              : "shrink-0 rounded px-2 py-0.5 text-xs font-semibold text-muted-foreground/40 hover:text-foreground"}
+                          >
+                            Oss
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRedBud(redBud.filter((_, ix) => ix !== i))}
+                            title="Fjern budet"
+                            className="shrink-0 p-1 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => setRedBud([...redBud, { company: "", amount: 0, is_us: false }])}>
                       Legg til bud
                     </Button>
                     <div className="flex-1" />
                     <Button size="sm" variant="ghost" onClick={() => setRedigerer(null)}>Avbryt</Button>
-                    <Button size="sm" onClick={lagreRediger} disabled={lagrer}>
+                    {/* Uten tenantId feiler innsettingen på not-null/RLS — samme
+                        vakt som på Lagre protokoll over. */}
+                    <Button size="sm" onClick={lagreRediger} disabled={lagrer || !tenantId}>
                       <Save className="mr-1.5 h-3.5 w-3.5" />{lagrer ? "Lagrer…" : "Lagre"}
                     </Button>
                   </div>
@@ -926,12 +1179,12 @@ function AnbudPage() {
               )}
               <div className="divide-y">
                 {sortert.map((b: any, i: number) => (
-                  <div key={i} className={`flex items-center gap-3 px-5 py-2 text-sm ${b.is_us ? "bg-primary/5 font-medium" : ""}`}>
-                    <span className="w-6 text-muted-foreground tabular-nums">{i + 1}.</span>
-                    <span className="flex-1">{b.company}</span>
-                    <span className="tabular-nums">{nok(Number(b.amount))}</span>
+                  <div key={i} className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 px-5 py-2 text-sm ${b.is_us ? "bg-primary/5 font-medium" : ""}`}>
+                    <span className="w-6 shrink-0 text-muted-foreground tabular-nums">{i + 1}.</span>
+                    <span className="min-w-0 flex-1">{b.company}</span>
+                    <span className="shrink-0 tabular-nums">{nok(Number(b.amount))}</span>
                     {i > 0 && (
-                      <span className="w-32 text-right text-xs text-muted-foreground tabular-nums">
+                      <span className="ml-auto w-24 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:w-32">
                         +{nok(Number(b.amount) - Number(sortert[0].amount))}
                       </span>
                     )}

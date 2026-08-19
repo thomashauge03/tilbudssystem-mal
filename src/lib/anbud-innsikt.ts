@@ -51,16 +51,32 @@ export function lagInnsikt(anbud: AnbudForAnalyse[]): Innsikt[] {
       const restSpread = pstAv(resten[resten.length - 1].amount, resten[0].amount);
       const gap = pstAv(sortert[1].amount, sortert[0].amount);
       if (gap > UTELIGGER_PST && restSpread < KLYNGE_PST) {
-        ut.push({
-          alvor: "info",
-          anbud: a.title,
-          tittel: "Vinnerbudet skilte seg kraftig ut",
-          tekst:
-            `${sortert[0].company} lå ${gap.toFixed(0)} % under nest laveste, mens de øvrige ` +
-            `${resten.length} lå innenfor ${restSpread.toFixed(0)} % av hverandre. Når ett bud ` +
-            `bryter så tydelig med resten, har de som regel regnet noe annet — det er ikke ` +
-            `nødvendigvis vårt prisnivå som var feil.`,
-        });
+        // Er det vi selv som er utliggeren, snus rådet på hodet. Da er ikke
+        // poenget at konkurrenten regnet feil — da bør vi se etter om det er
+        // noe vi har glemt å ta med, for vi skal utføre jobben til den prisen.
+        ut.push(
+          sortert[0].is_us
+            ? {
+                alvor: "advarsel",
+                anbud: a.title,
+                tittel: "Vi lå langt under hele feltet",
+                tekst:
+                  `Vi lå ${gap.toFixed(0)} % under nest laveste, mens de øvrige ${resten.length} ` +
+                  `lå innenfor ${restSpread.toFixed(0)} % av hverandre. Når hele markedet ligger ` +
+                  `samlet et godt stykke over oss, er det verdt å gå gjennom kalkylen — det kan ` +
+                  `mangle en post.`,
+              }
+            : {
+                alvor: "info",
+                anbud: a.title,
+                tittel: "Vinnerbudet skilte seg kraftig ut",
+                tekst:
+                  `${sortert[0].company} lå ${gap.toFixed(0)} % under nest laveste, mens de øvrige ` +
+                  `${resten.length} lå innenfor ${restSpread.toFixed(0)} % av hverandre. Når ett bud ` +
+                  `bryter så tydelig med resten, har de som regel regnet noe annet — det er ikke ` +
+                  `nødvendigvis vårt prisnivå som var feil.`,
+              },
+        );
       }
     }
 

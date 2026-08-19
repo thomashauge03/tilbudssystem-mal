@@ -1,6 +1,6 @@
 // Tester for én-mot-én-sammenligningen. Kjøres av `npm test`.
 
-import { lagDuell, konkurrentliste } from "./anbud-duell.ts";
+import { lagDuell, konkurrentliste, slaaSammenFirma } from "./anbud-duell.ts";
 
 let feil = 0;
 let ok = 0;
@@ -74,6 +74,41 @@ const null0 = lagDuell(
   "K",
 );
 sjekk("0-bud teller ikke", null0, null);
+
+console.log("\n--- Samme firma skrevet på ulike måter ---");
+
+// De ekte skrivemåtene fra protokollene
+const g = slaaSammenFirma([
+  "Kvina Maskin", "Kvina Maskin AS", "Kvina",
+  "Br. Thorkildsen", "Br Thorkildsen AS",
+  "Lindland Maskin", "Lindland maskin AS",
+  "Risa", "Risa AS",
+]);
+sjekk("selskapsform og tegnsetting", [g.get("Br. Thorkildsen"), g.get("Br Thorkildsen AS")], [
+  "Br Thorkildsen AS",
+  "Br Thorkildsen AS",
+]);
+sjekk("stor/liten bokstav", g.get("Lindland Maskin"), g.get("Lindland maskin AS"));
+sjekk("kortform slås inn", g.get("Kvina"), g.get("Kvina Maskin"));
+sjekk("AS-variant samme gruppe", g.get("Kvina Maskin AS"), g.get("Kvina Maskin"));
+sjekk("Risa", g.get("Risa"), g.get("Risa AS"));
+
+// Er kortformen tvetydig, skal den IKKE gjettes inn i en av dem
+const tvil = slaaSammenFirma(["Kvina", "Kvina Maskin", "Kvina Transport"]);
+sjekk("tvetydig kortform står alene", tvil.get("Kvina"), "Kvina");
+sjekk("de to lange holdes fra hverandre", tvil.get("Kvina Maskin") !== tvil.get("Kvina Transport"), true);
+
+// Grupperingen skal slå gjennom i listen og i grafen
+const flereNavn = [
+  { title: "A", opened_on: "2026-01-01", bids: [bud("Oss", 100, true), bud("Kvina Maskin", 120)] },
+  { title: "B", opened_on: "2026-02-01", bids: [bud("Oss", 100, true), bud("Kvina Maskin AS", 130)] },
+  { title: "C", opened_on: "2026-03-01", bids: [bud("Oss", 100, true), bud("Kvina", 140)] },
+];
+sjekk("tre skrivemåter = én konkurrent", konkurrentliste(flereNavn), [
+  { navn: "Kvina Maskin AS", moter: 3 },
+]);
+sjekk("grafen får alle tre", lagDuell(flereNavn, "Kvina")?.moter, 3);
+sjekk("uansett hvilken skrivemåte man velger", lagDuell(flereNavn, "Kvina Maskin AS")?.moter, 3);
 
 console.log(`\n${ok} i orden, ${feil} feil`);
 process.exit(feil ? 1 : 0);

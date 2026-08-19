@@ -224,6 +224,10 @@ export function finnEgetBud(bids: ParsedBid[], firmanavn?: string | null): Parse
 }
 
 /** «Hauge Maskin AS» -> ["hauge", "maskin"]. Selskapsform og tegnsetting bort. */
+export function firmaOrd(s?: string | null): string[] {
+  return ord(s);
+}
+
 function ord(s?: string | null): string[] {
   return String(s ?? "")
     .toLowerCase()

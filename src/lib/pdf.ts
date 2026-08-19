@@ -446,7 +446,11 @@ function pdfStyles(closingPageOffsetMm?: number) {
   // Avslutningsblokken er rundt 130 mm høy, og arket har snaut 235 mm igjen etter
   // topptekst og bunntekst. Over taket her blir summer, vilkår og signatur skjøvet
   // ut på et eget, nesten tomt ark — målt til 340 mm sidehøyde ved 150 mm.
-  const raw = Number(closingPageOffsetMm);
+  // Merk at null og undefined må skilles fra 0 her. Number(null) er 0, og 0 er et
+  // gyldig tall — så en usatt kolonne ville gitt avslutningsblokken helt øverst
+  // på siste ark med 180 mm blankt under. Det slår bare ut på kundens vei, der
+  // innstillingene spres rått inn fra RPC-en.
+  const raw = closingPageOffsetMm == null ? NaN : Number(closingPageOffsetMm);
   const offset = Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 100) : 90;
   return PDF_STYLES.replace("{{CLOSING_OFFSET}}", String(offset));
 }

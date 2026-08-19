@@ -10,6 +10,57 @@
 // ingenting om prisnivået vårt.
 
 import type { AnbudForAnalyse } from "./anbud-innsikt";
+import { firmaOrd } from "./anbud.ts";
+
+/**
+ * Samme firma skrives sjelden likt to ganger. I de ekte protokollene står
+ * «Kvina Maskin», «Kvina Maskin AS» og «Kvina» om hverandre, og uten
+ * sammenslåing blir ett firma til tre konkurrenter med for få møter hver til at
+ * tallene betyr noe.
+ *
+ * Selskapsform, tegnsetting og store bokstaver fjernes. I tillegg slås et
+ * kortere navn sammen med et lengre når det korte er starten på det lange og
+ * det bare finnes ÉN slik kandidat — «Kvina» hører til «Kvina Maskin», men
+ * hadde det også stått «Kvina Transport» i materialet, ville det vært en
+ * gjetning, og da holdes de fra hverandre.
+ */
+export function slaaSammenFirma(navn: string[]): Map<string, string> {
+  const nokler = new Map<string, { visning: string; antall: number }>();
+  for (const n of navn) {
+    const k = firmaOrd(n).join(" ");
+    if (!k) continue;
+    const f = nokler.get(k);
+    // Den formen som er brukt oftest blir navnet som vises. Ved likt antall
+    // vinner den lengste, som regel den med selskapsform.
+    if (!f) nokler.set(k, { visning: n, antall: 1 });
+    else {
+      f.antall++;
+      if (n.length > f.visning.length) f.visning = n;
+    }
+  }
+
+  const alle = [...nokler.keys()];
+  const kanonisk = new Map<string, string>(alle.map((k) => [k, k]));
+  for (const kort of alle) {
+    const treff = alle.filter((lang) => lang !== kort && (lang + " ").startsWith(kort + " "));
+    if (treff.length === 1) kanonisk.set(kort, treff[0]);
+  }
+
+  // Navn -> visningsnavnet til gruppen det hører hjemme i
+  const ut = new Map<string, string>();
+  for (const n of navn) {
+    const k = firmaOrd(n).join(" ");
+    if (!k) continue;
+    const gruppe = kanonisk.get(k) ?? k;
+    ut.set(n, nokler.get(gruppe)?.visning ?? n);
+  }
+  return ut;
+}
+
+/** Alle firmanavn som er nevnt, uansett hvem som bød. */
+function alleNavn(anbud: AnbudForAnalyse[]): string[] {
+  return anbud.flatMap((a) => a.bids.map((b) => String(b.company ?? "").trim())).filter(Boolean);
+}
 
 export interface DuellPunkt {
   anbud: string;
@@ -43,14 +94,19 @@ const pstAv = (a: number, b: number) => (b === 0 ? 0 : ((a - b) / b) * 100);
 
 /** Alle konkurrenter vi har møtt, flest møter først. */
 export function konkurrentliste(anbud: AnbudForAnalyse[]): Array<{ navn: string; moter: number }> {
+  const gruppe = slaaSammenFirma(alleNavn(anbud));
   const teller = new Map<string, number>();
   for (const a of anbud) {
     if (!a.bids.some((b) => b.is_us)) continue;
+    // Samme firma kan stå to ganger i én protokoll (ulik skrivemåte). Da er det
+    // fortsatt ett møte, ikke to.
+    const sett = new Set<string>();
     for (const b of a.bids) {
       if (b.is_us) continue;
-      const navn = String(b.company ?? "").trim();
-      if (navn) teller.set(navn, (teller.get(navn) ?? 0) + 1);
+      const navn = gruppe.get(String(b.company ?? "").trim());
+      if (navn) sett.add(navn);
     }
+    for (const navn of sett) teller.set(navn, (teller.get(navn) ?? 0) + 1);
   }
   return [...teller.entries()]
     .map(([navn, moter]) => ({ navn, moter }))
@@ -58,14 +114,20 @@ export function konkurrentliste(anbud: AnbudForAnalyse[]): Array<{ navn: string;
 }
 
 export function lagDuell(anbud: AnbudForAnalyse[], konkurrent: string): Duell | null {
-  const leter = konkurrent.trim().toLowerCase();
+  if (!konkurrent.trim()) return null;
+  // Slår opp gjennom samme gruppering som listen, så «Kvina» og «Kvina Maskin AS»
+  // gir samme graf uansett hvilken skrivemåte som ble valgt.
+  const gruppe = slaaSammenFirma([...alleNavn(anbud), konkurrent.trim()]);
+  const leter = gruppe.get(konkurrent.trim());
   if (!leter) return null;
 
   const punkter: DuellPunkt[] = [];
 
   for (const a of anbud) {
     const vaart = a.bids.find((b) => b.is_us);
-    const deres = a.bids.find((b) => String(b.company ?? "").trim().toLowerCase() === leter);
+    const deres = a.bids.find(
+      (b) => !b.is_us && gruppe.get(String(b.company ?? "").trim()) === leter,
+    );
     if (!vaart || !deres) continue;
     if (!(Number(vaart.amount) > 0) || !(Number(deres.amount) > 0)) continue;
 
@@ -101,7 +163,7 @@ export function lagDuell(anbud: AnbudForAnalyse[], konkurrent: string): Duell | 
   const midt = Math.floor(sortert.length / 2);
 
   return {
-    navn: konkurrent,
+    navn: leter,
     punkter,
     moter: punkter.length,
     viLavest: punkter.filter((p) => p.viLavest).length,

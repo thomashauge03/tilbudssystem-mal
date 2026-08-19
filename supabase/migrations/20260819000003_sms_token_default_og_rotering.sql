@@ -97,10 +97,13 @@ begin
 
   v_token := replace(gen_random_uuid()::text, '-', '');
 
-  -- Et firma som aldri har lagret innstillinger har ingen rad ennå.
-  insert into app_settings (tenant_id, sms_token)
-  values (v_tenant, v_token)
-  on conflict (tenant_id) do update set sms_token = excluded.sms_token;
+  -- Et firma som aldri har lagret innstillinger har ingen rad ennå. Skrevet uten
+  -- «on conflict» så funksjonen virker også om unik-constraint over ikke kunne
+  -- legges på fordi det lå dubletter i tabellen.
+  update app_settings set sms_token = v_token where tenant_id = v_tenant;
+  if not found then
+    insert into app_settings (tenant_id, sms_token) values (v_tenant, v_token);
+  end if;
 
   return v_token;
 end;

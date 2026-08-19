@@ -83,7 +83,14 @@ class SmsReceiver : BroadcastReceiver() {
      * forsøk aldri kan gå bedre. Ved første melding som ikke går gjennom stopper
      * vi: rekkefølgen skal holdes, og er nettet nede feiler resten uansett.
      */
-    private fun tomKoen(context: Context, innst: Innstillinger, fraSms: Boolean) {
+    private fun tomKoen(context: Context, innst: Innstillinger, fraSms: Boolean): Unit = synchronized(Sendeko.tommelaas) {
+        // Hele tømmingen holder låsen, ikke bare hvert enkelt oppslag i køen.
+        // Hver kringkasting gir en ny mottakerinstans og en ny tråd, så purringen
+        // kan fyre midt i en innkommende SMS. Uten denne låsen kunne to tråder
+        // hente samme melding med forste(), sende den hver sin gang, og fjern()
+        // nummer to gjorde ingenting — resultatet var samme anbudsprotokoll to
+        // ganger i innboksen. Vinduet er stort fordi send() venter opptil 15 s,
+        // altså nettopp når nettet er dårlig og køen er i bruk.
         var sendt = 0
         var sisteSvar = 0
         var feil: String? = null
@@ -270,6 +277,14 @@ object Sendeko {
     private const val FORSOK = "ko.forsok"
 
     private val laas = Any()
+
+    /**
+     * Egen lås for hele tømmesekvensen hent → send → fjern. [laas] dekker bare
+     * én operasjon mot lageret om gangen, og det er ikke nok: mellom forste() og
+     * fjern() ligger et nettverkskall som kan ta 15 sekunder, og der rekker en
+     * annen tråd å hente og sende den samme meldingen.
+     */
+    val tommelaas = Any()
 
     class Melding(val id: String, val fra: String, val tekst: String)
 

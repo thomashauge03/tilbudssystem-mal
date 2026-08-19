@@ -176,8 +176,13 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
           // Signaturen leses alltid fra databasen: har kunden signert mens
           // utkastet lå og ventet, ville et gammelt øyeblikksbilde ellers vist
           // meldingen som usignert og forsøkt å skrive linjene på nytt.
+          const signert = !!la.customer_signed_at || la.status === "endringsmelding";
           setA({ ...sa, status: la.status, customer_signed_at: la.customer_signed_at });
-          setLines(sl ?? []);
+          // Og har kunden rukket å signere, er det de signerte linjene som
+          // gjelder — ikke de vi hadde liggende i et utkast. Ellers ville PDF-en
+          // og e-posten vist andre tall enn dem kunden faktisk skrev under på,
+          // uten at noe sa fra: linjene er jo låst og ser dermed autoritative ut.
+          setLines(signert ? loaded.lines : (sl ?? []));
           setInit(true);
           return;
         } catch { sessionStorage.removeItem(DRAFT_KEY); }

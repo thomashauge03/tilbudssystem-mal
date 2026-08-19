@@ -288,7 +288,31 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     });
   };
 
-  const save = async (): Promise<string | null> => {
+  /**
+   * Bekrefter linjer som summerer til 0. Ligger utenfor save() fordi PDF- og
+   * kontraktknappene må åpne popup-vinduet i selve klikket: kom dialogen etterpå,
+   * havnet den bak det nyåpnede vinduet, og brukeren så et blankt PDF-vindu uten
+   * å skjønne at appen ventet på svar.
+   */
+  const bekreftNullinjer = (): boolean => {
+    // En inkludert linje som er beskrevet, men summerer til 0, er nesten alltid
+    // et uhell. Feltene markeres ved klikk, og ett tastetrykk tømmer dem —
+    // Number("") er 0.
+    const mistenkelige = lines.filter(
+      (l) => l.included && l.description.trim() &&
+        Number(l.quantity || 0) * Number(l.unit_price || 0) === 0,
+    );
+    if (!mistenkelige.length) return true;
+    const liste = mistenkelige
+      .map((l) => `• ${l.description} — ${Number(l.quantity || 0)} × ${Number(l.unit_price || 0)}`)
+      .join("\n");
+    return window.confirm(
+      `${mistenkelige.length} linje(r) summerer til 0 kr:\n\n${liste}\n\n` +
+      `Lagrer du nå, er tallene borte. Trykk Avbryt for å fylle dem inn først.`,
+    );
+  };
+
+  const save = async (nullinjerAlleredeBekreftet = false): Promise<string | null> => {
     if (!offer.title.trim()) { toast.error("Overskrift er påkrevd"); return null; }
     if (!offer.customer_id) { toast.error("Velg en kunde fra kunderegisteret"); return null; }
 
@@ -328,22 +352,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     }
 
     if (lines.length) {
-      // Samme vakt som på endringsmeldinger: en inkludert linje som er
-      // beskrevet, men summerer til 0, er nesten alltid et uhell. Feltene
-      // markeres ved klikk, og ett tastetrykk tømmer dem — Number("") er 0.
-      const mistenkelige = lines.filter(
-        (l) => l.included && l.description.trim() &&
-          Number(l.quantity || 0) * Number(l.unit_price || 0) === 0,
-      );
-      if (mistenkelige.length) {
-        const liste = mistenkelige
-          .map((l) => `• ${l.description} — ${Number(l.quantity || 0)} × ${Number(l.unit_price || 0)}`)
-          .join("\n");
-        if (!window.confirm(
-          `${mistenkelige.length} linje(r) summerer til 0 kr:\n\n${liste}\n\n` +
-          `Lagrer du nå, er tallene borte. Trykk Avbryt for å fylle dem inn først.`,
-        )) return null;
-      }
+      if (!nullinjerAlleredeBekreftet && !bekreftNullinjer()) return null;
 
       const linesInsert = lines.map((l, idx) => ({
         offer_id: id!,
@@ -422,9 +431,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   const handlePdf = withSaving(async () => {
     if (!requireSettings()) return;
+    // Bekreftelsen må komme før vinduet åpnes — ellers havner den bak det.
+    if (!bekreftNullinjer()) return;
     const win = openPdfWindow();
     if (!win) return;
-    const id = await save();
+    const id = await save(true);
     if (!id) { win.close(); return; }
     const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === offer.our_ref);
     const customerObj = (customers ?? []).find((c: any) => c.id === offer.customer_id);
@@ -521,9 +532,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
   const handleContract = withSaving(async () => {
     if (!requireSettings()) return;
+    // Bekreftelsen må komme før vinduet åpnes — ellers havner den bak det.
+    if (!bekreftNullinjer()) return;
     const win = openPdfWindow();
     if (!win) return;
-    const id = await save();
+    const id = await save(true);
     if (!id) { win.close(); return; }
     const customerObj = (customers ?? []).find((c: any) => c.id === offer.customer_id);
     const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === offer.our_ref);

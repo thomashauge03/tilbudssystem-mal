@@ -13,6 +13,7 @@ import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tool
 import { nok, toISODate } from "@/lib/format";
 import { parseAnbudsprotokoll, finnEgetBud, splittProtokoller, type ParsedBid } from "@/lib/anbud";
 import { lagInnsikt } from "@/lib/anbud-innsikt";
+import { lagDuell, konkurrentliste } from "@/lib/anbud-duell";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -38,6 +39,8 @@ function AnbudPage() {
   // brukeren ingen måte å se hvilke linjer som mangler.
   const [ignorerte, setIgnorerte] = useState<string[]>([]);
   const [q, setQ] = useState("");
+  /** Hvilken konkurrent én-mot-én-grafen viser. Tomt = den mest møtte. */
+  const [valgtKonkurrent, setValgtKonkurrent] = useState("");
 
   const { data: projects } = useQuery({
     queryKey: ["projects-simple", tenantId],
@@ -517,6 +520,38 @@ function AnbudPage() {
     [stats],
   );
 
+  // Én konkurrent om gangen. Snittet i tabellen under skjuler om forspranget
+  // svinger fra jobb til jobb, og det er nettopp svingningen som er nyttig.
+  const forAnalyse = useMemo(
+    () => (anbud ?? []).map((a: any) => ({
+      title: a.title,
+      opened_on: a.opened_on,
+      bids: (a.tender_bids ?? []).map((b: any) => ({
+        company: b.company, amount: Number(b.amount), is_us: !!b.is_us,
+      })),
+    })),
+    [anbud],
+  );
+
+  const konkurrentValg = useMemo(() => konkurrentliste(forAnalyse), [forAnalyse]);
+
+  const duell = useMemo(() => {
+    const navn = valgtKonkurrent || konkurrentValg[0]?.navn;
+    return navn ? lagDuell(forAnalyse, navn) : null;
+  }, [forAnalyse, valgtKonkurrent, konkurrentValg]);
+
+  const duellGraf = useMemo(
+    () => (duell?.punkter ?? []).map((p) => ({
+      navn: p.anbud.length > 16 ? p.anbud.slice(0, 16) + "…" : p.anbud,
+      full: p.anbud,
+      pst: Number(p.diffPst.toFixed(1)),
+      diffKr: p.diffKr,
+      vaart: p.vaart,
+      deres: p.deres,
+    })),
+    [duell],
+  );
+
   const rader = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (!t) return anbud ?? [];
@@ -643,6 +678,95 @@ function AnbudPage() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Én mot én. Grafen leses som en tidslinje: står stolpene over null
+              hele veien, ligger vi jevnt under dem — svinger de fram og
+              tilbake, er det jobbtypen og ikke prisnivået som avgjør. */}
+          {konkurrentValg.length > 0 && (
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <div className="mb-1 flex flex-wrap items-center gap-3">
+                <h3 className="text-sm font-semibold">Hvordan vi har priset oss mot</h3>
+                <Select
+                  value={valgtKonkurrent || konkurrentValg[0].navn}
+                  onValueChange={setValgtKonkurrent}
+                >
+                  <SelectTrigger className="h-8 w-full max-w-xs sm:w-64">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {konkurrentValg.map((k) => (
+                      <SelectItem key={k.navn} value={k.navn}>
+                        {k.navn} ({k.moter} møte{k.moter === 1 ? "" : "r"})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {!duell || duell.moter === 0 ? (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Vi har ikke levert pris på noen av de samme jobbene som dem ennå.
+                </p>
+              ) : (
+                <>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Hver stolpe er ett anbud, eldst til venstre. Over null betyr at de lå over oss.
+                  </p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={duellGraf} margin={{ top: 5, right: 10, bottom: 5, left: -10 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                      <XAxis dataKey="navn" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                      <YAxis tick={{ fontSize: 11 }} unit=" %" />
+                      <Tooltip
+                        formatter={(v: any, _n, p: any) => [
+                          `${v} % — ${nok(Math.abs(p.payload.diffKr))} ${p.payload.diffKr >= 0 ? "over" : "under"} oss`,
+                          "",
+                        ]}
+                        labelFormatter={(_l, p: any) => p?.[0]?.payload?.full ?? ""}
+                      />
+                      <Bar dataKey="pst">
+                        {duellGraf.map((d, i) => (
+                          <Cell key={i} fill={d.pst < 0 ? "#dc2626" : "#16a34a"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+
+                  <div className="mt-4 grid gap-3 border-t pt-4 text-sm sm:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Møtt</p>
+                      <p className="font-semibold tabular-nums">
+                        {duell.moter} gang{duell.moter === 1 ? "" : "er"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Vi lå lavest</p>
+                      <p className="font-semibold tabular-nums">
+                        {duell.viLavest} av {duell.moter}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Median mot oss</p>
+                      <p className={`font-semibold tabular-nums ${duell.medianPst < 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>
+                        {duell.medianPst >= 0 ? "+" : ""}{duell.medianPst.toFixed(1).replace(".", ",")} %
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Spenn</p>
+                      <p className="font-semibold tabular-nums">
+                        {duell.minPst.toFixed(0)} % … {duell.maksPst >= 0 ? "+" : ""}{duell.maksPst.toFixed(0)} %
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Medianen brukes ved siden av snittet fordi ett skjevt anbud ellers drar
+                    tallet langt av gårde. Er spennet stort, priser de ulikt fra jobb til jobb —
+                    da er det verdt å se på hvilke typer jobber de går lavt på.
+                  </p>
+                </>
               )}
             </div>
           )}

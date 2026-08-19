@@ -27,6 +27,9 @@ function AnbudPage() {
   const [projectId, setProjectId] = useState("__none");
   const [bud, setBud] = useState<ParsedBid[]>([]);
   const [lagrer, setLagrer] = useState(false);
+  // Skrivemåten varierer mellom avsendere, så gjenkjenningen kan bomme.
+  // Da peker du selv ut hvilket bud som er deres.
+  const [manueltOss, setManueltOss] = useState<number | null>(null);
   const [q, setQ] = useState("");
 
   const { data: projects } = useQuery({
@@ -56,14 +59,17 @@ function AnbudPage() {
     setTekst(t);
     const r = parseAnbudsprotokoll(t);
     if (r.title) setTittel(r.title);
-    const eget = finnEgetBud(r.bids, appSettings?.company_name);
-    setBud(r.bids.map((b) => ({ ...b, ...(b === eget ? {} : {}) })));
+    setBud(r.bids);
+    setManueltOss(null);
     if (r.ignored.length) {
       toast.warning(`${r.ignored.length} linje(r) ble ikke forstått og er utelatt`);
     }
   };
 
-  const egetBud = useMemo(() => finnEgetBud(bud, appSettings?.company_name), [bud, appSettings]);
+  const egetBud = useMemo(
+    () => (manueltOss !== null ? bud[manueltOss] : finnEgetBud(bud, appSettings?.company_name)),
+    [bud, appSettings, manueltOss],
+  );
 
   const lagre = async () => {
     if (!tittel.trim()) { toast.error("Anbudet mangler navn"); return; }
@@ -217,7 +223,16 @@ function AnbudPage() {
                     <span className="w-32 text-right text-xs text-muted-foreground tabular-nums">
                       {i === 0 ? "laveste" : `+${nok(diff)}`}
                     </span>
-                    {oss && <span className="rounded bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">Oss</span>}
+                    <button
+                      type="button"
+                      onClick={() => setManueltOss(oss ? null : i)}
+                      title={oss ? "Fjern markeringen" : "Marker som vårt bud"}
+                      className={oss
+                        ? "rounded bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary"
+                        : "rounded px-2 py-0.5 text-xs font-semibold text-muted-foreground/40 transition-colors hover:text-foreground"}
+                    >
+                      Oss
+                    </button>
                   </div>
                 );
               })}

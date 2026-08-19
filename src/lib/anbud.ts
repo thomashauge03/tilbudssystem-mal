@@ -24,8 +24,10 @@ export interface ParsedProtocol {
 }
 
 // Beløpet står sist på linjen. Grupper på tre skilt med punktum eller mellomrom,
-// eventuelt et rent tall. ",-" og "kr" til slutt er valgfritt.
-const BELOP = /^(.*?)[\s:]+((?:\d{1,3}(?:[.\s]\d{3})+)|\d{4,})(?:[,.]-)?\s*(?:kr\.?)?\s*$/i;
+// eventuelt et rent tall. Avsenderne er ikke konsekvente: "kr" kan stå foran
+// eller bak beløpet, ",-" er valgfritt, og tusenskillet er punktum eller
+// mellomrom ("796 150" og "1.052.177" i samme innboks).
+const BELOP = /^(.*?)[\s:]*(?:kr\.?\s*)?((?:\d{1,3}(?:[.\s]\d{3})+)|\d{4,})(?:\s*[,.]-)?\s*(?:kr\.?)?\s*$/i;
 
 function tilTall(s: string): number {
   // Punktum og mellomrom er tusenskille her — alt annet enn siffer bort
@@ -56,7 +58,11 @@ export function parseAnbudsprotokoll(text: string): ParsedProtocol {
 
     const m = linje.match(BELOP);
     if (!m) {
-      ignored.push(linje);
+      // Overskriften brytes ofte over to linjer i SMS-en («… Farsund
+      // Kommune», «Støttemur Finsnes næringsbygg»). Alt som kommer før det
+      // første budet og ikke har beløp, hører til overskriften.
+      if (title && bids.length === 0) title = `${title} ${linje}`.trim();
+      else ignored.push(linje);
       continue;
     }
 
@@ -85,10 +91,26 @@ export function parseAnbudsprotokoll(text: string): ParsedProtocol {
 export function finnEgetBud(bids: ParsedBid[], firmanavn?: string | null): ParsedBid | undefined {
   const eget = normaliser(firmanavn);
   if (!eget) return undefined;
+  const initialer = forkorting(firmanavn);
+
   return bids.find((b) => {
     const n = normaliser(b.company);
-    return n === eget || n.startsWith(eget) || eget.startsWith(n);
+    if (!n) return false;
+    if (n === eget || n.startsWith(eget) || eget.startsWith(n)) return true;
+    // Noen protokoller forkorter: «HM» for Hauge Maskin. Godtas bare når
+    // forkortelsen er kort, ellers ville tilfeldige navn truffet.
+    return !!initialer && n === initialer && n.length <= 3;
   });
+}
+
+/** «Hauge Maskin AS» -> «hm» */
+function forkorting(s?: string | null) {
+  return String(s ?? "")
+    .split(/\s+/)
+    .filter((o) => o && !/^(as|asa|ans|da)$/i.test(o))
+    .map((o) => o[0])
+    .join("")
+    .toLowerCase();
 }
 
 function normaliser(s?: string | null) {

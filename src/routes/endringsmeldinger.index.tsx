@@ -9,7 +9,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Check, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 
 // Livssyklusen: en endring opprettes som "Krav om endring", og blir til
 // "Endringsmelding" i det kunden signerer. Verdiene lagres i databasen og
@@ -29,6 +29,15 @@ const STATUS_LABEL: Record<AmendmentStatus, string> = {
 // Rader fra før statusfeltet ble tatt i bruk regnes som krav om endring
 const statusOf = (a: any): AmendmentStatus =>
   a?.status === "endringsmelding" ? "endringsmelding" : "krav";
+
+/** Kort merke for endringstype — tre avhukingskolonner tok for mye bredde. */
+function Merke({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+      {children}
+    </span>
+  );
+}
 
 function StatusBadge({ status }: { status: AmendmentStatus }) {
   return (
@@ -116,7 +125,6 @@ function AmendmentsList() {
   ].join(" · ");
 
   const sumOf = (a: any) => (a.amendment_lines ?? []).reduce((s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
-  const tick = (on: boolean) => on ? <Check className="h-4 w-4 text-success" /> : <span className="text-muted-foreground/30">—</span>;
 
   return (
     <div className="space-y-6">
@@ -162,61 +170,79 @@ function AmendmentsList() {
         <table className="w-full">
           <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
             <tr>
-              <th className="px-4 py-3">Nr.</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Prosjekt</th>
-              <th className="px-4 py-3">Tilbud</th>
-              <th className="px-4 py-3">Kunde</th>
-              <th className="px-4 py-3">Beskrivelse</th>
-              <th className="px-4 py-3">Varslet</th>
-              <th className="px-4 py-3">Revidert</th>
-              <th className="px-4 py-3">Prosjektleder</th>
-              <th className="px-4 py-3 text-center">Masse</th>
-              <th className="px-4 py-3 text-center">Tillegg</th>
-              <th className="px-4 py-3 text-center">Pris↑</th>
-              <th className="px-4 py-3 text-right">Sum eks. mva</th>
-              <th className="px-4 py-3"></th>
+              {/* Tolv kolonner fikk aldri plass — beskrivelsen brakk i biter og
+                  tabellen måtte scrolles sidelengs. Prosjekt og tilbud er slått
+                  sammen, og de tre typene til én kolonne med korte merker. */}
+              <th className="whitespace-nowrap px-3 py-3">Nr.</th>
+              <th className="whitespace-nowrap px-3 py-3">Status</th>
+              <th className="px-3 py-3">Prosjekt / tilbud</th>
+              <th className="px-3 py-3">Kunde</th>
+              <th className="px-3 py-3">Beskrivelse</th>
+              <th className="whitespace-nowrap px-3 py-3">Varslet</th>
+              <th className="px-3 py-3">Type</th>
+              <th className="whitespace-nowrap px-3 py-3 text-right">Sum eks. mva</th>
+              <th className="w-10 px-2 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={14} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
+              <tr><td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Laster…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={14} className="px-4 py-12 text-center text-muted-foreground">Ingen endringer funnet.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Ingen endringer funnet.</td></tr>
             ) : rows.map((a: any, i: number) => (
               <tr key={a.id}
                 className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
                 onClick={() => navigate({ to: "/endringsmeldinger/$id", params: { id: a.id } })}>
-                <td className="px-4 py-3 tabular-nums text-sm text-primary">{a.amendment_number}</td>
-                <td className="px-4 py-3"><StatusBadge status={statusOf(a)} /></td>
-                <td className="px-4 py-3">{a.project_ref ?? "—"}</td>
-                <td className="px-4 py-3">
+                <td className="whitespace-nowrap px-3 py-3 tabular-nums text-sm text-primary">{a.amendment_number}</td>
+                <td className="px-3 py-3"><StatusBadge status={statusOf(a)} /></td>
+                <td className="px-3 py-3">
+                  <div className="tabular-nums">{a.project_ref ?? "—"}</div>
                   {a.offers ? (
                     // stopPropagation, ellers ville radklikket tatt over og ført
-                    // til endringsmeldingen i stedet for tilbudet
+                    // til endringen i stedet for tilbudet
                     <Link
                       to="/tilbud/$id"
                       params={{ id: a.offers.id }}
                       onClick={(e) => e.stopPropagation()}
-                      className="text-primary hover:underline"
-                      title={a.offers.customer_name ?? ""}
+                      className="block max-w-[15rem] truncate text-xs text-primary hover:underline"
+                      title={`#${a.offers.offer_number} ${a.offers.title}`}
                     >
                       #{a.offers.offer_number} {a.offers.title}
                     </Link>
                   ) : (
-                    <span className="text-muted-foreground/50">—</span>
+                    <span className="text-xs text-muted-foreground/50">uten tilbud</span>
                   )}
                 </td>
-                <td className="px-4 py-3">{a.offers?.customer_name ?? <span className="text-muted-foreground/50">—</span>}</td>
-                <td className="px-4 py-3">{a.internal_description ?? "—"}</td>
-                <td className="px-4 py-3 text-sm">{fmtDate(a.notified_date)}</td>
-                <td className="px-4 py-3 text-sm">{fmtDate(a.revised_date)}</td>
-                <td className="px-4 py-3 text-sm">{a.project_manager ?? "—"}</td>
-                <td className="px-4 py-3 text-center">{tick(a.is_mass_settlement)}</td>
-                <td className="px-4 py-3 text-center">{tick(a.is_additional_work)}</td>
-                <td className="px-4 py-3 text-center">{tick(a.is_price_increase)}</td>
-                <td className="px-4 py-3 text-right font-medium">{nok(sumOf(a))}</td>
-                <td className="px-4 py-3 text-right">
+                <td className="max-w-[11rem] truncate px-3 py-3" title={a.offers?.customer_name ?? ""}>
+                  {a.offers?.customer_name ?? <span className="text-muted-foreground/50">—</span>}
+                </td>
+                <td className="max-w-[14rem] truncate px-3 py-3" title={a.internal_description ?? ""}>
+                  {a.internal_description ?? "—"}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-sm">
+                  <div>{fmtDate(a.notified_date)}</div>
+                  {a.revised_date && (
+                    <div className="text-xs text-muted-foreground">rev. {fmtDate(a.revised_date)}</div>
+                  )}
+                  {a.project_manager && (
+                    <div className="max-w-[9rem] truncate text-xs text-muted-foreground" title={a.project_manager}>
+                      {a.project_manager}
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-3">
+                  {/* Tre avhukingskolonner tok mye bredde for lite informasjon */}
+                  <div className="flex flex-wrap gap-1">
+                    {a.is_mass_settlement && <Merke>Masse</Merke>}
+                    {a.is_additional_work && <Merke>Tillegg</Merke>}
+                    {a.is_price_increase && <Merke>Pris↑</Merke>}
+                    {!a.is_mass_settlement && !a.is_additional_work && !a.is_price_increase && (
+                      <span className="text-muted-foreground/30">—</span>
+                    )}
+                  </div>
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right font-medium">{nok(sumOf(a))}</td>
+                <td className="px-2 py-3 text-right">
                   {/* stopPropagation, ellers ville radklikket åpnet endringen i stedet */}
                   <button
                     onClick={(e) => {

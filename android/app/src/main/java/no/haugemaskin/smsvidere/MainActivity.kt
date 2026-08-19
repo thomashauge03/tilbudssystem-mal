@@ -47,8 +47,8 @@ class MainActivity : AppCompatActivity() {
         urlFelt = felt(rot, "Adresse", innst.url, InputType.TYPE_TEXT_VARIATION_URI)
         tokenFelt = felt(rot, "Nøkkel", innst.token, InputType.TYPE_CLASS_TEXT)
         // Vanlig tekstfelt, ikke telefonfelt: avsenderen er ofte et navn
-        // («HaugeMaskin»), og et telefonfelt gir talltastatur.
-        avsenderFelt = felt(rot, "Send bare fra denne avsenderen", innst.avsender, InputType.TYPE_CLASS_TEXT)
+        // (avsender-ID fra en tjeneste), og et telefonfelt gir talltastatur.
+        avsenderFelt = felt(rot, "Send bare fra denne avsenderen (navn eller nummer)", innst.avsender, InputType.TYPE_CLASS_TEXT)
         filterFelt = felt(rot, "…og som inneholder (valgfritt)", innst.filter, InputType.TYPE_CLASS_TEXT)
 
         rot.addView(Button(this).apply {
@@ -165,7 +165,7 @@ class Innstillinger(context: Context) {
      * utfylt fra første gang appen åpnes.
      */
     var avsender: String
-        get() = p.getString("avsender", "HaugeMaskin") ?: "HaugeMaskin"
+        get() = p.getString("avsender", "") ?: ""
         set(v) = p.edit().putString("avsender", v).apply()
 
     var filter: String

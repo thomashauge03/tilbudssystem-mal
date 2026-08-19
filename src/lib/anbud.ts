@@ -15,12 +15,24 @@ export interface ParsedBid {
   amount: number;
 }
 
+/** Overskriften varierer: «Anbudsprotokoll», «Anbudsåpning», med og uten kolon. */
+const OVERSKRIFT = /^\s*anbuds(protokoll|åpning|apning)\s*:?\s*/i;
+const ER_OVERSKRIFT = /anbuds(protokoll|åpning|apning)/i;
+
+/** Tilbydere som står oppført uten pris — avvist, for sent levert, trukket. */
+const UTELATT = /(avvist|avslag|avslått|forkastet|trukket|ikke levert|for sent|i tide|ikke godkjent)/i;
+
+/** Standardtekst avsenderen legger på, som ikke skal varsles om. */
+const STOY = /^(denne sms|sendt (via|fra)|mvh|hilsen|kan ikke besvares)/i;
+
 export interface ParsedProtocol {
   /** Overskriften uten ordet «Anbudsprotokoll» og uten kolon på slutten */
   title: string;
   bids: ParsedBid[];
   /** Linjer tolkeren ikke fikk noe ut av — vises så brukeren kan rette selv */
   ignored: string[];
+  /** Tilbydere uten pris: avvist, levert for sent, trukket. Teller ikke i analysen. */
+  disqualified: Array<{ company: string; note: string }>;
 }
 
 // Beløpet står sist på linjen. Grupper på tre skilt med punktum eller mellomrom,
@@ -44,13 +56,14 @@ export function parseAnbudsprotokoll(text: string): ParsedProtocol {
   let title = "";
   const bids: ParsedBid[] = [];
   const ignored: string[] = [];
+  const disqualified: Array<{ company: string; note: string }> = [];
 
   for (const linje of linjer) {
     // Overskriften: første linje som nevner anbudsprotokoll, eller aller første
     // linje dersom ingen gjør det.
-    if (!title && /anbudsprotokoll/i.test(linje)) {
+    if (!title && ER_OVERSKRIFT.test(linje)) {
       title = linje
-        .replace(/^\s*anbudsprotokoll\s*/i, "")
+        .replace(OVERSKRIFT, "")
         .replace(/[\s:]+$/, "")
         .trim();
       continue;
@@ -61,6 +74,15 @@ export function parseAnbudsprotokoll(text: string): ParsedProtocol {
       // Overskriften brytes ofte over to linjer i SMS-en («… Farsund
       // Kommune», «Støttemur Finsnes næringsbygg»). Alt som kommer før det
       // første budet og ikke har beløp, hører til overskriften.
+      // «Nomeland Anlegg - Leverte ikke i tide», «B.S.Graveservice AS-Avvist»:
+      // tilbyderen var med, men uten pris. Den skal registreres, ikke forsvinne.
+      if (UTELATT.test(linje)) {
+        const delt = linje.split(/\s*[-–—:]\s*/);
+        const navn = (delt.length > 1 ? delt.slice(0, -1).join(" ") : linje).replace(UTELATT, "").trim();
+        const grunn = (delt.length > 1 ? delt[delt.length - 1] : linje).trim();
+        if (navn) { disqualified.push({ company: navn.replace(/[\s-]+$/, ""), note: grunn }); continue; }
+      }
+      if (STOY.test(linje)) continue;
       if (title && bids.length === 0) title = `${title} ${linje}`.trim();
       else ignored.push(linje);
       continue;
@@ -81,7 +103,7 @@ export function parseAnbudsprotokoll(text: string): ParsedProtocol {
   // Laveste pris først — det er rekkefølgen protokollen normalt leses i
   bids.sort((a, b) => a.amount - b.amount);
 
-  return { title, bids, ignored };
+  return { title, bids, ignored, disqualified };
 }
 
 /**
@@ -135,7 +157,7 @@ export function splittProtokoller(text: string): string[] {
   let denne: string[] | null = null;
 
   for (const linje of linjer) {
-    if (/anbudsprotokoll/i.test(linje)) {
+    if (ER_OVERSKRIFT.test(linje)) {
       if (denne && denne.length) bolker.push(denne);
       denne = [linje];
     } else if (denne) {

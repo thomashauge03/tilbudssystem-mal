@@ -33,6 +33,7 @@ function AnbudPage() {
   // Skrivemåten varierer mellom avsendere, så gjenkjenningen kan bomme.
   // Da peker du selv ut hvilket bud som er deres.
   const [manueltOss, setManueltOss] = useState<number | null>(null);
+  const [utenPris, setUtenPris] = useState<Array<{ company: string; note: string }>>([]);
   const [q, setQ] = useState("");
 
   const { data: projects } = useQuery({
@@ -113,6 +114,7 @@ function AnbudPage() {
     const r = parseAnbudsprotokoll(t);
     if (r.title) setTittel(r.title);
     setBud(r.bids);
+    setUtenPris(r.disqualified);
     setManueltOss(null);
     if (r.ignored.length) {
       toast.warning(`${r.ignored.length} linje(r) ble ikke forstått og er utelatt`);
@@ -628,7 +630,7 @@ function AnbudPage() {
               rows={6}
               value={massetekst}
               onChange={(e) => tolkMasse(e.target.value)}
-              placeholder={"tirsdag 17. feb. • 16:56\nAnbudsprotokoll VA Skardhei\nHauge Maskin as 9.147.480,-\n…"}
+              placeholder={"tirsdag 17. feb. • 16:56\nAnbudsprotokoll Eksempelveien\nEntreprenør A AS 1.250.000,-\nEntreprenør B AS 1.480.000,-\n…"}
               className="font-mono text-xs"
             />
 
@@ -686,7 +688,7 @@ function AnbudPage() {
             rows={6}
             value={tekst}
             onChange={(e) => tolk(e.target.value)}
-            placeholder={"Anbudsprotokoll VVA Byremo :\nVasland Maskin 3.827.254\nHauge Maskin 4.478.662\n…"}
+            placeholder={"Anbudsprotokoll Eksempelveien :\nEntreprenør A AS 1.250.000\nEntreprenør B AS 1.480.000\nEntreprenør C AS 1.610.000"}
             className="font-mono text-sm"
           />
         </div>

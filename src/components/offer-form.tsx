@@ -842,7 +842,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                           placeholder="Kommentar (valgfritt)…"
                         />
                       </td>
-                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.quantity} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.quantity || ""} placeholder="0" onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2">
                         <Select
                           value={isCustomUnit ? "__annet__" : l.unit}
@@ -922,7 +922,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Antall</Label>
-                        <Input type="number" step="1" className="no-spinner" value={l.quantity} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input type="number" step="1" className="no-spinner" value={l.quantity || ""} placeholder="0" onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Enhet</Label>

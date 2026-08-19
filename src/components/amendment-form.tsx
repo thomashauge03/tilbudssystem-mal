@@ -298,6 +298,20 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
       setA((p) => ({ ...p, amendment_number: number, status: "krav" }));
     }
     if (lines.length) {
+      // En linje med beskrivelse og pris, men antall 0, er nesten alltid et
+      // uhell: antall-feltet markeres ved klikk, og ett tastetrykk tømmer det.
+      // Da ble 0 skrevet til basen uten et ord, og summen forsvant.
+      const mistenkelige = lines.filter(
+        (l) => l.description.trim() && Number(l.unit_price) > 0 && !Number(l.quantity),
+      );
+      if (mistenkelige.length) {
+        const liste = mistenkelige.map((l) => `• ${l.description}`).join("\n");
+        if (!window.confirm(
+          `${mistenkelige.length} linje(r) har pris, men antall 0 — summen blir da 0 kr:\n\n${liste}\n\n` +
+          `Er dette riktig? Trykk Avbryt for å fylle inn antall først.`,
+        )) return null;
+      }
+
       const ins = lines.map((l, idx) => ({
         amendment_id: id!,
         tenant_id: tenantId,
@@ -603,7 +617,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                         <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />
                       </td>
                       <td className="px-2 py-2"><Input value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} /></td>
-                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.quantity} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.quantity || ""} placeholder="0" onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2">
                         <Select
                           value={isCustomUnit ? "__annet__" : l.unit}
@@ -673,7 +687,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Antall</Label>
-                        <Input type="number" step="1" className="no-spinner" value={l.quantity} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input type="number" step="1" className="no-spinner" value={l.quantity || ""} placeholder="0" onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Enhet</Label>

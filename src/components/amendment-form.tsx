@@ -9,12 +9,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock } from "lucide-react";
 import { nok, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openAmendmentPdf } from "@/lib/pdf";
 import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
+import { Passordbekreftelse } from "@/components/passordbekreftelse";
 
 interface ALine { id?: string; sort_order: number; description: string; quantity: number; unit: string; unit_price: number; }
 interface AState {
@@ -26,8 +27,19 @@ interface AState {
   // Begge feltene ligger her slik at de overlever lagring og lasting av skjemaet.
   status?: string;
   customer_signed_at?: string | null;
+  // Hvordan kunden godkjente. digital = signert i appen; papir/muntlig/epost
+  // = registrert manuelt av oss, med begrunnelse.
+  signature_method?: string;
+  manual_approved_note?: string | null;
   attachment_urls?: Array<{ name: string; url: string }>;
 }
+
+/** Hvordan kunden godkjente, skrevet ut for dokumentet og skjermen. */
+const MAATE_TEKST: Record<string, string> = {
+  papir: "signert på papir",
+  muntlig: "muntlig godkjent",
+  epost: "bekreftet på e-post",
+};
 
 function empty(): AState {
   return {
@@ -232,6 +244,76 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
   const isSigned = !!a.customer_signed_at || a.status === "endringsmelding";
   const docLabel = isSigned ? "Endringsmelding" : "Krav om endring";
 
+  // En opplåsing som fortsatt gjelder. Leses fra basen, ikke bare fra minnet,
+  // så den overlever en oppfriskning av siden — ellers ville skjemaet sett låst
+  // ut mens databasen fortsatt slapp gjennom endringer.
+  const { data: apenOpplasing } = useQuery({
+    queryKey: ["opplasing", amendmentId],
+    enabled: isEdit && isSigned,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("signature_unlocks")
+        .select("expires_at")
+        .eq("parent_type", "amendments")
+        .eq("parent_id", amendmentId!)
+        .is("closed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("expires_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return (data as any)?.expires_at ?? null;
+    },
+  });
+
+  const [laastOppTil, setLaastOppTil] = useState<string | null>(null);
+  const laastOpp = laastOppTil ?? apenOpplasing ?? null;
+  /** Signert OG ikke låst opp = ingenting kan endres. */
+  const laast = isSigned && !laastOpp;
+
+  const [godkjennApen, setGodkjennApen] = useState(false);
+  const [lasOppApen, setLasOppApen] = useState(false);
+
+  const lasOpp = async (grunn: string) => {
+    const { data, error } = await supabase.rpc("las_opp_signert", {
+      p_type: "amendments", p_id: amendmentId, p_grunn: grunn,
+    });
+    if (error) { toast.error(error.message); throw error; }
+    setLaastOppTil(data as string);
+    qc.invalidateQueries({ queryKey: ["opplasing", amendmentId] });
+    toast.success("Låst opp — husk å sende meldingen på nytt hvis tallene endres");
+  };
+
+  const lasIgjen = async () => {
+    const { error } = await supabase.rpc("las_igjen_signert", {
+      p_type: "amendments", p_id: amendmentId,
+    });
+    if (error) { toast.error(error.message); return; }
+    setLaastOppTil(null);
+    qc.invalidateQueries({ queryKey: ["opplasing", amendmentId] });
+  };
+
+  const godkjennManuelt = async (maate: string, grunn: string) => {
+    // Lagre først. Godkjenningen låser linjene i samme øyeblikk, så alt som
+    // ligger ulagret i skjemaet ville vært umulig å få inn etterpå.
+    const id = await save();
+    if (!id) return;
+
+    const { error } = await supabase
+      .from("amendments")
+      .update({
+        customer_signed_at: new Date().toISOString(),
+        signature_method: maate,
+        manual_approved_note: grunn,
+      })
+      .eq("id", id);
+    if (error) { toast.error(error.message); throw error; }
+    // Trigger i basen setter status til 'endringsmelding' og stempler hvem det var
+    setA((p) => ({ ...p, customer_signed_at: new Date().toISOString(), status: "endringsmelding",
+      signature_method: maate, manual_approved_note: grunn } as any));
+    qc.invalidateQueries({ queryKey: ["amendment", amendmentId] });
+    toast.success("Registrert som godkjent av kunden");
+  };
+
   const pickProject = (id: string) => {
     userEditedRef.current = true;
     if (id === "__none") { setA((p) => ({ ...p, project_id: null, project_ref: "" })); return; }
@@ -338,7 +420,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
       // endres. Skrev vi dem likevel, avviste låsen både slettingen og
       // innsettingen, og save() returnerte null — da stoppet PDF, e-post og
       // lagring av overskriftsfeltene også, siden alt går gjennom save().
-      if (!isSigned) {
+      if (!laast) {
         // Linjene skrives som slett-og-sett-inn. Går slettingen galt uten at vi
         // merker det, legges linjene inn dobbelt; går innsettingen galt etterpå,
         // er linjene borte i basen mens skjermen fortsatt viser dem.
@@ -354,7 +436,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     }
     // Er meldingen signert, står linjene urørt — de er alt skrevet, låst, og
     // vises uendret i PDF-en og i e-posten.
-    if (!isSigned && lines.length) {
+    if (!laast && lines.length) {
       // En linje som er beskrevet, men summerer til 0, er nesten alltid et
       // uhell. Både antall og pris markeres ved klikk, så ett tastetrykk tømmer
       // feltet — og Number("") er 0. Da ble 0 skrevet til basen uten et ord.
@@ -572,6 +654,18 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
               <Link2 className="mr-2 h-4 w-4" />Signeringslenke
             </Button>
           )}
+          {/* Kunden signerer ofte på papir, eller sier bare ja i et møte. Da må
+              det finnes en vei inn som ikke later som om signaturen var digital. */}
+          {isEdit && !isSigned && (
+            <Button variant="outline" onClick={() => setGodkjennApen(true)} title="Registrer at kunden har godkjent uten å signere digitalt">
+              <ShieldCheck className="mr-2 h-4 w-4" />Godkjenn manuelt
+            </Button>
+          )}
+          {isEdit && isSigned && !laastOpp && (
+            <Button variant="outline" onClick={() => setLasOppApen(true)} title="Lås opp for å endre linjer og priser">
+              <Unlock className="mr-2 h-4 w-4" />Lås opp for endring
+            </Button>
+          )}
           {isEdit && isSigned && (
             <Button variant="outline" onClick={handleResetSignature} className="text-destructive border-destructive/50 hover:bg-destructive/10" title="Nullstill kundesignatur">
               <RotateCcw className="mr-2 h-4 w-4" />Nullstill signatur
@@ -588,12 +682,36 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
           <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-600" />
           <div className="text-sm">
             <div className="font-semibold text-green-700 dark:text-green-500">
-              Signert av kunden{a.customer_signed_at ? ` ${fmtDate(a.customer_signed_at)}` : ""}
+              {a.signature_method && a.signature_method !== "digital"
+                ? `Godkjent av kunden${a.customer_signed_at ? ` ${fmtDate(a.customer_signed_at)}` : ""} — ${MAATE_TEKST[a.signature_method] ?? a.signature_method}`
+                : `Signert av kunden${a.customer_signed_at ? ` ${fmtDate(a.customer_signed_at)}` : ""}`}
             </div>
             <div className="text-muted-foreground">
               Kravet om endring er nå en endringsmelding.
             </div>
+            {/* Er den godkjent uten digital signatur, er begrunnelsen det eneste
+                som forklarer hvor dokumentasjonen ligger. Da skal den stå her,
+                ikke bare i en tabell ingen åpner. */}
+            {a.manual_approved_note && (
+              <div className="mt-1 text-muted-foreground">«{a.manual_approved_note}»</div>
+            )}
           </div>
+        </div>
+      )}
+
+      {laastOpp && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/50 bg-amber-500/10 p-4">
+          <Unlock className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+          <div className="flex-1 text-sm">
+            <div className="font-semibold text-amber-800 dark:text-amber-300">
+              Låst opp for endring til {new Date(laastOpp).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" })}
+            </div>
+            <div className="text-muted-foreground">
+              Kunden har signert på disse tallene. Endrer du dem, gjelder ikke lenger det
+              kunden skrev under på — send meldingen på nytt etterpå. Alle endringer arkiveres.
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={lasIgjen}>Lås igjen</Button>
         </div>
       )}
 
@@ -679,7 +797,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
               {/* Linjene er låst i databasen etter signering. Uten dette kunne
                   man skrive i feltene og få «lagret» tilbake, mens tallene i
                   basen sto igjen uendret. */}
-              {isSigned ? (
+              {laast ? (
                 <span className="text-xs text-muted-foreground">Låst — linjene kan ikke endres etter at kunden har signert</span>
               ) : (
                 <Button size="sm" variant="outline" onClick={addLine}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
@@ -711,19 +829,19 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                     >
                       <td
                         className="px-1 pt-3.5"
-                        draggable={!isSigned}
+                        draggable={!laast}
                         onDragStart={() => setDragIndex(i)}
                         onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
-                        title={isSigned ? "" : "Dra for å flytte linjen"}
+                        title={laast ? "" : "Dra for å flytte linjen"}
                       >
-                        {!isSigned && <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />}
+                        {!laast && <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />}
                       </td>
-                      <td className="px-2 py-2"><Input value={l.description} readOnly={isSigned} onChange={(e) => updLine(i, { description: e.target.value })} /></td>
-                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.quantity || ""} placeholder="0" readOnly={isSigned} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input value={l.description} readOnly={laast} onChange={(e) => updLine(i, { description: e.target.value })} /></td>
+                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.quantity || ""} placeholder="0" readOnly={laast} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2">
                         <Select
                           value={isCustomUnit ? "__annet__" : l.unit}
-                          disabled={isSigned}
+                          disabled={laast}
                           onValueChange={(v) => updLine(i, { unit: v === "__annet__" ? "" : v })}
                         >
                           <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -737,16 +855,16 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                             className="mt-1 h-8 text-sm"
                             placeholder="Skriv enhet…"
                             value={l.unit}
-                            readOnly={isSigned}
+                            readOnly={laast}
                             onChange={(e) => updLine(i, { unit: e.target.value })}
                             autoFocus
                           />
                         )}
                       </td>
-                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" readOnly={isSigned} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" readOnly={laast} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2 text-right font-medium">{nok(Number(l.quantity || 0) * Number(l.unit_price || 0))}</td>
                       <td className="px-1 py-2">
-                        {!isSigned && (
+                        {!laast && (
                           <div className="flex items-center justify-end gap-0.5">
                             <div className="flex flex-col">
                               <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
@@ -776,7 +894,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                   <div key={i} className="space-y-3 rounded-lg border p-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Linje {i + 1}</span>
-                      {!isSigned && (
+                      {!laast && (
                         <div className="flex items-center gap-0.5">
                           <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
                             <ArrowUp className="h-4 w-4" />
@@ -790,16 +908,16 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Beskrivelse</Label>
-                      <Input value={l.description} readOnly={isSigned} onChange={(e) => updLine(i, { description: e.target.value })} />
+                      <Input value={l.description} readOnly={laast} onChange={(e) => updLine(i, { description: e.target.value })} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Antall</Label>
-                        <Input type="number" step="1" className="no-spinner" value={l.quantity || ""} placeholder="0" readOnly={isSigned} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input type="number" step="1" className="no-spinner" value={l.quantity || ""} placeholder="0" readOnly={laast} onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Enhet</Label>
-                        <Select value={isCustomUnit ? "__annet__" : l.unit} disabled={isSigned} onValueChange={(v) => updLine(i, { unit: v === "__annet__" ? "" : v })}>
+                        <Select value={isCustomUnit ? "__annet__" : l.unit} disabled={laast} onValueChange={(v) => updLine(i, { unit: v === "__annet__" ? "" : v })}>
                           <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {units.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
@@ -807,12 +925,12 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
                           </SelectContent>
                         </Select>
                         {isCustomUnit && (
-                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv enhet…" value={l.unit} readOnly={isSigned} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
+                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv enhet…" value={l.unit} readOnly={laast} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
                         )}
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Pris/enhet</Label>
-                        <Input type="number" step="1" className="no-spinner" value={l.unit_price || ""} placeholder="0" readOnly={isSigned} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input type="number" step="1" className="no-spinner" value={l.unit_price || ""} placeholder="0" readOnly={laast} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Sum</Label>
@@ -839,12 +957,44 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
             <span className="font-bold text-primary">{nok(subtotal)}</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {!isSigned && <Button variant="outline" onClick={addLine}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>}
+            {!laast && <Button variant="outline" onClick={addLine}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>}
             <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF</Button>
             <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre</Button>
           </div>
         </div>
       </div>
+
+      <Passordbekreftelse
+        open={godkjennApen}
+        onOpenChange={setGodkjennApen}
+        tittel="Godkjenn uten digital signatur"
+        forklaring={`Kravet blir en endringsmelding, som om kunden hadde signert i appen. Det blir stående hvem hos oss som registrerte det, og hvorfor.`}
+        knapp="Registrer godkjenning"
+        valg={{
+          etikett: "Hvordan godkjente kunden?",
+          alternativer: [
+            { verdi: "papir", tekst: "Signerte på papir" },
+            { verdi: "muntlig", tekst: "Muntlig — møte eller telefon" },
+            { verdi: "epost", tekst: "Bekreftet på e-post" },
+          ],
+        }}
+        krevGrunn
+        grunnEtikett="Begrunnelse"
+        grunnHjelp="Skriv hvor dokumentasjonen finnes. Er det papir eller e-post, legg den ved som vedlegg."
+        onBekreftet={(grunn, maate) => godkjennManuelt(maate, grunn)}
+      />
+
+      <Passordbekreftelse
+        open={lasOppApen}
+        onOpenChange={setLasOppApen}
+        tittel="Lås opp for endring"
+        forklaring="Kunden har signert på tallene som står her nå. Endrer du dem, gjelder ikke lenger det kunden skrev under på — da må meldingen sendes på nytt. Opplåsingen varer i 30 minutter."
+        knapp="Lås opp"
+        krevGrunn
+        grunnEtikett="Hva skal rettes?"
+        grunnHjelp="Blir stående sammen med hvem som låste opp og når."
+        onBekreftet={(grunn) => lasOpp(grunn)}
+      />
     </div>
   );
 }

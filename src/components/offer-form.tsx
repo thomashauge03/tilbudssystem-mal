@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, amendmentTotal, UNITS as FALLBACK_UNITS } from "@/lib/format";
@@ -18,6 +18,7 @@ import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
+import { Passordbekreftelse } from "@/components/passordbekreftelse";
 
 interface Line {
   id?: string;
@@ -50,6 +51,13 @@ interface OfferState {
   status?: string;
   attachment_urls: Array<{ name: string; url: string }>;
 }
+
+/** Hvordan kunden godkjente, skrevet ut for skjermen. */
+const MAATE_TEKST: Record<string, string> = {
+  papir: "signert på papir",
+  muntlig: "muntlig godkjent",
+  epost: "bekreftet på e-post",
+};
 
 function emptyOffer(adminPct: number, validityDays: number, defaultRef: string, defaultText = ""): OfferState {
   const today = new Date();
@@ -388,6 +396,74 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // Er tilbudet alt signert, skal ingen ny signeringslenke ut — den ville latt
   // kunden signere en gang til og overskrive signaturen som ligger der.
   const isSigned = !!(loaded?.offer as any)?.customer_signed_at;
+  const signaturMaate = (loaded?.offer as any)?.signature_method ?? "digital";
+  const godkjenningsNotat = (loaded?.offer as any)?.manual_approved_note ?? "";
+
+  // Prisene kunden har signert på skal ikke kunne endres ved et uhell. De kan
+  // endres — men da som en bevisst handling som blir stående i loggen.
+  const { data: apenOpplasing } = useQuery({
+    queryKey: ["opplasing", offerId],
+    enabled: isEdit && isSigned,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("signature_unlocks")
+        .select("expires_at")
+        .eq("parent_type", "offers")
+        .eq("parent_id", offerId!)
+        .is("closed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("expires_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return (data as any)?.expires_at ?? null;
+    },
+  });
+
+  const [laastOppTil, setLaastOppTil] = useState<string | null>(null);
+  const laastOpp = laastOppTil ?? apenOpplasing ?? null;
+  /** Signert OG ikke låst opp = linjene kan ikke røres. */
+  const laast = isSigned && !laastOpp;
+
+  const [godkjennApen, setGodkjennApen] = useState(false);
+  const [lasOppApen, setLasOppApen] = useState(false);
+
+  const lasOpp = async (grunn: string) => {
+    const { data, error } = await supabase.rpc("las_opp_signert", {
+      p_type: "offers", p_id: offerId, p_grunn: grunn,
+    });
+    if (error) { toast.error(error.message); throw error; }
+    setLaastOppTil(data as string);
+    qc.invalidateQueries({ queryKey: ["opplasing", offerId] });
+    toast.success("Låst opp — send tilbudet på nytt hvis prisene endres");
+  };
+
+  const lasIgjen = async () => {
+    const { error } = await supabase.rpc("las_igjen_signert", { p_type: "offers", p_id: offerId });
+    if (error) { toast.error(error.message); return; }
+    setLaastOppTil(null);
+    qc.invalidateQueries({ queryKey: ["opplasing", offerId] });
+  };
+
+  const godkjennManuelt = async (maate: string, grunn: string) => {
+    // Lagre først. Godkjenningen låser prislinjene i samme øyeblikk, så alt som
+    // ligger ulagret i skjemaet ville vært umulig å få inn etterpå.
+    const id = await save();
+    if (!id) return;
+
+    const { error } = await supabase
+      .from("offers")
+      .update({
+        customer_signed_at: new Date().toISOString(),
+        signature_method: maate,
+        manual_approved_note: grunn,
+      } as any)
+      .eq("id", id);
+    if (error) { toast.error(error.message); throw error; }
+    // Trigger i basen setter status til 'godkjent' og stempler hvem det var
+    setOffer((p) => ({ ...p, status: "godkjent" }));
+    qc.invalidateQueries({ queryKey: ["offer", offerId] });
+    toast.success("Registrert som godkjent av kunden");
+  };
 
   // Hvert klikk lagde tidligere et nytt token. Et ubrukt token gjenbrukes, slik
   // at lenker man alt har sendt ut fortsatt peker på det samme tilbudet.
@@ -617,6 +693,18 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               <Link2 className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Signeringslenke"}
             </Button>
           )}
+          {/* Kunden signerer ofte på papir, eller sier bare ja i et møte. Da må
+              det finnes en vei inn som ikke later som om signaturen var digital. */}
+          {isEdit && !isSigned && (
+            <Button variant="outline" onClick={() => setGodkjennApen(true)} disabled={saving} title="Registrer at kunden har godkjent uten å signere digitalt">
+              <ShieldCheck className="mr-2 h-4 w-4" />Godkjenn manuelt
+            </Button>
+          )}
+          {isEdit && isSigned && !laastOpp && (
+            <Button variant="outline" onClick={() => setLasOppApen(true)} disabled={saving} title="Lås opp for å endre linjer og priser">
+              <Unlock className="mr-2 h-4 w-4" />Lås opp for endring
+            </Button>
+          )}
           {isEdit && isSigned && (
             <Button variant="outline" onClick={handleResetSignature} disabled={saving} className="text-destructive border-destructive/50 hover:bg-destructive/10" title="Nullstill kundesignatur">
               <RotateCcw className="mr-2 h-4 w-4" />Nullstill signatur
@@ -627,6 +715,36 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           <Button onClick={handleSave} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Lagre tilbud"}</Button>
         </div>
       </div>
+
+      {/* Godkjent uten digital signatur: da er begrunnelsen det eneste som sier
+          hvor papiret eller e-posten ligger, så den hører hjemme øverst. */}
+      {isSigned && signaturMaate !== "digital" && (
+        <div className="flex items-start gap-3 rounded-xl border border-green-600/40 bg-green-600/10 p-4">
+          <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-600" />
+          <div className="text-sm">
+            <div className="font-semibold text-green-700 dark:text-green-500">
+              Godkjent av kunden — {MAATE_TEKST[signaturMaate] ?? signaturMaate}
+            </div>
+            {godkjenningsNotat && <div className="text-muted-foreground">«{godkjenningsNotat}»</div>}
+          </div>
+        </div>
+      )}
+
+      {laastOpp && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/50 bg-amber-500/10 p-4">
+          <Unlock className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+          <div className="flex-1 text-sm">
+            <div className="font-semibold text-amber-800 dark:text-amber-300">
+              Låst opp for endring til {new Date(laastOpp).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" })}
+            </div>
+            <div className="text-muted-foreground">
+              Kunden har signert på prisene som står her. Endrer du dem, gjelder ikke lenger
+              det kunden skrev under på — send tilbudet på nytt etterpå. Alle endringer arkiveres.
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={lasIgjen}>Lås igjen</Button>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         {/* Left: meta */}
@@ -847,7 +965,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           <div className="rounded-xl border bg-card p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tilbudslinjer</h2>
-              <Button size="sm" variant="outline" onClick={addLine}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
+              <Button size="sm" variant="outline" onClick={addLine} disabled={laast}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
             </div>
             <table className="hidden w-full text-sm md:table">
               <thead className="border-b text-xs uppercase tracking-wider text-muted-foreground">
@@ -877,7 +995,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                     >
                       <td
                         className="px-1 pt-3.5"
-                        draggable
+                        draggable={!laast}
                         onDragStart={() => setDragIndex(i)}
                         onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
                         title="Dra for å flytte linjen"
@@ -886,7 +1004,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                       </td>
                       <td className="px-1 pt-3"><Checkbox checked={l.included} onCheckedChange={(v) => updLine(i, { included: !!v })} /></td>
                       <td className="px-2 py-2">
-                        <Input value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} placeholder="Beskrivelse" />
+                        <Input readOnly={laast} value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} placeholder="Beskrivelse" />
                         <Input
                           className="mt-1 h-8 text-xs text-muted-foreground"
                           value={l.comment}
@@ -894,9 +1012,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                           placeholder="Kommentar (valgfritt)…"
                         />
                       </td>
-                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.quantity || ""} placeholder="0" onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input readOnly={laast} type="number" step="1" className="text-right no-spinner" value={l.quantity || ""} placeholder="0" onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2">
                         <Select
+                          disabled={laast}
                           value={isCustomUnit ? "__annet__" : l.unit}
                           onValueChange={(v) => updLine(i, { unit: v === "__annet__" ? "" : v })}
                         >
@@ -916,8 +1035,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                           />
                         )}
                       </td>
-                      <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
-                      <td className="px-2 py-2"><Input type="number" step="0.1" min="0" max="100" className="text-right no-spinner" value={l.discount_pct || ""} placeholder="0" onChange={(e) => updLine(i, { discount_pct: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input readOnly={laast} type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
+                      <td className="px-2 py-2"><Input readOnly={laast} type="number" step="0.1" min="0" max="100" className="text-right no-spinner" value={l.discount_pct || ""} placeholder="0" onChange={(e) => updLine(i, { discount_pct: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2 text-right font-medium">
                         {nok(lineNet(l))}
                         {Number(l.discount_pct) > 0 && (
@@ -968,17 +1087,17 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Beskrivelse</Label>
-                      <Input value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} placeholder="Beskrivelse" />
-                      <Input className="h-8 text-xs text-muted-foreground" value={l.comment} onChange={(e) => updLine(i, { comment: e.target.value })} placeholder="Kommentar (valgfritt)…" />
+                      <Input readOnly={laast} value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} placeholder="Beskrivelse" />
+                      <Input readOnly={laast} className="h-8 text-xs text-muted-foreground" value={l.comment} onChange={(e) => updLine(i, { comment: e.target.value })} placeholder="Kommentar (valgfritt)…" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Antall</Label>
-                        <Input type="number" step="1" className="no-spinner" value={l.quantity || ""} placeholder="0" onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input readOnly={laast} type="number" step="1" className="no-spinner" value={l.quantity || ""} placeholder="0" onChange={(e) => updLine(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Enhet</Label>
-                        <Select value={isCustomUnit ? "__annet__" : l.unit} onValueChange={(v) => updLine(i, { unit: v === "__annet__" ? "" : v })}>
+                        <Select disabled={laast} value={isCustomUnit ? "__annet__" : l.unit} onValueChange={(v) => updLine(i, { unit: v === "__annet__" ? "" : v })}>
                           <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {units.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
@@ -986,16 +1105,16 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                           </SelectContent>
                         </Select>
                         {isCustomUnit && (
-                          <Input className="mt-1 h-8 text-sm" placeholder="Skriv enhet…" value={l.unit} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
+                          <Input readOnly={laast} className="mt-1 h-8 text-sm" placeholder="Skriv enhet…" value={l.unit} onChange={(e) => updLine(i, { unit: e.target.value })} autoFocus />
                         )}
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Pris/enhet</Label>
-                        <Input type="number" step="1" className="no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input readOnly={laast} type="number" step="1" className="no-spinner" value={l.unit_price || ""} placeholder="0" onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Rabatt %</Label>
-                        <Input type="number" step="0.1" min="0" max="100" className="no-spinner" value={l.discount_pct || ""} placeholder="0" onChange={(e) => updLine(i, { discount_pct: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+                        <Input readOnly={laast} type="number" step="0.1" min="0" max="100" className="no-spinner" value={l.discount_pct || ""} placeholder="0" onChange={(e) => updLine(i, { discount_pct: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
                       </div>
                     </div>
                     <div className="flex justify-between border-t pt-2 text-sm">
@@ -1071,12 +1190,44 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <span className="font-bold text-primary">{nok(total)}</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={addLine}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>
+            <Button variant="outline" onClick={addLine} disabled={laast}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>
             <Button variant="outline" onClick={handlePdf} disabled={saving}><FileDown className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Last ned PDF"}</Button>
             <Button onClick={handleSave} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Lagre tilbud"}</Button>
           </div>
         </div>
       </div>
+
+      <Passordbekreftelse
+        open={godkjennApen}
+        onOpenChange={setGodkjennApen}
+        tittel="Godkjenn uten digital signatur"
+        forklaring="Tilbudet blir godkjent, som om kunden hadde signert i appen. Det blir stående hvem hos oss som registrerte det, og hvorfor."
+        knapp="Registrer godkjenning"
+        valg={{
+          etikett: "Hvordan godkjente kunden?",
+          alternativer: [
+            { verdi: "papir", tekst: "Signerte på papir" },
+            { verdi: "muntlig", tekst: "Muntlig — møte eller telefon" },
+            { verdi: "epost", tekst: "Bekreftet på e-post" },
+          ],
+        }}
+        krevGrunn
+        grunnEtikett="Begrunnelse"
+        grunnHjelp="Skriv hvor dokumentasjonen finnes. Er det papir eller e-post, legg den ved som vedlegg."
+        onBekreftet={(grunn, maate) => godkjennManuelt(maate, grunn)}
+      />
+
+      <Passordbekreftelse
+        open={lasOppApen}
+        onOpenChange={setLasOppApen}
+        tittel="Lås opp for endring"
+        forklaring="Kunden har signert på prisene som står her nå. Endrer du dem, gjelder ikke lenger det kunden skrev under på — da må tilbudet sendes på nytt. Opplåsingen varer i 30 minutter."
+        knapp="Lås opp"
+        krevGrunn
+        grunnEtikett="Hva skal rettes?"
+        grunnHjelp="Blir stående sammen med hvem som låste opp og når."
+        onBekreftet={(grunn) => lasOpp(grunn)}
+      />
     </div>
   );
 }

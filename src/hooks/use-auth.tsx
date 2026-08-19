@@ -41,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // C2: cancel flag prevents stale async results from applying after unmount/sign-out
   const cancelRef = useRef(false);
+  /** Hvem rollen sist ble hentet for — se den stille grenen i fetchRole. */
+  const sisteBrukerRef = useRef<string | null>(null);
 
   const qc = useQueryClient();
 
@@ -61,8 +63,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const fetchRole = async (userId: string) => {
-    setRoleLoading(true);
+  /**
+   * @param stille Hent rollen uten å slå på roleLoading.
+   *
+   * Rota bytter hele siden ut med en lasteskjerm så lenge roleLoading er sann,
+   * og det unmonterer alt som står i et skjema. onAuthStateChange fyrer ikke
+   * bare ved innlogging: den fyrer også når tokenet fornyes, og når passordet
+   * kontrolleres på nytt før en låst endring. Uten denne skilnaden ville et
+   * halvferdig tilbud blitt kastet midt i arbeidet, uten at noe forklarte hvorfor.
+   */
+  const fetchRole = async (userId: string, stille = false) => {
+    if (!stille) setRoleLoading(true);
     setAuthError(null);
     try {
       const { data, error } = await supabase
@@ -108,8 +119,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(s?.user ?? null);
 
       if (s?.user) {
-        fetchRole(s.user.id);
+        // Samme bruker som sist betyr at rollen alt er lastet. Da hentes den
+        // på nytt i bakgrunnen, uten å blokkere skjermen.
+        const samme = sisteBrukerRef.current === s.user.id;
+        sisteBrukerRef.current = s.user.id;
+        fetchRole(s.user.id, samme);
       } else {
+        sisteBrukerRef.current = null;
         setRole(null);
         setTenantId(null);
         setBranding(null);

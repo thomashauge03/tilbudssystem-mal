@@ -411,6 +411,21 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     if (!id) return;
     // Referansen som hører til prosjektlederen — samme oppslag som tilbudet gjør
     const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === a.project_manager);
+    // Kundens signaturbilde ligger på tokenet han signerte med, ikke på selve
+    // meldingen. Samme oppslag som kontrakten gjør. Feiler det, skal PDF-en
+    // likevel komme — da står datolinjen alene, som før.
+    let kundesignatur = "";
+    if (a.customer_signed_at) {
+      const { data: tok } = await supabase
+        .from("amendment_signing_tokens")
+        .select("signer_signature, used_at")
+        .eq("amendment_id", id)
+        .not("used_at", "is", null)
+        .order("used_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      kundesignatur = (tok as any)?.signer_signature ?? "";
+    }
     openAmendmentPdf(
       {
         amendment_number: a.amendment_number || currentNumberRef.current,
@@ -431,6 +446,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
         is_price_increase: a.is_price_increase,
         status: a.status,
         customer_signed_at: a.customer_signed_at,
+        customer_signature: kundesignatur,
       },
       lines.map((l) => ({
         description: l.description,

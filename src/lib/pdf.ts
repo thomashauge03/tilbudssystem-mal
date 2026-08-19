@@ -1484,6 +1484,8 @@ interface AmendmentPdfData {
   is_price_increase: boolean;
   status?: string;
   customer_signed_at?: string | null;
+  /** Kundens signaturbilde som base64 dataURL — se safeImageSrc */
+  customer_signature?: string | null;
 }
 
 interface AmendmentLine {
@@ -1530,6 +1532,9 @@ export function openAmendmentPdf(
   // Ingen fallback til /logo.png — se kommentaren i openOfferPdf
   const logoUrl = escapeHtml(settings.logo_url || "");
   const refSignatureSrc = safeImageSrc(settings.ref_signature);
+  // Kunden er uinnlogget når han signerer, så bildet er tegnet utenfor vår
+  // kontroll og må gjennom samme kontroll som i kontrakten.
+  const customerSignatureSrc = safeImageSrc(amendment.customer_signature);
 
   // Statusen 'endringsmelding' betyr at kravet er sendt som formell melding.
   // Alt annet (bl.a. 'krav') er fortsatt et krav om endring.
@@ -1651,7 +1656,10 @@ export function openAmendmentPdf(
       <div class="stamp">
         <p class="stamp-label">For kunden</p>
         ${amendment.customer_signed_at
-          ? `<div class="signed">Signert digitalt av kunden ${fmtDate(amendment.customer_signed_at)}</div>`
+          ? `${customerSignatureSrc
+              ? `<img src="${customerSignatureSrc}" alt="Kundens signatur" class="sig-img" />`
+              : ""}
+             <div class="signed">Signert digitalt av kunden ${fmtDate(amendment.customer_signed_at)}</div>`
           : `<div class="line">Signatur / dato</div>`}
       </div>
     </div>`;

@@ -1,8 +1,8 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate, offerTotal, OFFER_WON_STATUSES } from "@/lib/format";
+import { nok, fmtDate, offerTotal, amendmentTotal, OFFER_WON_STATUSES } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Search, CheckCircle2, Circle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -83,25 +83,65 @@ function OrdrePage() {
     },
   });
 
-  const sumOf = (o: any) => offerTotal(o.offer_lines, o.admin_cost_pct);
+  // Endringsmeldinger er arbeid som skal utføres, og hører derfor med i
+  // ordreverdien. Krav om endring gjør det ikke: kunden har ikke godtatt dem
+  // ennå, og tas de med, viser ordreboken arbeid ingen har bestilt. Begge
+  // hentes, men de holdes fra hverandre.
+  const { data: endringer } = useQuery({
+    queryKey: ["ordre-endringer"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("amendments")
+        .select("id, offer_id, amendment_number, status, customer_signed_at, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)")
+        .not("offer_id", "is", null);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  /** Endringene som hører til ett tilbud, delt i avtalt og foreslått. */
+  const endringerFor = (offerId: string) => {
+    const mine = (endringer ?? []).filter((e: any) => e.offer_id === offerId);
+    const erSignert = (e: any) => !!e.customer_signed_at || e.status === "endringsmelding";
+    const signert = mine.filter(erSignert);
+    const krav = mine.filter((e: any) => !erSignert(e));
+    return {
+      antall: signert.length,
+      sum: signert.reduce((s: number, e: any) => s + amendmentTotal(e.amendment_lines), 0),
+      fakturert: signert.reduce((s: number, e: any) => s + Number(e.invoiced_amount ?? 0), 0),
+      kravAntall: krav.length,
+      kravSum: krav.reduce((s: number, e: any) => s + amendmentTotal(e.amendment_lines), 0),
+    };
+  };
+
+  const sumOf = (o: any) => offerTotal(o.offer_lines, o.admin_cost_pct) + endringerFor(o.id).sum;
+  const fakturertOf = (o: any) => Number(o.invoiced_amount ?? 0) + endringerFor(o.id).fakturert;
 
   const rows = (data ?? []).filter((o: any) => {
     if (!q) return true;
     const t = q.toLowerCase();
-    return [o.title, o.customer_name, String(o.offer_number)].some((s) => (s ?? "").toLowerCase().includes(t));
+    // Endringsnummeret er ofte det man husker («2026163-4»), så det søkes det i også
+    const endringsnr = (endringer ?? [])
+      .filter((e: any) => e.offer_id === o.id)
+      .map((e: any) => e.amendment_number);
+    return [o.title, o.customer_name, String(o.offer_number), ...endringsnr]
+      .some((s) => (s ?? "").toLowerCase().includes(t));
   });
 
   const today = new Date().toISOString().slice(0, 10);
 
   const totals = rows.reduce(
     (acc: any, o: any) => {
-      const total = sumOf(o);
-      const inv = Number(o.invoiced_amount ?? 0);
-      acc.total += total;
-      acc.invoiced += inv;
+      acc.total += sumOf(o);
+      acc.invoiced += fakturertOf(o);
+      const e = endringerFor(o.id);
+      acc.endringer += e.sum;
+      acc.endringerAntall += e.antall;
+      acc.krav += e.kravSum;
+      acc.kravAntall += e.kravAntall;
       return acc;
     },
-    { total: 0, invoiced: 0 }
+    { total: 0, invoiced: 0, endringer: 0, endringerAntall: 0, krav: 0, kravAntall: 0 }
   );
 
   return (
@@ -109,23 +149,50 @@ function OrdrePage() {
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ordre</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{rows.length} godkjente tilbud</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {rows.length} godkjente tilbud
+            {totals.endringerAntall > 0 && ` · ${totals.endringerAntall} endringsmelding${totals.endringerAntall === 1 ? "" : "er"}`}
+          </p>
         </div>
       </div>
 
       {/* Sammendrag */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
         {[
-          { label: "Total ordreverdi", value: nok(totals.total) },
-          { label: "Fakturert", value: nok(totals.invoiced) },
-          { label: "Gjenstår", value: nok(Math.max(0, totals.total - totals.invoiced)) },
+          {
+            label: "Total ordreverdi",
+            value: nok(totals.total),
+            // Uten denne linjen er det ikke til å se at endringene er regnet med
+            hint: totals.endringer > 0 ? `herav ${nok(totals.endringer)} i endringsmeldinger` : null,
+          },
+          { label: "Fakturert", value: nok(totals.invoiced), hint: null },
+          { label: "Gjenstår", value: nok(Math.max(0, totals.total - totals.invoiced)), hint: null },
         ].map((c) => (
           <div key={c.label} className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
             <p className="text-sm text-muted-foreground">{c.label}</p>
             <p className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{c.value}</p>
+            {c.hint && <p className="mt-1 text-xs text-muted-foreground">{c.hint}</p>}
           </div>
         ))}
       </div>
+
+      {/* Krav om endring er ikke avtalt arbeid ennå, så de holdes utenfor
+          ordreverdien. Men de er penger som ligger og venter på et svar, og da
+          skal de være synlige — ikke bortgjemt på en annen side. */}
+      {totals.kravAntall > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800/60 dark:bg-amber-950/30">
+          <Circle className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-500" />
+          <span className="font-medium text-amber-900 dark:text-amber-200">
+            {totals.kravAntall} krav om endring venter på signatur
+          </span>
+          <span className="text-amber-800/80 dark:text-amber-300/80">
+            {nok(totals.krav)} — ikke regnet med i ordreverdien
+          </span>
+          <Link to="/endringsmeldinger" className="ml-auto text-xs font-medium text-amber-900 underline dark:text-amber-200">
+            Se dem
+          </Link>
+        </div>
+      )}
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -155,8 +222,9 @@ function OrdrePage() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={11} className="px-4 py-12 text-center text-muted-foreground">Ingen godkjente tilbud.</td></tr>
             ) : rows.map((o: any, i: number) => {
+              const e = endringerFor(o.id);
               const total = sumOf(o);
-              const invoiced = Number(o.invoiced_amount ?? 0);
+              const invoiced = fakturertOf(o);
               const pct = total > 0 ? (invoiced / total) * 100 : 0;
               const ordreStatus = getOrdreStatus(invoiced, total);
               return (
@@ -172,7 +240,19 @@ function OrdrePage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">{o.customer_name ?? "—"}</td>
-                  <td className="px-4 py-3">{o.title}</td>
+                  <td className="px-4 py-3">
+                    {o.title}
+                    {(e.antall > 0 || e.kravAntall > 0) && (
+                      <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                        {e.antall > 0 && <span>+{e.antall} endring{e.antall === 1 ? "" : "er"}</span>}
+                        {e.kravAntall > 0 && (
+                          <span className="text-amber-700 dark:text-amber-500">
+                            {e.kravAntall} krav venter
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{fmtDate(o.offer_date)}</td>
                   <td className="px-4 py-3 text-sm">{o.our_ref ?? "—"}</td>
 
@@ -219,7 +299,14 @@ function OrdrePage() {
                       </td>
                     );
                   })()}
-                  <td className="px-4 py-3 text-right font-medium">{nok(total)}</td>
+                  <td className="px-4 py-3 text-right font-medium">
+                    {nok(total)}
+                    {e.sum > 0 && (
+                      <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                        herav {nok(e.sum)}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right text-sm text-muted-foreground">{invoiced > 0 ? nok(invoiced) : "—"}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">

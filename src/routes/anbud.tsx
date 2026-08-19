@@ -8,9 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Trophy, TrendingDown, Search, Save, Trash2, Inbox, Pencil } from "lucide-react";
+import { Trophy, TrendingDown, Search, Save, Trash2, Inbox, Pencil, AlertTriangle, Lightbulb } from "lucide-react";
+import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { nok, toISODate } from "@/lib/format";
 import { parseAnbudsprotokoll, finnEgetBud, type ParsedBid } from "@/lib/anbud";
+import { lagInnsikt } from "@/lib/anbud-innsikt";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -25,6 +27,7 @@ function AnbudPage() {
   const [tittel, setTittel] = useState("");
   const [dato, setDato] = useState(() => toISODate(new Date()));
   const [projectId, setProjectId] = useState("__none");
+  const [offerId, setOfferId] = useState("__none");
   const [bud, setBud] = useState<ParsedBid[]>([]);
   const [lagrer, setLagrer] = useState(false);
   // Skrivemåten varierer mellom avsendere, så gjenkjenningen kan bomme.
@@ -42,12 +45,27 @@ function AnbudPage() {
     },
   });
 
+  const { data: tilbud } = useQuery({
+    queryKey: ["offers-for-tender", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("offers")
+        .select("id, offer_number, title, customer_name")
+        .eq("tenant_id", tenantId!)
+        .order("offer_number", { ascending: false })
+        .limit(300);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const { data: anbud, isLoading, isError, error } = useQuery({
     queryKey: ["anbud"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tenders" as never)
-        .select("*, tender_bids(company, amount, is_us, sort_order), projects(name, project_number)")
+        .select("*, tender_bids(company, amount, is_us, sort_order), projects(name, project_number), offers(id, offer_number, title)")
         .order("opened_on", { ascending: false });
       if (error) throw error;
       return (data ?? []) as any[];
@@ -115,7 +133,8 @@ function AnbudPage() {
         .from("tenders" as never)
         .insert({
           tenant_id: tenantId, title: tittel.trim(), opened_on: dato || null,
-          project_id: projectId === "__none" ? null : projectId, source_text: tekst,
+          project_id: projectId === "__none" ? null : projectId,
+          offer_id: offerId === "__none" ? null : offerId, source_text: tekst,
         } as never)
         .select("id").single();
       if (error) { toast.error(error.message); return; }
@@ -132,7 +151,7 @@ function AnbudPage() {
       toast.success("Anbudsprotokoll lagret");
       // Kom teksten fra innboksen, er den nå behandlet
       if (innboksId) { await merkHandtert(innboksId, tenderId); setInnboksId(null); }
-      setTekst(""); setTittel(""); setBud([]); setProjectId("__none");
+      setTekst(""); setTittel(""); setBud([]); setProjectId("__none"); setOfferId("__none");
       qc.invalidateQueries({ queryKey: ["anbud"] });
     } finally {
       setLagrer(false);
@@ -145,6 +164,7 @@ function AnbudPage() {
   const [redTittel, setRedTittel] = useState("");
   const [redDato, setRedDato] = useState("");
   const [redProsjekt, setRedProsjekt] = useState("__none");
+  const [redTilbud, setRedTilbud] = useState("__none");
   const [redBud, setRedBud] = useState<Array<{ company: string; amount: number; is_us: boolean }>>([]);
 
   const startRediger = (a: any) => {
@@ -152,6 +172,8 @@ function AnbudPage() {
     setRedTittel(a.title ?? "");
     setRedDato(a.opened_on ?? "");
     setRedProsjekt(a.project_id ?? "__none");
+    setRedTilbud(a.offer_id ?? "__none");
+    setRedTilbud(a.offer_id ?? "__none");
     setRedBud(
       [...(a.tender_bids ?? [])]
         .sort((x: any, y: any) => Number(x.amount) - Number(y.amount))
@@ -170,6 +192,7 @@ function AnbudPage() {
           title: redTittel.trim(),
           opened_on: redDato || null,
           project_id: redProsjekt === "__none" ? null : redProsjekt,
+          offer_id: redTilbud === "__none" ? null : redTilbud,
         } as never)
         .eq("id" as never, redigerer as never);
       if (error) { toast.error(error.message); return; }
@@ -274,6 +297,39 @@ function AnbudPage() {
 
   const pst = (n: number) => `${n.toFixed(1).replace(".", ",")} %`;
 
+  const innsikt = useMemo(
+    () => lagInnsikt((anbud ?? []).map((a: any) => ({
+      title: a.title,
+      opened_on: a.opened_on,
+      bids: (a.tender_bids ?? []).map((b: any) => ({
+        company: b.company, amount: Number(b.amount), is_us: !!b.is_us,
+      })),
+    }))),
+    [anbud],
+  );
+
+  // Utvikling over tid: ligger vi nærmere vinneren nå enn før?
+  const utvikling = useMemo(
+    () => [...stats.med]
+      .filter((m) => m.dato)
+      .sort((x, y) => String(x.dato).localeCompare(String(y.dato)))
+      .map((m) => ({
+        navn: m.a.title.length > 18 ? m.a.title.slice(0, 18) + "…" : m.a.title,
+        dato: m.dato,
+        overVinner: Number(m.overVinnerPst.toFixed(1)),
+      })),
+    [stats],
+  );
+
+  // Hvordan de andre priser seg, målt mot vårt bud på samme jobb
+  const konkurrentGraf = useMemo(
+    () => stats.konkurrenter
+      .filter((k) => k.moter >= 2)
+      .slice(0, 10)
+      .map((k) => ({ navn: k.navn.length > 16 ? k.navn.slice(0, 16) + "…" : k.navn, pst: Number(k.snittPst.toFixed(1)) })),
+    [stats],
+  );
+
   const rader = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (!t) return anbud ?? [];
@@ -329,6 +385,78 @@ function AnbudPage() {
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-5 py-3 text-sm">
               <strong>{stats.naerTap}</strong> av de tapte anbudene lå under 3 % bak vinneren.
               Det er jobber som kunne vært vunnet på små justeringer.
+            </div>
+          )}
+
+          {innsikt.length > 0 && (
+            <div className="space-y-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                Hva tallene forteller
+              </h2>
+              {innsikt.map((i, ix) => {
+                const stil = i.alvor === "advarsel"
+                  ? "border-amber-500/40 bg-amber-500/10"
+                  : i.alvor === "bra"
+                    ? "border-green-600/40 bg-green-600/10"
+                    : "border-border bg-card";
+                const Ikon = i.alvor === "advarsel" ? AlertTriangle : i.alvor === "bra" ? Trophy : Lightbulb;
+                return (
+                  <div key={ix} className={`flex gap-3 rounded-xl border p-4 ${stil}`}>
+                    <Ikon className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {i.tittel}
+                        {i.anbud && <span className="ml-2 text-xs font-normal text-muted-foreground">{i.anbud}</span>}
+                      </p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">{i.tekst}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {(utvikling.length >= 2 || konkurrentGraf.length > 0) && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {utvikling.length >= 2 && (
+                <div className="rounded-xl border bg-card p-5 shadow-sm">
+                  <h3 className="mb-1 text-sm font-semibold">Avstand til vinneren over tid</h3>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    0 % betyr at vi vant. Faller kurven, nærmer vi oss.
+                  </p>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={utvikling} margin={{ top: 5, right: 10, bottom: 5, left: -10 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                      <XAxis dataKey="navn" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
+                      <YAxis tick={{ fontSize: 11 }} unit=" %" />
+                      <Tooltip formatter={(v: any) => [`${v} % over vinner`, ""]} />
+                      <Line type="monotone" dataKey="overVinner" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {konkurrentGraf.length > 0 && (
+                <div className="rounded-xl border bg-card p-5 shadow-sm">
+                  <h3 className="mb-1 text-sm font-semibold">Hvordan de andre priser seg</h3>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Snitt i prosent mot vårt bud på samme jobb. Negativt = billigere enn oss.
+                  </p>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={konkurrentGraf} margin={{ top: 5, right: 10, bottom: 5, left: -10 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                      <XAxis dataKey="navn" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
+                      <YAxis tick={{ fontSize: 11 }} unit=" %" />
+                      <Tooltip formatter={(v: any) => [`${v} % mot oss`, ""]} />
+                      <Bar dataKey="pst">
+                        {konkurrentGraf.map((k, i) => (
+                          <Cell key={i} fill={k.pst < 0 ? "#dc2626" : "#16a34a"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
           )}
 
@@ -438,7 +566,7 @@ function AnbudPage() {
 
         {bud.length > 0 && (
           <>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
                 <Label>Navn på anbudet</Label>
                 <Input value={tittel} onChange={(e) => setTittel(e.target.value)} />
@@ -446,6 +574,20 @@ function AnbudPage() {
               <div className="space-y-2">
                 <Label>Åpnet</Label>
                 <Input type="date" value={dato} onChange={(e) => setDato(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Tilbud</Label>
+                <Select value={offerId} onValueChange={setOfferId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">— Ikke knyttet —</SelectItem>
+                    {(tilbud ?? []).map((o: any) => (
+                      <SelectItem key={o.id} value={o.id}>
+                        #{o.offer_number} {o.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label>Prosjekt</Label>
@@ -547,6 +689,7 @@ function AnbudPage() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {a.opened_on ?? "—"}
+                    {a.offers ? ` · tilbud #${a.offers.offer_number}` : ""}
                     {a.projects?.name ? ` · ${a.projects.name}` : ""}
                     {vaart && !vant ? ` · ${nok(Number(vaart.amount) - Number(sortert[0].amount))} over vinneren` : ""}
                   </p>
@@ -567,7 +710,7 @@ function AnbudPage() {
 
               {redigerer === a.id && (
                 <div className="space-y-3 border-b bg-muted/30 px-5 py-4">
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="space-y-1.5">
                       <Label className="text-xs">Navn</Label>
                       <Input value={redTittel} onChange={(e) => setRedTittel(e.target.value)} className="h-9" />
@@ -575,6 +718,18 @@ function AnbudPage() {
                     <div className="space-y-1.5">
                       <Label className="text-xs">Åpnet</Label>
                       <Input type="date" value={redDato} onChange={(e) => setRedDato(e.target.value)} className="h-9" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Tilbud</Label>
+                      <Select value={redTilbud} onValueChange={setRedTilbud}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none">— Ikke knyttet —</SelectItem>
+                          {(tilbud ?? []).map((o: any) => (
+                            <SelectItem key={o.id} value={o.id}>#{o.offer_number} {o.title}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Prosjekt</Label>

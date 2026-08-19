@@ -8,10 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Trophy, TrendingDown, Search, Save, Trash2, Inbox, Pencil, AlertTriangle, Lightbulb } from "lucide-react";
+import { Trophy, TrendingDown, Search, Save, Trash2, Inbox, Pencil, AlertTriangle, Lightbulb, Layers } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { nok, toISODate } from "@/lib/format";
-import { parseAnbudsprotokoll, finnEgetBud, type ParsedBid } from "@/lib/anbud";
+import { parseAnbudsprotokoll, finnEgetBud, splittProtokoller, type ParsedBid } from "@/lib/anbud";
 import { lagInnsikt } from "@/lib/anbud-innsikt";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -153,6 +153,61 @@ function AnbudPage() {
       if (innboksId) { await merkHandtert(innboksId, tenderId); setInnboksId(null); }
       setTekst(""); setTittel(""); setBud([]); setProjectId("__none"); setOfferId("__none");
       qc.invalidateQueries({ queryKey: ["anbud"] });
+    } finally {
+      setLagrer(false);
+    }
+  };
+
+  // ─── Masseimport ────────────────────────────────────────────────────────
+  // Hele SMS-tråden limes inn på én gang og deles opp automatisk. Datoen kan
+  // ikke leses ut av teksten, så den settes per rad — eller står tom.
+  const [masseApen, setMasseApen] = useState(false);
+  const [massetekst, setMassetekst] = useState("");
+  const [masse, setMasse] = useState<
+    Array<{ tekst: string; tittel: string; dato: string; bids: ParsedBid[]; egetIdx: number; valgt: boolean }>
+  >([]);
+
+  const tolkMasse = (t: string) => {
+    setMassetekst(t);
+    const deler = splittProtokoller(t);
+    setMasse(deler.map((tekst) => {
+      const r = parseAnbudsprotokoll(tekst);
+      const eget = finnEgetBud(r.bids, appSettings?.company_name);
+      return {
+        tekst, tittel: r.title, dato: "", bids: r.bids,
+        egetIdx: eget ? r.bids.indexOf(eget) : -1,
+        valgt: true,
+      };
+    }));
+  };
+
+  const importerAlle = async () => {
+    const valgte = masse.filter((m) => m.valgt && m.tittel.trim() && m.bids.length >= 2);
+    if (!valgte.length) return;
+    setLagrer(true);
+    let ok = 0;
+    try {
+      for (const m of valgte) {
+        const { data, error } = await supabase
+          .from("tenders" as never)
+          .insert({
+            tenant_id: tenantId, title: m.tittel.trim(),
+            opened_on: m.dato || null, source_text: m.tekst,
+          } as never)
+          .select("id").single();
+        if (error) { toast.error(`${m.tittel}: ${error.message}`); continue; }
+
+        const rader = m.bids.map((b, i) => ({
+          tenant_id: tenantId, tender_id: (data as any).id,
+          company: b.company, amount: b.amount,
+          is_us: i === m.egetIdx, sort_order: i,
+        }));
+        const ins = await supabase.from("tender_bids" as never).insert(rader as never);
+        if (ins.error) { toast.error(`${m.tittel}: ${ins.error.message}`); continue; }
+        ok++;
+      }
+      toast.success(`${ok} av ${valgte.length} anbud importert`);
+      if (ok) { setMassetekst(""); setMasse([]); qc.invalidateQueries({ queryKey: ["anbud"] }); }
     } finally {
       setLagrer(false);
     }
@@ -549,6 +604,79 @@ function AnbudPage() {
           </div>
         </div>
       )}
+
+      {/* Masseimport: lim inn hele SMS-tråden på én gang */}
+      <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <button
+          onClick={() => setMasseApen(!masseApen)}
+          className="flex w-full items-center gap-2 text-sm font-semibold"
+        >
+          <Layers className="h-4 w-4" />
+          Importer mange på én gang
+          <span className="ml-auto text-xs font-normal text-muted-foreground">
+            {masseApen ? "Skjul" : "Lim inn hele meldingstråden"}
+          </span>
+        </button>
+
+        {masseApen && (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Marker alle meldingene i telefonen, kopier, og lim inn her. Systemet deler dem
+              opp selv — datolinjer og annet fra meldingsappen blir ignorert.
+            </p>
+            <Textarea
+              rows={6}
+              value={massetekst}
+              onChange={(e) => tolkMasse(e.target.value)}
+              placeholder={"tirsdag 17. feb. • 16:56\nAnbudsprotokoll VA Skardhei\nHauge Maskin as 9.147.480,-\n…"}
+              className="font-mono text-xs"
+            />
+
+            {masse.length > 0 && (
+              <>
+                <div className="rounded-lg border divide-y">
+                  {masse.map((m, i) => (
+                    <div key={i} className="flex items-center gap-3 px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={m.valgt}
+                        onChange={() => setMasse(masse.map((x, ix) => ix === i ? { ...x, valgt: !x.valgt } : x))}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      <Input
+                        value={m.tittel}
+                        onChange={(e) => setMasse(masse.map((x, ix) => ix === i ? { ...x, tittel: e.target.value } : x))}
+                        className="h-8 flex-1"
+                      />
+                      <Input
+                        type="date"
+                        value={m.dato}
+                        onChange={(e) => setMasse(masse.map((x, ix) => ix === i ? { ...x, dato: e.target.value } : x))}
+                        className="h-8 w-40"
+                      />
+                      <span className="w-28 text-right text-xs text-muted-foreground">
+                        {m.bids.length} bud
+                        {m.egetIdx >= 0 ? ` · plass ${m.egetIdx + 1}` : " · ukjent"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    {masse.filter((m) => m.valgt).length} av {masse.length} valgt.
+                    {masse.some((m) => m.egetIdx < 0) &&
+                      " Noen mangler vårt eget bud — de kan rettes etterpå med blyantikonet."}
+                  </p>
+                  <Button onClick={importerAlle} disabled={lagrer || !masse.some((m) => m.valgt)}>
+                    <Save className="mr-2 h-4 w-4" />
+                    {lagrer ? "Importerer…" : `Importer ${masse.filter((m) => m.valgt).length}`}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Innliming */}
       <div className="rounded-xl border bg-card p-5 shadow-sm space-y-4">

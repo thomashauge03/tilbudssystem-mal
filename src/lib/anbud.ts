@@ -120,3 +120,34 @@ function normaliser(s?: string | null) {
     .replace(/[^a-z0-9æøå]/g, "")
     .trim();
 }
+
+/**
+ * Deler en samling meldinger i enkeltprotokoller.
+ *
+ * Limer man inn en hel SMS-tråd, kommer protokollene etter hverandre uten noe
+ * tydelig skille. Ordet «Anbudsprotokoll» starter alltid en ny, så det brukes
+ * som skillelinje. Datolinjer og annet meldingsappen limer med, havner mellom
+ * protokollene og blir ignorert av tolkeren.
+ */
+export function splittProtokoller(text: string): string[] {
+  const linjer = String(text ?? "").split(/\r?\n/);
+  const bolker: string[][] = [];
+  let denne: string[] | null = null;
+
+  for (const linje of linjer) {
+    if (/anbudsprotokoll/i.test(linje)) {
+      if (denne && denne.length) bolker.push(denne);
+      denne = [linje];
+    } else if (denne) {
+      denne.push(linje);
+    }
+    // Linjer før den aller første protokollen kastes
+  }
+  if (denne && denne.length) bolker.push(denne);
+
+  // Bolker uten minst to bud er som regel rester fra meldingsappen
+  return bolker
+    .map((b) => b.join("\n").trim())
+    .filter((b) => parseAnbudsprotokoll(b).bids.length >= 2);
+}
+

@@ -173,7 +173,6 @@ function AnbudPage() {
     setRedDato(a.opened_on ?? "");
     setRedProsjekt(a.project_id ?? "__none");
     setRedTilbud(a.offer_id ?? "__none");
-    setRedTilbud(a.offer_id ?? "__none");
     setRedBud(
       [...(a.tender_bids ?? [])]
         .sort((x: any, y: any) => Number(x.amount) - Number(y.amount))

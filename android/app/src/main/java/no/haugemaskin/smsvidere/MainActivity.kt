@@ -19,6 +19,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var innst: Innstillinger
     private lateinit var urlFelt: EditText
     private lateinit var tokenFelt: EditText
+    private lateinit var avsenderFelt: EditText
     private lateinit var filterFelt: EditText
     private lateinit var status: TextView
 
@@ -45,7 +46,8 @@ class MainActivity : AppCompatActivity() {
 
         urlFelt = felt(rot, "Adresse", innst.url, InputType.TYPE_TEXT_VARIATION_URI)
         tokenFelt = felt(rot, "Nøkkel", innst.token, InputType.TYPE_CLASS_TEXT)
-        filterFelt = felt(rot, "Send bare meldinger som inneholder", innst.filter, InputType.TYPE_CLASS_TEXT)
+        avsenderFelt = felt(rot, "Send bare fra denne avsenderen", innst.avsender, InputType.TYPE_CLASS_PHONE)
+        filterFelt = felt(rot, "…og som inneholder (valgfritt)", innst.filter, InputType.TYPE_CLASS_TEXT)
 
         rot.addView(Button(this).apply {
             text = "Lagre"
@@ -98,6 +100,7 @@ class MainActivity : AppCompatActivity() {
     private fun lagre() {
         innst.url = urlFelt.text.toString().trim()
         innst.token = tokenFelt.text.toString().trim()
+        innst.avsender = avsenderFelt.text.toString().trim()
         innst.filter = filterFelt.text.toString().trim()
         Toast.makeText(this, "Lagret", Toast.LENGTH_SHORT).show()
         visStatus()
@@ -132,6 +135,10 @@ class MainActivity : AppCompatActivity() {
         status.text = buildString {
             append(if (tillatelse) "✓ Har tilgang til SMS\n" else "✗ Mangler SMS-tilgang — appen kan ikke lese meldinger\n")
             append(if (innst.erKlar()) "✓ Adresse og nøkkel er satt\n" else "✗ Adresse eller nøkkel mangler\n")
+            append(
+                if (innst.avsender.isBlank()) "• Alle avsendere slipper gjennom\n"
+                else "✓ Bare fra " + innst.avsender + "\n"
+            )
             append("\nSiste hendelser:\n")
             append(Logg.les(this@MainActivity).ifBlank { "(ingen ennå)" })
         }
@@ -149,6 +156,11 @@ class Innstillinger(context: Context) {
     var token: String
         get() = p.getString("token", "") ?: ""
         set(v) = p.edit().putString("token", v).apply()
+
+    /** Nummeret eller navnet protokollene alltid kommer fra. Tomt = alle. */
+    var avsender: String
+        get() = p.getString("avsender", "") ?: ""
+        set(v) = p.edit().putString("avsender", v).apply()
 
     var filter: String
         get() = p.getString("filter", "Anbudsprotokoll") ?: "Anbudsprotokoll"

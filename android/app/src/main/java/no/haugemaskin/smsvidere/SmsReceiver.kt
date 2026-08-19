@@ -31,8 +31,13 @@ class SmsReceiver : BroadcastReceiver() {
         val innst = Innstillinger(context)
         if (!innst.erKlar()) return
 
-        // Filteret hindrer at annen SMS forlater telefonen. Står det tomt,
-        // sendes alt — men standarden er «Anbudsprotokoll».
+        // Avsenderfilteret er det treffsikre: protokollene kommer alltid fra
+        // samme avsender. Står feltet tomt, slipper alle avsendere gjennom.
+        val ventetAvsender = innst.avsender.trim()
+        if (ventetAvsender.isNotEmpty() && !avsenderMatcher(avsender, ventetAvsender)) return
+
+        // Ordfilteret er et ekstra sikkerhetsnett. Står det tomt, sendes alt fra
+        // avsenderen over.
         val filter = innst.filter.trim()
         if (filter.isNotEmpty() && !tekst.contains(filter, ignoreCase = true)) return
 
@@ -55,6 +60,28 @@ class SmsReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "SmsVidere"
+
+        /**
+         * Avsenderen kan være et navn («HaugeMaskin») eller et nummer, og
+         * nummeret kommer med eller uten landkode og med vilkårlige mellomrom.
+         * Derfor sammenlignes de siste åtte sifrene når begge er tall, og ellers
+         * tekstinnhold uten mellomrom.
+         */
+        fun avsenderMatcher(faktisk: String, ventet: String): Boolean {
+            val a = faktisk.trim()
+            val v = ventet.trim()
+            if (a.isEmpty() || v.isEmpty()) return false
+
+            val aSiffer = a.filter { it.isDigit() }
+            val vSiffer = v.filter { it.isDigit() }
+            if (aSiffer.length >= 6 && vSiffer.length >= 6) {
+                return aSiffer.takeLast(8) == vSiffer.takeLast(8)
+            }
+
+            val aRen = a.replace(" ", "").lowercase()
+            val vRen = v.replace(" ", "").lowercase()
+            return aRen == vRen || aRen.contains(vRen) || vRen.contains(aRen)
+        }
 
         /** Returnerer HTTP-statuskoden. Kaster ved nettverksfeil. */
         fun send(url: String, token: String, avsender: String, tekst: String): Int {

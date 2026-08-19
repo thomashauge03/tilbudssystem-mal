@@ -37,7 +37,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = public
-as $
+as $$$$
 declare
   rad jsonb;
 begin
@@ -56,7 +56,7 @@ begin
   );
   return null; -- AFTER-trigger, returverdien brukes ikke
 end;
-$;
+$$$$;
 
 drop trigger if exists offer_lines_historikk on public.offer_lines;
 create trigger offer_lines_historikk

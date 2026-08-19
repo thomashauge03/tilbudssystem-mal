@@ -148,19 +148,73 @@ function AnbudPage() {
     qc.invalidateQueries({ queryKey: ["anbud"] });
   };
 
-  // Statistikk på tvers: hvor ofte vinner vi, og hvor mye skiller
+  // Analyse på tvers av alle anbud der vårt eget bud er kjent.
+  //
+  // Prosent er viktigere enn kroner her: 200 000 over på en jobb til 20
+  // millioner er en helt annen bom enn 200 000 over på en til 500 000.
   const stats = useMemo(() => {
-    const med = (anbud ?? []).filter((a) => (a.tender_bids ?? []).some((b: any) => b.is_us));
-    let vunnet = 0, sumDiff = 0, medDiff = 0;
-    for (const a of med) {
-      const sortert = [...(a.tender_bids ?? [])].sort((x: any, y: any) => Number(x.amount) - Number(y.amount));
-      const vaart = sortert.find((b: any) => b.is_us);
-      if (!vaart) continue;
-      if (sortert[0] === vaart) vunnet++;
-      else { sumDiff += Number(vaart.amount) - Number(sortert[0].amount); medDiff++; }
+    const med = (anbud ?? [])
+      .filter((a) => (a.tender_bids ?? []).some((b: any) => b.is_us))
+      .map((a) => {
+        const sortert = [...(a.tender_bids ?? [])].sort((x: any, y: any) => Number(x.amount) - Number(y.amount));
+        const vaart = Number(sortert.find((b: any) => b.is_us)!.amount);
+        const vinner = Number(sortert[0].amount);
+        const hoyeste = Number(sortert[sortert.length - 1].amount);
+        const plass = sortert.findIndex((b: any) => b.is_us) + 1;
+        const vant = plass === 1;
+        // Når vi vinner: hvor mye kunne vi tatt uten å tape jobben?
+        const nestBest = sortert.length > 1 ? Number(sortert[1].amount) : null;
+        return {
+          a, sortert, vaart, vinner, hoyeste, plass, vant, antall: sortert.length,
+          overVinnerPst: vinner > 0 ? ((vaart - vinner) / vinner) * 100 : 0,
+          pengerPaBordetPst: vant && nestBest ? ((nestBest - vaart) / vaart) * 100 : null,
+          pengerPaBordetKr: vant && nestBest ? nestBest - vaart : null,
+          spreadPst: vinner > 0 ? ((hoyeste - vinner) / vinner) * 100 : 0,
+          dato: a.opened_on ?? null,
+        };
+      });
+
+    const tap = med.filter((m) => !m.vant);
+    const seier = med.filter((m) => m.vant);
+    const snitt = (t: number[]) => (t.length ? t.reduce((s, x) => s + x, 0) / t.length : 0);
+
+    // Per konkurrent: hvem møter vi, og hvem slår oss
+    const motstandere = new Map<string, { moter: number; slattOss: number; sumPstMotOss: number }>();
+    for (const m of med) {
+      for (const b of m.sortert) {
+        if (b.is_us) continue;
+        const navn = String(b.company).trim();
+        const rad = motstandere.get(navn) ?? { moter: 0, slattOss: 0, sumPstMotOss: 0 };
+        rad.moter++;
+        if (Number(b.amount) < m.vaart) rad.slattOss++;
+        // Positiv verdi = de lå over oss
+        rad.sumPstMotOss += m.vaart > 0 ? ((Number(b.amount) - m.vaart) / m.vaart) * 100 : 0;
+        motstandere.set(navn, rad);
+      }
     }
-    return { totalt: med.length, vunnet, snittDiff: medDiff ? sumDiff / medDiff : 0 };
+    const konkurrenter = [...motstandere.entries()]
+      .map(([navn, r]) => ({ navn, ...r, snittPst: r.sumPstMotOss / r.moter }))
+      .sort((x, y) => y.moter - x.moter);
+
+    return {
+      med,
+      totalt: med.length,
+      vunnet: seier.length,
+      treffrate: med.length ? (seier.length / med.length) * 100 : 0,
+      snittOverVinnerPst: snitt(tap.map((m) => m.overVinnerPst)),
+      snittOverVinnerKr: snitt(tap.map((m) => m.vaart - m.vinner)),
+      snittPaBordetPst: snitt(seier.filter((m) => m.pengerPaBordetPst !== null).map((m) => m.pengerPaBordetPst!)),
+      snittPaBordetKr: snitt(seier.filter((m) => m.pengerPaBordetKr !== null).map((m) => m.pengerPaBordetKr!)),
+      snittPlass: snitt(med.map((m) => m.plass)),
+      snittAntall: snitt(med.map((m) => m.antall)),
+      snittSpread: snitt(med.map((m) => m.spreadPst)),
+      konkurrenter,
+      // Nesten-tap: under 3 % bak vinneren er jobber som kunne vært vunnet
+      naerTap: tap.filter((m) => m.overVinnerPst <= 3).length,
+    };
   }, [anbud]);
+
+  const pst = (n: number) => `${n.toFixed(1).replace(".", ",")} %`;
 
   const rader = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -180,23 +234,89 @@ function AnbudPage() {
       </div>
 
       {stats.totalt > 0 && (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border bg-card p-5 shadow-sm">
-            <p className="text-sm text-muted-foreground">Anbud registrert</p>
-            <p className="mt-1 text-2xl font-bold">{stats.totalt}</p>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <p className="text-sm text-muted-foreground">Treffrate</p>
+              <p className="mt-1 text-2xl font-bold">{pst(stats.treffrate)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{stats.vunnet} av {stats.totalt} anbud</p>
+            </div>
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <p className="text-sm text-muted-foreground">Over vinner når vi taper</p>
+              <p className="mt-1 text-2xl font-bold text-red-700 dark:text-red-400">{pst(stats.snittOverVinnerPst)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">i snitt {nok(stats.snittOverVinnerKr)}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <p className="text-sm text-muted-foreground">Igjen på bordet når vi vinner</p>
+              <p className="mt-1 text-2xl font-bold text-amber-700 dark:text-amber-400">{pst(stats.snittPaBordetPst)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                kunne tatt {nok(stats.snittPaBordetKr)} mer og fortsatt vunnet
+              </p>
+            </div>
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <p className="text-sm text-muted-foreground">Snittplassering</p>
+              <p className="mt-1 text-2xl font-bold">
+                {stats.snittPlass.toFixed(1).replace(".", ",")}
+                <span className="text-base font-normal text-muted-foreground">
+                  {" "}av {stats.snittAntall.toFixed(1).replace(".", ",")}
+                </span>
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                spredning i anbudene: {pst(stats.snittSpread)}
+              </p>
+            </div>
           </div>
-          <div className="rounded-xl border bg-card p-5 shadow-sm">
-            <p className="text-sm text-muted-foreground">Vunnet</p>
-            <p className="mt-1 text-2xl font-bold text-green-700 dark:text-green-400">
-              {stats.vunnet} <span className="text-base font-normal text-muted-foreground">
-                av {stats.totalt}</span>
-            </p>
-          </div>
-          <div className="rounded-xl border bg-card p-5 shadow-sm">
-            <p className="text-sm text-muted-foreground">Snitt over vinner når vi taper</p>
-            <p className="mt-1 text-2xl font-bold">{nok(stats.snittDiff)}</p>
-          </div>
-        </div>
+
+          {stats.naerTap > 0 && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-5 py-3 text-sm">
+              <strong>{stats.naerTap}</strong> av de tapte anbudene lå under 3 % bak vinneren.
+              Det er jobber som kunne vært vunnet på små justeringer.
+            </div>
+          )}
+
+          {stats.konkurrenter.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
+              <table className="w-full text-sm">
+                <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">Konkurrent</th>
+                    <th className="px-4 py-3 text-right">Møter</th>
+                    <th className="px-4 py-3 text-right">Slo oss</th>
+                    <th className="px-4 py-3 text-right">Snitt mot oss</th>
+                    <th className="px-4 py-3">Hvor de ligger</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.konkurrenter.map((k) => {
+                    const billigere = k.snittPst < 0;
+                    return (
+                      <tr key={k.navn} className="border-b last:border-0">
+                        <td className="px-4 py-2.5 font-medium">{k.navn}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{k.moter}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {k.slattOss}
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({Math.round((k.slattOss / k.moter) * 100)} %)
+                          </span>
+                        </td>
+                        <td className={`px-4 py-2.5 text-right tabular-nums font-medium ${billigere ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>
+                          {billigere ? "" : "+"}{k.snittPst.toFixed(1).replace(".", ",")} %
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                          {billigere ? "ligger under oss" : "ligger over oss"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="border-t px-4 py-2 text-xs text-muted-foreground">
+                «Snitt mot oss» er hvor mye konkurrenten i snitt ligger over eller under vårt eget
+                bud. Negative tall betyr at de jevnt over er billigere enn oss.
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       {/* Videresendt fra mobilen — venter på at noen ser over tolkingen */}

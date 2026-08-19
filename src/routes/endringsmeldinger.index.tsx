@@ -60,15 +60,14 @@ function AmendmentsList() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      // Barneradene må bort først — uten kaskade ville slettingen av selve
-      // endringen stoppet på fremmednøkkelen.
-      const lines = await supabase.from("amendment_lines").delete().eq("amendment_id", id);
-      if (lines.error) throw lines.error;
-      const tokens = await supabase
-        .from("amendment_signing_tokens" as never)
-        .delete()
-        .eq("amendment_id" as never, id as never);
-      if (tokens.error) throw tokens.error;
+      // Bare selve endringen slettes. Både amendment_lines og
+      // amendment_signing_tokens har ON DELETE CASCADE, så databasen rydder
+      // resten selv.
+      //
+      // Å slette linjene først, slik det ble gjort før, virker IKKE på en
+      // signert melding: låsen som hindrer endring av signerte linjer avviser
+      // slettingen, og hele operasjonen stopper. Kaskaden slipper gjennom fordi
+      // forelderen fjernes først, og låsen finner da ingen signatur å beskytte.
       const { error } = await supabase.from("amendments").delete().eq("id", id);
       if (error) throw error;
     },

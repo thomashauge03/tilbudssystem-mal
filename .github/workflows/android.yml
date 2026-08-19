@@ -12,6 +12,9 @@ on:
 jobs:
   bygg:
     runs-on: ubuntu-latest
+    # Trengs for å kunne legge ut APK-en som en utgivelse
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -36,3 +39,22 @@ jobs:
           name: sms-videresending-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # Fast filnavn, slik at .../releases/latest/download/sms-videresending.apk
+      # alltid peker på nyeste versjon. Det er lenken som skal åpnes på mobilen —
+      # en artefakt krever innlogging og kommer som ZIP.
+      - name: Gi APK-en et fast navn
+        run: cp android/app/build/outputs/apk/debug/*.apk sms-videresending.apk
+
+      - name: Legg ut som utgivelse
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sms-app
+          name: SMS-videresending
+          body: |
+            Videresender anbudsprotokoller fra SMS til tilbudssystemet.
+
+            Installer på Android, åpne appen, og lim inn adresse og nøkkel
+            fra Innstillinger → Firma. Bygget fra commit ${{ github.sha }}.
+          files: sms-videresending.apk
+          make_latest: true

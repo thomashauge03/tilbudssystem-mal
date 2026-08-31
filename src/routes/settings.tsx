@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useAppSettings, useSaveSettings, DEFAULT_SETTINGS, type OurRef, type Forbehold } from "@/hooks/use-app-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TelefonInput } from "@/components/telefon-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, Save, GripVertical, Upload, X, Building2, FileText, Calculator, Palette } from "lucide-react";
@@ -152,7 +153,7 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
               </div>
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground font-medium">Telefon</p>
-                <Input value={ref.phone} onChange={(e) => upd(i, { phone: e.target.value })} placeholder="+47 000 00 000" />
+                <TelefonInput value={ref.phone} onChange={(v) => upd(i, { phone: v })} />
               </div>
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground font-medium">E-post</p>

@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TelefonInput } from "@/components/telefon-input";
+import { telefonSiffer } from "@/lib/telefon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Plus, Trash2, Pencil, X, Check, Phone, Mail, ChevronDown, AlertTriangle } from "lucide-react";
@@ -184,7 +186,7 @@ function EditRow({ lead, refs, draftKey, onSave, onCancel }: {
         <Input value={form.postnr_sted} onChange={(e) => f("postnr_sted", e.target.value)} placeholder="Postnr/sted" className="h-8 text-xs" />
       </td>
       <td className="px-2 py-2 min-w-[120px]">
-        <Input value={form.telefon} onChange={(e) => f("telefon", e.target.value)} placeholder="Telefon" className="h-8 text-xs" />
+        <TelefonInput value={form.telefon} onChange={(v) => f("telefon", v)} placeholder="Telefon" className="h-8 text-xs" />
       </td>
       <td className="px-2 py-2 min-w-[160px]">
         <Input type="email" value={form.mail} onChange={(e) => f("mail", e.target.value)} placeholder="E-post" className="h-8 text-xs" />
@@ -471,8 +473,10 @@ function PotensielleKunderPage() {
                   <td className="px-3 py-2.5 text-xs text-muted-foreground">{lead.adresse || "—"}</td>
                   <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{lead.postnr_sted || "—"}</td>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                    {lead.telefon && /^\+?[\d\s\-()]{5,20}$/.test(lead.telefon)
-                      ? <a href={`tel:${lead.telefon}`} className="flex items-center gap-1 text-primary hover:underline"><Phone className="h-3 w-3" />{lead.telefon}</a>
+                    {/* tel:-lenken skal ha rene siffer — mellomrommene som gjør
+                        nummeret lesbart på skjermen hører ikke hjemme i en URI. */}
+                    {telefonSiffer(lead.telefon)
+                      ? <a href={`tel:${telefonSiffer(lead.telefon)}`} className="flex items-center gap-1 text-primary hover:underline"><Phone className="h-3 w-3" />{lead.telefon}</a>
                       : (lead.telefon ?? "—")}
                   </td>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">

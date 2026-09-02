@@ -93,6 +93,16 @@ function klipp(tekst: string, font: PDFFont, storrelse: number, maks: number): s
   return ut + "...";
 }
 
+/** «36–42» eller «36» — skrives på streken, så plassen er knapp og «uke» utelates. */
+const ukeMerkelapp = (startISO?: string | null, sluttISO?: string | null): string => {
+  const s = parseDato(startISO);
+  if (!s) return "";
+  const e = parseDato(sluttISO) ?? s;
+  const a = isoUke(s).uke;
+  const b = isoUke(e).uke;
+  return a === b ? String(a) : `${a}–${b}`;
+};
+
 const fmtDato = (s?: string | null) => {
   const d = parseDato(s);
   if (!d) return "-";
@@ -375,6 +385,22 @@ export async function lagFremdriftsplanPdf(
             x, y: radBunn + 3.5, width: b, height: RADHOYDE - 7,
             color: hex(farge.fyll), borderColor: hex(farge.kant), borderWidth: 0.7,
           });
+
+          // Ukene skrives på selve streken når den er bred nok. Uten det må
+          // leseren følge streken opp til aksen for hver rad, og det er nettopp
+          // ukene en fremdriftsplan leses etter. Hvit tekst, fordi fyllet er
+          // mørkt nok i alle åtte fargene.
+          const merkelapp = trygg(ukeMerkelapp(a.start_date, a.end_date));
+          const tb = fet.widthOfTextAtSize(merkelapp, 7);
+          if (merkelapp && tb + 8 <= b) {
+            side.drawText(merkelapp, {
+              x: x + b / 2 - tb / 2,
+              y: radBunn + RADHOYDE / 2 - 2.4,
+              size: 7,
+              font: fet,
+              color: rgb(1, 1, 1),
+            });
+          }
         }
       }
 

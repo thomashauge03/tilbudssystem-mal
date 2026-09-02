@@ -127,6 +127,22 @@ export function FremdriftRutenett({
     setForhaand(null);
   };
 
+  /** Kolonnene den valgte raden dekker — brukes til å lyse opp ukene i toppen. */
+  const aktivtSpenn =
+    aktivRad !== null && aktivRad !== undefined && aktiviteter[aktivRad]
+      ? spenn(aktiviteter[aktivRad])
+      : null;
+
+  /** «uke 36–42» for et kolonnespenn. Skrives på selve streken. */
+  const spennEtikett = (fra: number, til: number): string => {
+    const a = Math.min(fra, til);
+    const b = Math.max(fra, til);
+    if (akse.type !== "uke") {
+      return a === b ? akse.kolonner[a].etikett : `${akse.kolonner[a].etikett}–${akse.kolonner[b].etikett}`;
+    }
+    return a === b ? `uke ${akse.kolonner[a].etikett}` : `uke ${akse.kolonner[a].etikett}–${akse.kolonner[b].etikett}`;
+  };
+
   /** Uken markøren står i, skrevet ut — vises i overskriften mens man drar. */
   const hoverTekst = (() => {
     const k = forhaand ? forhaand.til : hoverKol;
@@ -170,19 +186,23 @@ export function FremdriftRutenett({
           {akse.kolonner.map((k, i) => {
             const markert = (forhaand && i >= Math.min(forhaand.fra, forhaand.til) && i <= Math.max(forhaand.fra, forhaand.til))
               || (!forhaand && hoverKol === i);
+            // Ukene den valgte raden dekker lyser opp i overskriften. Da kan man
+            // lese av hvilke uker en aktivitet gjelder uten å sikte med øyet
+            // nedover fra kolonnen.
+            const iValgtRad = !markert && !!aktivtSpenn && i >= aktivtSpenn.fra && i <= aktivtSpenn.til;
             return (
               <div
                 key={i}
                 className={`min-w-0 flex-1 text-center transition-colors ${
                   k.overskrift ? "border-l border-border" : ""
-                } ${markert ? "bg-primary/15" : ""}`}
+                } ${markert ? "bg-primary/20" : iValgtRad ? "bg-primary/10" : i % 2 ? "bg-muted/40" : ""}`}
               >
                 <div className="h-4 truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   {k.overskrift}
                 </div>
                 <div
-                  className={`pb-1 text-xs font-semibold tabular-nums ${
-                    markert ? "text-primary" : "text-foreground/70"
+                  className={`pb-1 text-xs tabular-nums ${
+                    markert || iValgtRad ? "font-bold text-primary" : "font-semibold text-foreground"
                   }`}
                 >
                   {k.etikett}
@@ -238,15 +258,25 @@ export function FremdriftRutenett({
                 </div>
 
                 {bruk && (a.is_milestone ? (
-                  <div
-                    className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-grab border shadow-sm active:cursor-grabbing"
-                    style={{ left: `${bruk.venstre}%`, background: f.fyll, borderColor: f.kant }}
-                    onPointerDown={(e) => startDrag(e, rad, "flytt", vises)}
-                    title="Dra for å flytte milepælen"
-                  />
+                  <>
+                    <div
+                      className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-grab border shadow-sm active:cursor-grabbing"
+                      style={{ left: `${bruk.venstre}%`, background: f.fyll, borderColor: f.kant }}
+                      onPointerDown={(e) => startDrag(e, rad, "flytt", vises)}
+                      title="Dra for å flytte milepælen"
+                    />
+                    {vises && (
+                      <span
+                        className="pointer-events-none absolute top-1/2 -translate-y-1/2 whitespace-nowrap pl-3 text-[10px] font-semibold tabular-nums text-foreground/70"
+                        style={{ left: `${bruk.venstre}%` }}
+                      >
+                        {spennEtikett(vises.fra, vises.til)}
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <div
-                    className="group absolute top-1/2 flex h-6 -translate-y-1/2 items-stretch rounded-sm border shadow-sm"
+                    className="group absolute top-1/2 flex h-6 -translate-y-1/2 items-stretch overflow-hidden rounded-sm border shadow-sm"
                     style={{
                       left: `${bruk.venstre}%`,
                       width: `${Math.max(bruk.bredde, 1.2)}%`,
@@ -255,17 +285,27 @@ export function FremdriftRutenett({
                     }}
                   >
                     <span
-                      className="w-2 shrink-0 cursor-ew-resize rounded-l-sm bg-black/25 opacity-0 transition-opacity group-hover:opacity-100"
+                      className="w-2 shrink-0 cursor-ew-resize bg-black/25 opacity-0 transition-opacity group-hover:opacity-100"
                       onPointerDown={(e) => startDrag(e, rad, "venstre", vises)}
                       title="Dra for å endre start"
                     />
                     <span
-                      className="flex-1 cursor-grab active:cursor-grabbing"
+                      className="flex min-w-0 flex-1 cursor-grab items-center justify-center active:cursor-grabbing"
                       onPointerDown={(e) => startDrag(e, rad, "flytt", vises)}
                       title="Dra for å flytte"
-                    />
+                    >
+                      {/* Ukene står på selve streken. Uten det måtte man sikte
+                          med øyet opp til overskriften for hver eneste rad —
+                          og det er nettopp ukene planen leses etter. Skrives
+                          bare når streken er bred nok til at teksten får plass. */}
+                      {vises && Math.abs(vises.til - vises.fra) >= 2 && (
+                        <span className="pointer-events-none truncate px-1 text-[10px] font-semibold tabular-nums text-white/95">
+                          {spennEtikett(vises.fra, vises.til)}
+                        </span>
+                      )}
+                    </span>
                     <span
-                      className="w-2 shrink-0 cursor-ew-resize rounded-r-sm bg-black/25 opacity-0 transition-opacity group-hover:opacity-100"
+                      className="w-2 shrink-0 cursor-ew-resize bg-black/25 opacity-0 transition-opacity group-hover:opacity-100"
                       onPointerDown={(e) => startDrag(e, rad, "hoyre", vises)}
                       title="Dra for å endre slutt"
                     />

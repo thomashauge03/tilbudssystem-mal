@@ -133,14 +133,23 @@ export function FremdriftRutenett({
       ? spenn(aktiviteter[aktivRad])
       : null;
 
-  /** «uke 36–42» for et kolonnespenn. Skrives på selve streken. */
+  /**
+   * «uke 36–42» for et kolonnespenn. Skrives på selve streken.
+   *
+   * Krysser spennet et årsskifte, blir året med: «uke 45–12 (2027)». Uke 12
+   * alene sier ingenting om hvilket år den ligger i, og en vinterjobb går
+   * nettopp over nyttår.
+   */
   const spennEtikett = (fra: number, til: number): string => {
     const a = Math.min(fra, til);
     const b = Math.max(fra, til);
-    if (akse.type !== "uke") {
-      return a === b ? akse.kolonner[a].etikett : `${akse.kolonner[a].etikett}–${akse.kolonner[b].etikett}`;
-    }
-    return a === b ? `uke ${akse.kolonner[a].etikett}` : `uke ${akse.kolonner[a].etikett}–${akse.kolonner[b].etikett}`;
+    const ord = akse.type === "uke" ? "uke " : "";
+    const aarA = isoUke(akse.kolonner[a].fra).aar;
+    const aarB = isoUke(akse.kolonner[b].fra).aar;
+    const hale = aarA === aarB ? "" : ` (${aarB})`;
+    return a === b
+      ? `${ord}${akse.kolonner[a].etikett}${hale}`
+      : `${ord}${akse.kolonner[a].etikett}–${akse.kolonner[b].etikett}${hale}`;
   };
 
   /** Uken markøren står i, skrevet ut — vises i overskriften mens man drar. */
@@ -298,7 +307,9 @@ export function FremdriftRutenett({
                           med øyet opp til overskriften for hver eneste rad —
                           og det er nettopp ukene planen leses etter. Skrives
                           bare når streken er bred nok til at teksten får plass. */}
-                      {vises && Math.abs(vises.til - vises.fra) >= 2 && (
+                      {/* Med årstall trengs det litt mer plass før teksten er
+                          verdt å skrive — ellers klippes nettopp året bort. */}
+                      {vises && Math.abs(vises.til - vises.fra) >= (spennEtikett(vises.fra, vises.til).includes("(") ? 4 : 2) && (
                         <span className="pointer-events-none truncate px-1 text-[10px] font-semibold tabular-nums text-white/95">
                           {spennEtikett(vises.fra, vises.til)}
                         </span>

@@ -95,15 +95,36 @@ export function lagTidsakse(
   if (antallUker <= maksKolonner) {
     const kolonner: Kolonne[] = [];
     let peker = mandagI(fraDato);
-    let sisteOverskrift = "";
+    let sisteMaaned = "";
+    const startAar = mandagI(fraDato).getUTCFullYear();
+    let sisteAar = startAar;
     for (let i = 0; i < antallUker; i++) {
       const neste = new Date(peker.getTime() + 7 * DAG);
       const { uke } = isoUke(peker);
       // Måneden skrives bare når den skifter. Ellers står det «mar» over hver
       // eneste kolonne og drukner ukenumrene, som er det man leser etter.
+      //
+      // Krysser planen et årsskifte, skrives året med på den første måneden i
+      // det nye året: «jan 27». Uten det er «uke 45–12» umulig å tidfeste —
+      // uke 12 kan like gjerne ha vært i fjor.
+      const aar = peker.getUTCFullYear();
       const maaned = MAANEDER[peker.getUTCMonth()];
-      const overskrift = maaned === sisteOverskrift ? "" : maaned;
-      sisteOverskrift = maaned;
+      // Året skrives bare i det selve skiftet skjer, ikke på hver måned etterpå.
+      // «jan 27, feb, mar» leses like entydig som «jan 27, feb 27, mar 27», og
+      // gjentakelsen ville drukna ukenumrene på samme måte som måneden gjorde.
+      //
+      // Sammenligningen går på månedsnavnet alene, ikke på den ferdige teksten.
+      // Ellers regnes «jan» som forskjellig fra «jan 27», og januar skrives to
+      // ganger: én gang med år og én gang uten.
+      const nyMaaned = maaned !== sisteMaaned;
+      const nyttAar = aar !== sisteAar && aar !== startAar;
+      const overskrift = nyttAar
+        ? `${maaned} ${String(aar).slice(2)}`
+        : nyMaaned
+          ? maaned
+          : "";
+      sisteMaaned = maaned;
+      sisteAar = aar;
       kolonner.push({ fra: peker, til: neste, etikett: String(uke), overskrift });
       peker = neste;
     }

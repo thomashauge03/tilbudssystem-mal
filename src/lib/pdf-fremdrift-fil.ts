@@ -93,14 +93,19 @@ function klipp(tekst: string, font: PDFFont, storrelse: number, maks: number): s
   return ut + "...";
 }
 
-/** «36–42» eller «36» — skrives på streken, så plassen er knapp og «uke» utelates. */
+/**
+ * «36-42» eller «36» — skrives på streken, så plassen er knapp og «uke»
+ * utelates. Krysser spennet et årsskifte, blir året med: «45-12 (2027)».
+ * Uke 12 alene er umulig å tidfeste på en plan som går over nyttår.
+ */
 const ukeMerkelapp = (startISO?: string | null, sluttISO?: string | null): string => {
   const s = parseDato(startISO);
   if (!s) return "";
   const e = parseDato(sluttISO) ?? s;
-  const a = isoUke(s).uke;
-  const b = isoUke(e).uke;
-  return a === b ? String(a) : `${a}–${b}`;
+  const a = isoUke(s);
+  const b = isoUke(e);
+  const spenn = a.uke === b.uke && a.aar === b.aar ? String(a.uke) : `${a.uke}-${b.uke}`;
+  return a.aar === b.aar ? spenn : `${spenn} (${b.aar})`;
 };
 
 const fmtDato = (s?: string | null) => {

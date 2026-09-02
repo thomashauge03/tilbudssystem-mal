@@ -53,6 +53,20 @@ sjekk("aksen starter på en mandag", tilDato(kort.fra), "2026-03-02");
 sjekk("måned står første gang", kort.kolonner[0].overskrift, "mar");
 sjekk("og ikke gjentas", kort.kolonner[1].overskrift, "");
 
+// Krysser planen nyttår, må året fram — ellers er «uke 45–12» umulig å tidfeste
+const overNyttaar = lagTidsakse("2026-11-02", "2027-03-21")!;
+const medAar = overNyttaar.kolonner.filter((k) => k.overskrift.includes("27"));
+sjekk("året skrives på første måned i det nye året", medAar[0]?.overskrift, "jan 27");
+sjekk("bare én gang", medAar.length, 1);
+// Januar dekker flere ukekolonner. Skrives «jan 27» på den første, skal de
+// øvrige januarukene være tomme — ikke «jan» en gang til.
+const overskrifter = overNyttaar.kolonner.map((k) => k.overskrift).filter(Boolean);
+sjekk("januar står ikke to ganger", overskrifter.filter((o) => o.startsWith("jan")).length, 1);
+sjekk("rekkefølgen på månedene", overskrifter, ["nov", "des", "jan 27", "feb", "mar"]);
+sjekk("månedene før nyttår står uten år", overNyttaar.kolonner[0].overskrift, "nov");
+// En plan som holder seg innenfor ett år skal ikke ha årstall noe sted
+sjekk("uten årsskifte: ingen årstall", kort.kolonner.some((k) => /\d/.test(k.overskrift)), false);
+
 // Over grensen byttes det til måneder
 const lang = lagTidsakse("2026-01-01", "2027-12-31")!;
 sjekk("lang plan gir månedsakse", lang.type, "maaned");

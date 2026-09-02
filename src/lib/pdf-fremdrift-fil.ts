@@ -11,7 +11,39 @@
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { lagTidsakse, plassering, planPeriode, isoUke, parseDato, finnFarge } from "./fremdrift.ts";
-import type { PlanAktivitet, PlanDokument, PlanInnstillinger } from "./pdf-fremdrift.ts";
+
+export interface PlanAktivitet {
+  name: string;
+  responsible?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  is_milestone?: boolean | null;
+  /** Fag eller fase — «Grunnarbeid», «Rør/VA». Grupperer tegnforklaringen. */
+  category?: string | null;
+  color?: string | null;
+  notes?: string | null;
+}
+
+export interface PlanDokument {
+  title: string;
+  revision?: string | null;
+  plan_date?: string | null;
+  notes?: string | null;
+  offer_number?: number | string | null;
+  offer_title?: string | null;
+  project_ref?: string | null;
+  customer_name?: string | null;
+}
+
+export interface PlanInnstillinger {
+  company_name: string;
+  company_tagline?: string;
+  company_org_nr?: string;
+  logo_url?: string;
+  ref_name?: string;
+  ref_phone?: string;
+  ref_email?: string;
+}
 
 /** Liggende A4 i punkt. */
 const BREDDE = 841.89;
@@ -67,6 +99,34 @@ const fmtDato = (s?: string | null) => {
   return `${String(d.getUTCDate()).padStart(2, "0")}.${String(d.getUTCMonth() + 1).padStart(2, "0")}.${d.getUTCFullYear()}`;
 };
 
+/**
+ * Skalerer logoen ned før den bygges inn.
+ *
+ * Firmalogoer lastes opp i den oppløsningen de tilfeldigvis har — den ene her
+ * er 1254×1254 px, mens den tegnes 26 punkt høy, altså rundt 108 px selv ved
+ * 300 dpi. Uten nedskalering blir hvert vedlegg 650 kB i stedet for 30, og de
+ * ligger i en gratis lagringsplan og sendes på e-post.
+ *
+ * Bare i nettleseren — det er der PDF-en faktisk lages. Kjøres koden et sted
+ * uten canvas, brukes originalen, og resultatet blir stort men riktig.
+ */
+async function nedskalertLogo(bytes: Uint8Array, maksHoyde: number): Promise<Uint8Array | null> {
+  if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas !== "function") return null;
+  try {
+    const bilde = await createImageBitmap(new Blob([bytes as BlobPart]));
+    if (bilde.height <= maksHoyde) return null;
+    const skala = maksHoyde / bilde.height;
+    const lerret = new OffscreenCanvas(Math.max(1, Math.round(bilde.width * skala)), maksHoyde);
+    const ctx = lerret.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bilde, 0, 0, lerret.width, lerret.height);
+    const blob = await lerret.convertToBlob({ type: "image/png" });
+    return new Uint8Array(await blob.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
 export async function lagFremdriftsplanPdf(
   plan: PlanDokument,
   aktiviteter: PlanAktivitet[],
@@ -79,6 +139,32 @@ export async function lagFremdriftsplanPdf(
   doc.setTitle(trygg(`Fremdriftsplan - ${plan.title || settings.company_name}`));
   doc.setAuthor(trygg(settings.company_name));
   doc.setCreator(trygg(settings.company_name));
+
+  // Firmalogoen. Hentes over nett, og det kan feile — nettet er nede, bildet er
+  // slettet, formatet er noe pdf-lib ikke kan. Da skal dokumentet komme likevel:
+  // en fremdriftsplan uten logo er brukbar, en plan som ikke lar seg laste ned
+  // er det ikke.
+  let logo: Awaited<ReturnType<typeof doc.embedPng>> | null = null;
+  if (settings.logo_url) {
+    try {
+      const svar = await fetch(settings.logo_url);
+      if (svar.ok) {
+        const raa = new Uint8Array(await svar.arrayBuffer());
+        // 200 px er rikelig for et merke som tegnes 26 punkt høyt, også på skjerm
+        // med høy oppløsning og ved innzooming.
+        const bytes = (await nedskalertLogo(raa, 200)) ?? raa;
+        // Formatet leses av de første bytene, ikke av filendelsen — URL-en har
+        // ofte en spørrestreng bak seg («?t=1782299268014»). Nedskaleringen gir
+        // alltid PNG, så sjekken gjøres på det som faktisk skal bygges inn.
+        const erPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e;
+        const erJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
+        if (erPng) logo = await doc.embedPng(bytes);
+        else if (erJpg) logo = await doc.embedJpg(bytes);
+      }
+    } catch {
+      logo = null;
+    }
+  }
 
   const medDato = aktiviteter.filter((a) => parseDato(a.start_date));
   const utenDato = aktiviteter.filter((a) => !parseDato(a.start_date) && String(a.name ?? "").trim());
@@ -139,10 +225,20 @@ export async function lagFremdriftsplanPdf(
     });
     y -= 22;
 
-    side.drawText(trygg(settings.company_name), { x: MARG, y, size: 13, font: fet, color: BLEKK });
+    // Logoen står foran firmanavnet, og teksten flyttes tilsvarende. Mangler
+    // den, rykker navnet helt til venstre i stedet for å etterlate et hull.
+    let tekstX = MARG;
+    if (logo) {
+      const h = 26;
+      const b = (logo.width / logo.height) * h;
+      side.drawImage(logo, { x: MARG, y: y - 8, width: b, height: h });
+      tekstX = MARG + b + 10;
+    }
+
+    side.drawText(trygg(settings.company_name), { x: tekstX, y, size: 13, font: fet, color: BLEKK });
     if (settings.company_tagline) {
       side.drawText(trygg(settings.company_tagline), {
-        x: MARG, y: y - 11, size: 7.5, font: vanlig, color: GRAA_400,
+        x: tekstX, y: y - 11, size: 7.5, font: vanlig, color: GRAA_400,
       });
     }
 

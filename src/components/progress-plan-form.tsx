@@ -6,18 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "sonner";
 import {
-  Plus, Trash2, Save, FileDown, ArrowLeft, GripVertical, ArrowUp, ArrowDown, Diamond,
-  FileText, LayoutList, Copy, CalendarRange, Paperclip, Printer,
+  Plus, Trash2, Save, FileDown, ArrowLeft, GripVertical, ArrowUp, ArrowDown, Diamond, Minus,
+  FileText, LayoutList, Copy, CalendarRange, Paperclip, ChevronDown,
 } from "lucide-react";
 import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
 import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
 import { FremdriftRutenett } from "@/components/fremdrift-rutenett";
-import { openProgressPlanPdf } from "@/lib/pdf-fremdrift";
 import { lagFremdriftsplanPdf, fremdriftsplanFilnavn } from "@/lib/pdf-fremdrift-fil";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -93,7 +92,7 @@ const sluttEtterUker = (startISO: string, uker: number): string => {
 };
 
 /** Bredden på feltkolonnen. Må stemme med summen av feltene i raden. */
-const VENSTRE_BREDDE = 708;
+const VENSTRE_BREDDE = 786;
 
 const tomAktivitet = (sort: number, over: Partial<Aktivitet> = {}): Aktivitet => ({
   sort_order: sort, name: "", responsible: "", category: "", color: "graa",
@@ -452,6 +451,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
   );
   const [aktivRad, setAktivRad] = useState<number | null>(null);
   const [periodeApen, setPeriodeApen] = useState(false);
+  const [infoApen, setInfoApen] = useState(true);
   /** Raden som viser eksakte datofelt. Bare én om gangen — ellers blir lista full av datofelt igjen. */
   const [datoRad, setDatoRad] = useState<number | null>(null);
 
@@ -667,39 +667,6 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
     }
   };
 
-  const lastNedPdf = async () => {
-    if (!appSettings) { toast.error("Firmainnstillingene er ikke lastet ennå"); return; }
-    // Vinduet må åpnes i selve klikket, ellers regner nettleseren det som en
-    // popup og blokkerer det.
-    const vindu = window.open("", "_blank", "width=1400,height=1000");
-    if (!vindu) { toast.error("Nettleseren blokkerte PDF-vinduet. Tillat popup-vinduer og prøv igjen."); return; }
-    const id = await lagre();
-    if (!id) { vindu.close(); return; }
-    const ref = (appSettings.our_refs ?? [])[0];
-    openProgressPlanPdf(
-      {
-        title: plan.title,
-        revision: plan.revision,
-        plan_date: plan.plan_date,
-        notes: plan.notes,
-        offer_number: valgtTilbud?.offer_number ?? null,
-        offer_title: valgtTilbud?.title ?? null,
-        project_ref: valgtTilbud?.project_number ?? null,
-        customer_name: valgtTilbud?.customer_name ?? null,
-      },
-      akt.filter((a) => a.name.trim() || a.start_date),
-      {
-        company_name: appSettings.company_name ?? "",
-        company_tagline: (appSettings as any).company_tagline ?? "",
-        company_org_nr: (appSettings as any).company_org_nr ?? "",
-        logo_url: appSettings.logo_url ?? "",
-        ref_name: ref?.name ?? "",
-        ref_phone: ref?.phone ?? "",
-        ref_email: ref?.email ?? "",
-      },
-      vindu,
-    );
-  };
 
   if (isEdit && !init) return <div className="text-muted-foreground">Laster…</div>;
 
@@ -723,89 +690,104 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
           <Button variant="outline" onClick={lastNedFil} disabled={lagrer}>
             <FileDown className="mr-2 h-4 w-4" />Last ned PDF
           </Button>
-          <Button variant="outline" onClick={lastNedPdf} disabled={lagrer} title="Åpner utskriftsvindu">
-            <Printer className="mr-2 h-4 w-4" />Skriv ut
-          </Button>
           <Button onClick={lagreOgTilbake} disabled={lagrer}>
             <Save className="mr-2 h-4 w-4" />{lagrer ? "Lagrer…" : "Lagre"}
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-        <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Planinfo</h2>
-
-          <div className="space-y-2">
-            <Label>Tittel *</Label>
-            <Input
-              value={plan.title}
-              onChange={(e) => settPlan("title", e.target.value)}
-              placeholder="F.eks. «Fremdriftsplan VA Skardhei»"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Knytt til tilbud</Label>
-            <Select value={plan.offer_id ?? "__none"} onValueChange={velgTilbud}>
-              <SelectTrigger><SelectValue placeholder="Velg tilbud…" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">— Ikke knyttet —</SelectItem>
-                {(offers ?? []).map((o: any) => (
-                  <SelectItem key={o.id} value={o.id}>
-                    #{o.offer_number} – {o.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {valgtTilbud && (
-              <p className="text-xs text-muted-foreground">
-                {valgtTilbud.customer_name || "Uten kunde"}
-                {valgtTilbud.project_number ? ` · prosjekt ${valgtTilbud.project_number}` : ""}
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Revisjon</Label>
-              {/* Fremdriftsplaner sendes inn på nytt gjennom prosjektet, og
-                  byggherren må se hvilken utgave han sitter med. */}
-              <Input
-                value={plan.revision}
-                onChange={(e) => settPlan("revision", e.target.value)}
-                placeholder="A"
-              />
+      <div className="space-y-6">
+        {/* Planinfo lå som et 380 px sidepanel. Det stjal bredden fra tabellen,
+            som da måtte rulle sidelengs — og en fremdriftsplan leses på tvers.
+            Feltene er få og korte, så de får plass på en linje øverst i stedet.
+            Sammenleggbar fordi de sjelden røres etter at planen er satt opp. */}
+        <Collapsible open={infoApen} onOpenChange={setInfoApen}>
+          <div className="rounded-xl border bg-card shadow-sm">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                Planinfo
+              </h2>
+              {!infoApen && (
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {plan.title || <span className="text-muted-foreground">Uten tittel</span>}
+                  {valgtTilbud && (
+                    <span className="text-muted-foreground">
+                      {" · #"}{valgtTilbud.offer_number}
+                      {valgtTilbud.customer_name ? ` · ${valgtTilbud.customer_name}` : ""}
+                    </span>
+                  )}
+                  {plan.revision && <span className="text-muted-foreground">{` · rev. ${plan.revision}`}</span>}
+                </span>
+              )}
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="ml-auto">
+                  {infoApen ? "Skjul" : "Vis"}
+                  <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${infoApen ? "rotate-180" : ""}`} />
+                </Button>
+              </CollapsibleTrigger>
             </div>
-            <div className="space-y-2">
-              <Label>Plandato</Label>
-              <Input type="date" value={plan.plan_date} onChange={(e) => settPlan("plan_date", e.target.value)} />
-            </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label>Merknader</Label>
-            <Textarea
-              rows={4}
-              value={plan.notes}
-              onChange={(e) => settPlan("notes", e.target.value)}
-              placeholder="Forutsetninger, vinterstans, avhengigheter…"
-            />
-          </div>
+            <CollapsibleContent>
+              <div className="grid gap-4 border-t px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-2 lg:col-span-2">
+                  <Label>Tittel *</Label>
+                  <Input
+                    value={plan.title}
+                    onChange={(e) => settPlan("title", e.target.value)}
+                    placeholder="F.eks. «Fremdriftsplan VA Skardhei»"
+                  />
+                </div>
 
-          {periode && (
-            <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground">Planen dekker</p>
-              <p className="mt-1 font-medium tabular-nums">
-                {ukeTekst(periode.start)} – {ukeTekst(periode.slutt)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {varighetDager(periode.start, periode.slutt)} dager · {gyldige.length} aktiviteter
-                {akse?.type === "maaned" && " · vises som måneder i PDF-en"}
-              </p>
-            </div>
-          )}
-        </div>
+                <div className="space-y-2 lg:col-span-2">
+                  <Label>Knytt til tilbud</Label>
+                  <Select value={plan.offer_id ?? "__none"} onValueChange={velgTilbud}>
+                    <SelectTrigger><SelectValue placeholder="Velg tilbud…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">— Ikke knyttet —</SelectItem>
+                      {(offers ?? []).map((o: any) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          #{o.offer_number} – {o.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {valgtTilbud && (
+                    <p className="text-xs text-muted-foreground">
+                      {valgtTilbud.customer_name || "Uten kunde"}
+                      {valgtTilbud.project_number ? ` · prosjekt ${valgtTilbud.project_number}` : ""}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Revisjon</Label>
+                  {/* Fremdriftsplaner sendes inn på nytt gjennom prosjektet, og
+                      byggherren må se hvilken utgave han sitter med. */}
+                  <Input
+                    value={plan.revision}
+                    onChange={(e) => settPlan("revision", e.target.value)}
+                    placeholder="A"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Plandato</Label>
+                  <Input type="date" value={plan.plan_date} onChange={(e) => settPlan("plan_date", e.target.value)} />
+                </div>
+
+                <div className="space-y-2 lg:col-span-2">
+                  <Label>Merknader</Label>
+                  <Textarea
+                    rows={2}
+                    value={plan.notes}
+                    onChange={(e) => settPlan("notes", e.target.value)}
+                    placeholder="Forutsetninger, vinterstans, avhengigheter…"
+                  />
+                </div>
+              </div>
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
 
         <div className="space-y-4">
           {/* Perioden først. Kalenderen kan ikke tegnes før den er satt, og en
@@ -926,8 +908,8 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
 
               {/* Én tabell, ikke to kort. Feltene og tiden hører til samme rad;
                   var de delt, måtte man se opp og ned for hver aktivitet. */}
-              <div className="overflow-x-auto">
-                <div className="min-w-[1480px]">
+              <div className="hidden overflow-x-auto lg:block">
+                <div style={{ minWidth: VENSTRE_BREDDE + akse.kolonner.length * (akse.type === "uke" ? 19 : 34) }}>
                   <FremdriftRutenett
                     akse={akse}
                     aktiviteter={akt}
@@ -942,16 +924,16 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                         <span className="flex-1 basis-[200px] text-[10px] uppercase tracking-wider text-muted-foreground">
                           Aktivitet
                         </span>
-                        <span className="w-24 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <span className="w-28 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
                           Ansvarlig
                         </span>
-                        <span className="w-24 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <span className="w-28 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
                           Fag
                         </span>
                         <span className="w-[108px] shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
                           Periode
                         </span>
-                        <span className="w-[118px] shrink-0" />
+                        <span className="w-[164px] shrink-0" />
                       </>
                     }
                     venstre={(i) => {
@@ -1014,13 +996,13 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                             onChange={(e) => settAkt(i, { name: e.target.value })}
                           />
                           <Input
-                            className="h-8 w-24 shrink-0"
+                            className="h-8 w-28 shrink-0"
                             value={a.responsible}
                             placeholder="Ansvarlig"
                             onChange={(e) => settAkt(i, { responsible: e.target.value })}
                           />
                           <Input
-                            className="h-8 w-24 shrink-0"
+                            className="h-8 w-28 shrink-0"
                             value={a.category}
                             placeholder="Fag"
                             list="plan-fag"
@@ -1044,19 +1026,31 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                               : "ikke satt"}
                           </button>
 
-                          <div className="flex w-[118px] shrink-0 items-center justify-end">
-                            <label
-                              className="mr-1 flex items-center gap-1 text-xs text-muted-foreground"
-                              title="Milepæl er ett tidspunkt, ikke en periode"
+                          <div className="flex w-[164px] shrink-0 items-center justify-end">
+                            {/* Viser hva raden er, ikke hva man kan huke av.
+                                En avkryssingsboks med et rutersymbol ved siden
+                                av sa ingenting før man prøvde. */}
+                            <button
+                              type="button"
+                              aria-pressed={a.is_milestone}
+                              title={a.is_milestone
+                                ? "Milepæl — ett tidspunkt. Klikk for å gjøre om til periode."
+                                : "Periode — går over tid. Klikk for å gjøre om til milepæl."}
+                              onClick={() => settAkt(i, {
+                                is_milestone: !a.is_milestone,
+                                end_date: !a.is_milestone ? a.start_date : a.end_date,
+                              })}
+                              className={
+                                "mr-1 flex h-7 items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition-colors " +
+                                (a.is_milestone
+                                  ? "border-primary/40 bg-primary/10 text-primary"
+                                  : "text-muted-foreground hover:bg-accent")
+                              }
                             >
-                              <Checkbox
-                                checked={a.is_milestone}
-                                onCheckedChange={(v) =>
-                                  settAkt(i, { is_milestone: !!v, end_date: v ? a.start_date : a.end_date })
-                                }
-                              />
-                              <Diamond className="h-3 w-3" />
-                            </label>
+                              {a.is_milestone
+                                ? <><Diamond className="h-3 w-3 fill-current" />Milepæl</>
+                                : <><Minus className="h-3 w-3" />Periode</>}
+                            </button>
                             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => flyttRad(i, i - 1)} disabled={i === 0} title="Flytt opp">
                               <ArrowUp className="h-3.5 w-3.5" />
                             </Button>
@@ -1116,6 +1110,121 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                     }}
                   />
                 </div>
+              </div>
+
+              {/* På telefon er en Gantt over 26 uker uleselig uansett hva man
+                  gjør med den. Der får man i stedet én kort per aktivitet med
+                  datofelter — planen kan redigeres, og selve grafen leses på en
+                  større skjerm eller i PDF-en. */}
+              <div className="space-y-3 lg:hidden">
+                {akt.map((a, i) => {
+                  const farge = finnFarge(a.color);
+                  return (
+                    <div key={i} className="rounded-lg border bg-background p-3">
+                      <div className="flex items-center gap-2">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={"Farge: " + farge.navn}
+                              className="h-7 w-7 shrink-0 rounded-md border"
+                              style={{ background: farge.fyll, borderColor: farge.kant }}
+                            />
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-2" align="start">
+                            <div className="flex flex-wrap gap-1.5">
+                              {FARGER.map((c) => (
+                                <button
+                                  key={c.key}
+                                  type="button"
+                                  aria-label={c.navn}
+                                  onClick={() => settAkt(i, { color: c.key })}
+                                  className={
+                                    "h-8 w-8 rounded-md border " +
+                                    (a.color === c.key ? "ring-2 ring-offset-1 ring-foreground/60" : "")
+                                  }
+                                  style={{ background: c.fyll, borderColor: c.kant }}
+                                />
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                        <Input
+                          className="h-9 min-w-0 flex-1"
+                          value={a.name}
+                          placeholder="Aktivitet"
+                          onChange={(e) => settAkt(i, { name: e.target.value })}
+                        />
+                        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => slettRad(i)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <Input
+                          className="h-9"
+                          value={a.responsible}
+                          placeholder="Ansvarlig"
+                          onChange={(e) => settAkt(i, { responsible: e.target.value })}
+                        />
+                        <Input
+                          className="h-9"
+                          value={a.category}
+                          placeholder="Fag"
+                          list="plan-fag"
+                          onChange={(e) => settAkt(i, { category: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-end gap-2">
+                        <button
+                          type="button"
+                          aria-pressed={a.is_milestone}
+                          onClick={() => settAkt(i, {
+                            is_milestone: !a.is_milestone,
+                            end_date: !a.is_milestone ? a.start_date : a.end_date,
+                          })}
+                          className={
+                            "flex h-9 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-colors " +
+                            (a.is_milestone
+                              ? "border-primary/40 bg-primary/10 text-primary"
+                              : "text-muted-foreground")
+                          }
+                        >
+                          {a.is_milestone
+                            ? <><Diamond className="h-3 w-3 fill-current" />Milepæl</>
+                            : <><Minus className="h-3 w-3" />Periode</>}
+                        </button>
+                        <Input
+                          type="date"
+                          className="h-9 w-36"
+                          value={a.start_date}
+                          onChange={(e) => settAkt(i, {
+                            start_date: e.target.value,
+                            end_date: a.is_milestone ? e.target.value : a.end_date,
+                          })}
+                        />
+                        {!a.is_milestone && (
+                          <Input
+                            type="date"
+                            className="h-9 w-36"
+                            value={a.end_date || a.start_date}
+                            min={a.start_date || undefined}
+                            onChange={(e) => settAkt(i, { end_date: e.target.value })}
+                          />
+                        )}
+                        {a.start_date && (
+                          <span className="pb-2 text-xs tabular-nums text-muted-foreground">
+                            {ukeSpenn(a.start_date, a.is_milestone ? a.start_date : a.end_date || a.start_date)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-xs text-muted-foreground">
+                  Selve kalenderen vises på større skjerm — og i PDF-en.
+                </p>
               </div>
 
               {/* Forslagene gjør at samme fag skrives likt hver gang — ellers

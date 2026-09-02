@@ -14,6 +14,13 @@ export interface OurRef {
   phone: string;
   email: string;
   signature?: string; // base64 dataURL
+  /**
+   * Den som skal foreslås av seg selv — på nye tilbud, i bunnteksten på
+   * dokumenter, og som ansvarlig på nye aktiviteter. Uttrykkelig felt framfor
+   * «den som står først i lista»: rekkefølgen er tilfeldig, og da endte det med
+   * at feil person sto med navn og telefon nederst på det byggherren mottok.
+   */
+  is_default?: boolean;
 }
 
 export interface AppSettings {
@@ -58,7 +65,7 @@ function parseOurRefs(v: unknown): OurRef[] {
   return raw.map((r) => {
     if (typeof r === "string") return { name: r, phone: "", email: "" };
     const obj = r as Record<string, unknown>;
-    return { name: String(obj.name ?? ""), position: obj.position ? String(obj.position) : undefined, phone: String(obj.phone ?? ""), email: String(obj.email ?? ""), signature: obj.signature ? String(obj.signature) : undefined };
+    return { name: String(obj.name ?? ""), position: obj.position ? String(obj.position) : undefined, phone: String(obj.phone ?? ""), email: String(obj.email ?? ""), signature: obj.signature ? String(obj.signature) : undefined, is_default: !!obj.is_default };
   });
 }
 
@@ -120,4 +127,16 @@ export function useSaveSettings() {
     toast.success("Innstillinger lagret");
     return true;
   };
+}
+
+/**
+ * Referansen som skal brukes når ingen er valgt.
+ *
+ * Er ingen merket som standard — for eksempel på et firma som ble satt opp før
+ * feltet fantes — brukes den første, som før. Da endrer ingenting seg for dem
+ * som ikke tar valget.
+ */
+export function standardRef(refs?: OurRef[] | null): OurRef | undefined {
+  const liste = refs ?? [];
+  return liste.find((r) => r.is_default) ?? liste[0];
 }

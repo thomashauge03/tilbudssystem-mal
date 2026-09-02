@@ -13,7 +13,7 @@ import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckC
 import { nok, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openAmendmentPdf } from "@/lib/pdf";
 import { AttachmentField } from "@/components/attachment-field";
-import { useAppSettings } from "@/hooks/use-app-settings";
+import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { Passordbekreftelse } from "@/components/passordbekreftelse";
 
@@ -169,7 +169,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
           // Tilbudets "Vår referanse" er den samme personen som står som
           // prosjektleder på endringen. Mangler den, brukes firmaets første
           // referanse fra innstillingene.
-          project_manager: initialOffer.our_ref || appSettings?.our_refs?.[0]?.name || "",
+          project_manager: initialOffer.our_ref || standardRef(appSettings?.our_refs)?.name || "",
         });
         setInit(true);
         return;

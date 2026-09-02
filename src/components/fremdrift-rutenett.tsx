@@ -10,7 +10,7 @@
 // tekstfelter, og skjemaet skal ikke vite noe om piksler og ukegrenser.
 
 import { useRef, useState, type ReactNode } from "react";
-import { finnFarge, plassering, tilDato, isoUke, type Tidsakse } from "@/lib/fremdrift";
+import { finnFarge, plassering, tilDato, isoUke, naarTekst, type Tidsakse } from "@/lib/fremdrift";
 
 export interface RutenettAktivitet {
   name: string;
@@ -322,7 +322,9 @@ export function FremdriftRutenett({
                         className="pointer-events-none absolute top-1/2 -translate-y-1/2 whitespace-nowrap pl-3 text-[10px] font-semibold tabular-nums text-foreground/70"
                         style={{ left: `${bruk.venstre}%` }}
                       >
-                        {spennEtikett(vises.fra, vises.til)}
+                        {forhaand?.rad === rad
+                          ? spennEtikett(vises.fra, vises.til)
+                          : naarTekst(a.start_date, a.start_date, true, true)}
                       </span>
                     )}
                   </>
@@ -354,7 +356,12 @@ export function FremdriftRutenett({
                           verdt å skrive — ellers klippes nettopp året bort. */}
                       {vises && Math.abs(vises.til - vises.fra) >= (spennEtikett(vises.fra, vises.til).includes("(") ? 4 : 2) && (
                         <span className="pointer-events-none truncate px-1 text-[10px] font-semibold tabular-nums text-white/95">
-                          {spennEtikett(vises.fra, vises.til)}
+                          {/* Mens man drar, viser den kolonnene man treffer.
+                              Sluppet viser den det aktiviteten faktisk er:
+                              uker når den følger hele uker, ellers datoene. */}
+                          {forhaand?.rad === rad
+                            ? spennEtikett(vises.fra, vises.til)
+                            : naarTekst(a.start_date, sluttFor(a), false, true)}
                         </span>
                       )}
                     </span>

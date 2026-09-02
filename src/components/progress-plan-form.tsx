@@ -15,10 +15,10 @@ import {
   FileText, LayoutList, Copy, CalendarRange, CalendarDays, Paperclip, ChevronDown,
 } from "lucide-react";
 import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
-import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, antallUker, erHeleUker, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
+import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, antallUker, erHeleUker, naarTekst, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
 import { FremdriftRutenett } from "@/components/fremdrift-rutenett";
 import { lagFremdriftsplanPdf, fremdriftsplanFilnavn } from "@/lib/pdf-fremdrift-fil";
-import { useAppSettings } from "@/hooks/use-app-settings";
+import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
 interface Aktivitet {
@@ -599,7 +599,8 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
 
   /** Feltene PDF-en trenger, samlet ett sted så fil og utskrift ikke kan sprike. */
   const pdfData = () => {
-    const ref = (appSettings?.our_refs ?? [])[0];
+    // Standardreferansen, ikke den som tilfeldigvis står først i lista.
+    const ref = standardRef(appSettings?.our_refs);
     return {
       dok: {
         title: plan.title,
@@ -1077,22 +1078,15 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                             }
                           >
                             <CalendarDays className="h-3 w-3 shrink-0 opacity-70" />
+                            {/* Uker når aktiviteten følger hele uker, datoer
+                                når de er satt for hånd — og alltid dato på en
+                                milepæl, for en milepæl ER en dato. «Overtakelse
+                                uke 16» skjuler nettopp dagen man skal lese. */}
                             <span className="truncate">
                               {a.start_date
-                                ? ukeSpenn(a.start_date, a.is_milestone ? a.start_date : a.end_date || a.start_date)
+                                ? naarTekst(a.start_date, a.end_date || a.start_date, a.is_milestone, true)
                                 : "sett dato"}
                             </span>
-                            {/* Dekker perioden ikke hele uker, er datoene satt
-                                for hånd — og da sier «uke 37–38» noe annet enn
-                                datofeltene: 11.–19. september er fredag til
-                                lørdag. Prikken sier at ukene er avrundet. */}
-                            {a.start_date && !a.is_milestone
-                              && !erHeleUker(a.start_date, a.end_date || a.start_date) && (
-                              <span
-                                className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                                title={`Eksakte datoer: ${fmtDate(a.start_date)}–${fmtDate(a.end_date || a.start_date)}`}
-                              />
-                            )}
                           </button>
 
                           <div className="flex w-[164px] shrink-0 items-center justify-end">
@@ -1276,7 +1270,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                         )}
                         {a.start_date && (
                           <span className="pb-2 text-xs tabular-nums text-muted-foreground">
-                            {ukeSpenn(a.start_date, a.is_milestone ? a.start_date : a.end_date || a.start_date)}
+                            {naarTekst(a.start_date, a.end_date || a.start_date, a.is_milestone)}
                           </span>
                         )}
                       </div>

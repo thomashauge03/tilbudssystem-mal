@@ -237,6 +237,39 @@ export function erHeleUker(startISO?: string | null, sluttISO?: string | null): 
   return startdag === 1 && sluttdag === 7;
 }
 
+/** «15.04.2026». Ligger her og ikke i format.ts, så modulen står på egne ben. */
+export function datoTekst(iso?: string | null, medAar = true): string {
+  const d = parseDato(iso);
+  if (!d) return "—";
+  const dag = String(d.getUTCDate()).padStart(2, "0");
+  const maaned = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return medAar ? `${dag}.${maaned}.${d.getUTCFullYear()}` : `${dag}.${maaned}`;
+}
+
+/**
+ * Når skjer dette — sagt på den måten som faktisk bærer informasjon.
+ *
+ * En milepæl ER en dato: «overtakelse uke 16» skjuler nettopp det man skal lese.
+ * En aktivitet som følger hele uker leses best i uker, for det er slik en
+ * fremdriftsplan snakkes om. Men er datoene satt for hånd, sier uketallet noe
+ * annet enn feltene — 11.–19. september er fredag til lørdag, ikke to hele uker
+ * — og da må datoene fram.
+ *
+ * Samme funksjon brukes på skjermen og i PDF-en, så de aldri kan sprike.
+ */
+export function naarTekst(
+  startISO?: string | null,
+  sluttISO?: string | null,
+  erMilepael = false,
+  kort = false,
+): string {
+  if (!parseDato(startISO)) return "—";
+  if (erMilepael) return datoTekst(startISO, !kort);
+  const slutt = sluttISO || startISO;
+  if (erHeleUker(startISO, slutt)) return ukeSpenn(startISO, slutt);
+  return `${datoTekst(startISO, false)}–${datoTekst(slutt, !kort)}`;
+}
+
 /** Antall kalenderdager, begge dager medregnet. */
 export function varighetDager(startISO?: string | null, sluttISO?: string | null): number {
   const s = parseDato(startISO);

@@ -129,6 +129,14 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
   const upd = (i: number, patch: Partial<OurRef>) =>
     onChange(refs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
+  // Hvem som er standard. Er ingen valgt ennå, peker den på den første —
+  // samme regel som standardRef() bruker, slik at det som vises her er det
+  // appen faktisk gjør.
+  const valgt = refs.findIndex((r) => r.is_default);
+  const standard = valgt >= 0 ? valgt : 0;
+  const settStandard = (i: number) =>
+    onChange(refs.map((r, idx) => ({ ...r, is_default: idx === i })));
+
   const handleSignatureUpload = (i: number, file: File) => {
     if (file.size > 2 * 1024 * 1024) { alert("Signaturbildet er for stort (maks 2 MB)"); return; }
     const reader = new FileReader();
@@ -170,6 +178,23 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           </div>
+
+          {/* Hvem appen skal foreslå av seg selv: på nye tilbud, som ansvarlig
+              på fremdriftsplanen og i bunnteksten på PDF-ene. Uten et
+              uttrykkelig valg ble den som tilfeldigvis lå først i lista brukt,
+              og da endte feil navn og telefon nederst på det kunden fikk. */}
+          <label className="flex w-fit cursor-pointer items-center gap-2 pl-6">
+            <input
+              type="radio"
+              name="standard-referanse"
+              className="h-4 w-4 accent-primary"
+              checked={standard === i}
+              onChange={() => settStandard(i)}
+            />
+            <span className={`text-xs ${standard === i ? "font-medium" : "text-muted-foreground"}`}>
+              {standard === i ? "Standard — foreslås på nye tilbud og PDF-er" : "Gjør til standard"}
+            </span>
+          </label>
 
           {/* Signatur */}
           <div className="pl-6 space-y-2">

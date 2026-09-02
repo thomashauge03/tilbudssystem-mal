@@ -4,7 +4,7 @@
 // plan som går over nyttår er nettopp der ukenumrene betyr mest.
 
 import {
-  isoUke, mandagI, parseDato, tilDato, lagTidsakse, plassering, ukeSpenn, antallUker,
+  isoUke, mandagI, parseDato, tilDato, lagTidsakse, plassering, ukeSpenn, antallUker, naarTekst, erHeleUker, datoTekst,
   ukeTekst, varighetDager, planPeriode,
 } from "./fremdrift.ts";
 
@@ -146,6 +146,30 @@ sjekk("men ukene stemmer", antallUker("2026-03-02", "2027-02-28"), 52);
 sjekk("bare startdato", antallUker("2026-03-02"), 1);
 sjekk("uten dato", antallUker(null), 0);
 sjekk("snudd rekkefølge tåles", antallUker("2026-04-12", "2026-03-02"), 6);
+
+console.log("\n--- Når skjer det: uker eller datoer ---");
+
+// En milepæl er en dato. «Overtakelse uke 16» skjuler nettopp dagen.
+sjekk("milepæl viser dato", naarTekst("2026-04-15", "2026-04-15", true), "15.04.2026");
+sjekk("milepæl kort", naarTekst("2026-04-15", "2026-04-15", true, true), "15.04");
+// Hele uker leses best som uker
+sjekk("mandag–søndag gir uker", naarTekst("2026-03-02", "2026-03-15"), "uke 10–11");
+sjekk("én hel uke", naarTekst("2026-03-02", "2026-03-08"), "uke 10");
+// Satt for hånd: da sier uketallet noe annet enn feltene
+sjekk("fredag–lørdag gir datoer", naarTekst("2026-09-11", "2026-09-19"), "11.09–19.09.2026");
+sjekk("start midt i uken", naarTekst("2026-03-04", "2026-03-15"), "04.03–15.03.2026");
+sjekk("slutt midt i uken", naarTekst("2026-03-02", "2026-03-11"), "02.03–11.03.2026");
+sjekk("uten dato", naarTekst(null), "—");
+// Hele uker over årsskiftet skal fortsatt gi uker, med år
+sjekk("hele uker over nyttår", naarTekst("2026-12-21", "2027-01-10"), "uke 52–1 (2027)");
+
+console.log("\n--- Hele uker? ---");
+
+sjekk("mandag til søndag", erHeleUker("2026-03-02", "2026-03-08"), true);
+sjekk("mandag til lørdag", erHeleUker("2026-03-02", "2026-03-07"), false);
+sjekk("tirsdag til søndag", erHeleUker("2026-03-03", "2026-03-08"), false);
+sjekk("uten sluttdato: én dag, ikke hel uke", erHeleUker("2026-03-02"), false);
+sjekk("uten dato regnes som greit", erHeleUker(null), true);
 
 console.log("\n--- Ukespenn i tabellkolonnen ---");
 

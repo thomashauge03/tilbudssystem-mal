@@ -17,7 +17,7 @@ import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
 import { planPeriode, ukeTekst } from "@/lib/fremdrift";
-import { useAppSettings } from "@/hooks/use-app-settings";
+import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { Passordbekreftelse } from "@/components/passordbekreftelse";
 
@@ -206,7 +206,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           return;
         } catch { sessionStorage.removeItem(DRAFT_KEY); }
       }
-      setOffer(emptyOffer(adminCost, appSettings.offer_validity_days, appSettings.our_refs[0]?.name ?? "", appSettings.default_offer_text));
+      setOffer(emptyOffer(adminCost, appSettings.offer_validity_days, standardRef(appSettings.our_refs)?.name ?? "", appSettings.default_offer_text));
       setInitialized(true);
     }
     if (isEdit && loaded && !initialized) {

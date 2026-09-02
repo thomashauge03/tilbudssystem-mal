@@ -8,13 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import {
   Plus, Trash2, Save, FileDown, ArrowLeft, GripVertical, ArrowUp, ArrowDown, Diamond,
   FileText, LayoutList, Copy, CalendarRange, Paperclip, Printer,
 } from "lucide-react";
 import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
-import { lagTidsakse, planPeriode, ukeTekst, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
+import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
 import { FremdriftRutenett } from "@/components/fremdrift-rutenett";
 import { openProgressPlanPdf } from "@/lib/pdf-fremdrift";
 import { lagFremdriftsplanPdf, fremdriftsplanFilnavn } from "@/lib/pdf-fremdrift-fil";
@@ -91,6 +92,9 @@ const sluttEtterUker = (startISO: string, uker: number): string => {
   return tilDato(new Date(d.getTime() + (Math.max(1, uker) * 7 - 1) * 86400000));
 };
 
+/** Bredden på feltkolonnen. Må stemme med summen av feltene i raden. */
+const VENSTRE_BREDDE = 708;
+
 const tomAktivitet = (sort: number, over: Partial<Aktivitet> = {}): Aktivitet => ({
   sort_order: sort, name: "", responsible: "", category: "", color: "graa",
   start_date: "", end_date: "", is_milestone: false, notes: "", ...over,
@@ -104,17 +108,26 @@ const tomAktivitet = (sort: number, over: Partial<Aktivitet> = {}): Aktivitet =>
  * havner før startdatoen.
  */
 function PeriodeSteg({
-  start, uker, kanAvbryte, onAvbryt, onSett,
+  start, slutt: sluttInn, uker, kanAvbryte, onAvbryt, onSett,
 }: {
   start: string;
+  slutt: string;
   uker: number;
   kanAvbryte: boolean;
   onAvbryt: () => void;
-  onSett: (start: string, uker: number) => void;
+  onSett: (start: string, slutt: string) => void;
 }) {
   const [dato, setDato] = useState(start || toISODate(new Date()));
   const [antall, setAntall] = useState(uker || 12);
-  const slutt = sluttEtterUker(dato, antall);
+  // To veier til samme svar. «Vi har seks uker på oss» og «det skal stå ferdig
+  // 14. mars» er begge måter folk tenker på, og hvilken som gjelder avhenger av
+  // om det er egen framdrift eller byggherrens frist som styrer.
+  const [modus, setModus] = useState<"uker" | "dato">(sluttInn ? "dato" : "uker");
+  const [sluttDato, setSluttDato] = useState(sluttInn || sluttEtterUker(dato, uker || 12));
+
+  const slutt = modus === "uker" ? sluttEtterUker(dato, antall) : sluttDato;
+  const gyldig = !!parseDato(dato) && !!parseDato(slutt) && slutt >= dato;
+  const antallUker = gyldig ? (lagTidsakse(dato, slutt)?.kolonner.length ?? 0) : 0;
 
   return (
     <div className="rounded-xl border bg-card p-5 shadow-sm">
@@ -141,47 +154,96 @@ function PeriodeSteg({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="per-uker">Varighet</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              id="per-uker"
-              type="number"
-              min={1}
-              max={260}
-              className="w-24"
-              value={antall || ""}
-              onChange={(e) => setAntall(Math.max(1, Math.min(260, Number(e.target.value) || 1)))}
-            />
-            <span className="text-sm text-muted-foreground">uker</span>
+          <Label>Slutt</Label>
+          <div className="flex rounded-md border p-0.5">
+            {([["uker", "Antall uker"], ["dato", "Bestemt dato"]] as const).map(([k, tekst]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  // Bytter man vei, følger den andre verdien med — ellers ville
+                  // et bytte nullstilt det man nettopp la inn.
+                  if (k === "dato") setSluttDato(sluttEtterUker(dato, antall));
+                  else if (parseDato(sluttDato)) {
+                    setAntall(lagTidsakse(dato, sluttDato)?.kolonner.length || antall);
+                  }
+                  setModus(k);
+                }}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  modus === k ? "bg-primary text-primary-foreground" : "hover:bg-accent"
+                }`}
+              >
+                {tekst}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-1.5">
-          {[4, 8, 12, 16, 26, 52].map((u) => (
-            <Button
-              key={u}
-              size="sm"
-              variant={antall === u ? "default" : "outline"}
-              onClick={() => setAntall(u)}
-            >
-              {u} uker
-            </Button>
-          ))}
-        </div>
+        {modus === "uker" ? (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="per-uker">Varighet</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="per-uker"
+                  type="number"
+                  min={1}
+                  max={260}
+                  className="w-24"
+                  value={antall || ""}
+                  onChange={(e) => setAntall(Math.max(1, Math.min(260, Number(e.target.value) || 1)))}
+                />
+                <span className="text-sm text-muted-foreground">uker</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {[4, 8, 12, 16, 26, 52].map((u) => (
+                <Button
+                  key={u}
+                  size="sm"
+                  variant={antall === u ? "default" : "outline"}
+                  onClick={() => setAntall(u)}
+                >
+                  {u} uker
+                </Button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="space-y-1.5">
+            <Label htmlFor="per-slutt">Siste dag</Label>
+            <Input
+              id="per-slutt"
+              type="date"
+              className="w-44"
+              value={sluttDato}
+              min={dato || undefined}
+              onChange={(e) => setSluttDato(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              {parseDato(sluttDato)
+                ? (sluttDato < dato ? "Ligger før oppstart" : `Slutter ${ukeTekst(sluttDato)}`)
+                : "Velg en dato"}
+            </p>
+          </div>
+        )}
       </div>
 
-      {slutt && (
+      {gyldig && (
         <p className="mt-4 text-sm">
           <span className="text-muted-foreground">Perioden blir </span>
           <span className="font-medium tabular-nums">
             {ukeTekst(dato)} – {ukeTekst(slutt)}
           </span>
-          <span className="text-muted-foreground"> · siste dag {fmtDate(slutt)}</span>
+          <span className="text-muted-foreground">
+            {" · "}{antallUker} uker · {fmtDate(dato)} til {fmtDate(slutt)}
+          </span>
         </p>
       )}
 
       <div className="mt-4 flex gap-2">
-        <Button onClick={() => onSett(dato, antall)} disabled={!parseDato(dato)}>
+        <Button onClick={() => onSett(dato, slutt)} disabled={!gyldig}>
           <CalendarRange className="mr-2 h-4 w-4" />
           {kanAvbryte ? "Oppdater perioden" : "Lag kalenderen"}
         </Button>
@@ -390,11 +452,15 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
   );
   const [aktivRad, setAktivRad] = useState<number | null>(null);
   const [periodeApen, setPeriodeApen] = useState(false);
+  /** Raden som viser eksakte datofelt. Bare én om gangen — ellers blir lista full av datofelt igjen. */
+  const [datoRad, setDatoRad] = useState<number | null>(null);
 
-  const settPeriode = (startISO: string, uker: number) => {
+  const settPeriode = (startISO: string, sluttISO: string) => {
     brukerHarEndretRef.current = true;
-    const start = mandagISO(startISO);
-    setPlan((p) => ({ ...p, start_date: start, end_date: sluttEtterUker(start, uker) }));
+    // Starten flyttes til mandag fordi aksen er bygget av hele uker. Slutten
+    // står som den er: er fristen 14. mars, er det den datoen som gjelder, og
+    // tidsaksen tar med uken den ligger i.
+    setPlan((p) => ({ ...p, start_date: mandagISO(startISO), end_date: sluttISO }));
     setPeriodeApen(false);
   };
 
@@ -747,6 +813,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
           {(!harPeriode || periodeApen) && (
             <PeriodeSteg
               start={plan.start_date}
+              slutt={plan.end_date}
               uker={ukerIPerioden}
               kanAvbryte={harPeriode}
               onAvbryt={() => setPeriodeApen(false)}
@@ -841,138 +908,228 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
             </div>
           )}
 
-          <div className={akt.length ? "rounded-xl border bg-card p-5 shadow-sm" : "hidden"}>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Aktiviteter</h2>
-              <Button size="sm" variant="outline" onClick={nyRad}>
-                <Plus className="mr-1 h-4 w-4" />Ny aktivitet
-              </Button>
-            </div>
-
-            <div className="space-y-2">
-              {akt.map((a, i) => (
-                <div
-                  key={i}
-                  draggable
-                  onDragStart={() => setDragIndex(i)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => { if (dragIndex !== null) flyttRad(dragIndex, i); setDragIndex(null); }}
-                  className="rounded-lg border bg-background p-2"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing" />
-                    <Input
-                      className="min-w-0 flex-1 basis-52"
-                      value={a.name}
-                      placeholder="Aktivitet"
-                      onChange={(e) => settAkt(i, { name: e.target.value })}
-                    />
-                    <Input
-                      className="min-w-0 flex-1 basis-32"
-                      value={a.responsible}
-                      placeholder="Ansvarlig"
-                      onChange={(e) => settAkt(i, { responsible: e.target.value })}
-                    />
-                    <Input
-                      className="min-w-0 flex-1 basis-32"
-                      value={a.category}
-                      placeholder="Fag / fase"
-                      onChange={(e) => settAkt(i, { category: e.target.value })}
-                      list="plan-fag"
-                    />
-                    {/* Fargevelger. Faste farger framfor fritt valg, så samme fag
-                        har samme farge på tvers av reviderte utgaver. */}
-                    <div className="flex shrink-0 items-center gap-1">
-                      {FARGER.map((f) => (
-                        <button
-                          key={f.key}
-                          type="button"
-                          title={f.navn}
-                          aria-label={f.navn}
-                          aria-pressed={a.color === f.key}
-                          onClick={() => settAkt(i, { color: f.key })}
-                          className={`h-5 w-5 rounded-md border transition-transform ${
-                            a.color === f.key ? "scale-110 ring-2 ring-offset-1 ring-foreground/60" : "hover:scale-110"
-                          }`}
-                          style={{ background: f.fyll, borderColor: f.kant }}
-                        />
-                      ))}
-                    </div>
-                    {/* Datoene settes i kalenderen under, ikke her. To datofelt
-                        per rad gjorde raden så trang at ingenting fikk plass. */}
-                    <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                      {a.start_date
-                        ? (a.is_milestone
-                            ? ukeTekst(a.start_date)
-                            : `${ukeTekst(a.start_date)}–${ukeTekst(a.end_date || a.start_date)}`)
-                        : "ikke plassert"}
-                    </span>
-                    <label className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
-                      <Checkbox
-                        checked={a.is_milestone}
-                        onCheckedChange={(v) => settAkt(i, { is_milestone: !!v, end_date: v ? "" : a.end_date })}
-                      />
-                      <Diamond className="h-3 w-3" />Milepæl
-                    </label>
-                    <div className="ml-auto flex shrink-0 items-center gap-0.5">
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => flyttRad(i, i - 1)} disabled={i === 0}>
-                        <ArrowUp className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => flyttRad(i, i + 1)} disabled={i === akt.length - 1}>
-                        <ArrowDown className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => slettRad(i)}>
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                  {a.start_date && !a.is_milestone && (
-                    <p className="mt-1 pl-6 text-xs text-muted-foreground tabular-nums">
-                      {varighetDager(a.start_date, a.end_date || a.start_date)} dager
-                    </p>
-                  )}
-                </div>
-              ))}
-              {!akt.length && (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  Ingen aktiviteter ennå.
-                </p>
-              )}
-            </div>
-
-            {/* Forslagene gjør at samme fag skrives likt hver gang — ellers blir
-                «Rør/VA» og «Rør VA» to farger i tegnforklaringen. */}
-            <datalist id="plan-fag">
-              {[...new Set([...MAL.map((m) => m.category), ...akt.map((a) => a.category)])]
-                .filter((c): c is string => !!c && !!c.trim())
-                .map((c) => <option key={c} value={c} />)}
-            </datalist>
-
-            <div className="mt-3">
-              <Button variant="outline" onClick={nyRad}><Plus className="mr-2 h-4 w-4" />Ny aktivitet</Button>
-            </div>
-          </div>
-
-          {/* Kalenderen. Her plasseres aktivitetene ved å dra dem inn, i
-              stedet for å taste to datoer per rad. Samme tidsakse som PDF-en. */}
           {akse && akt.length > 0 && (
-            <div className="overflow-x-auto rounded-xl border bg-card p-5 shadow-sm">
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                  Kalender
+                  Aktiviteter og fremdrift
                 </h2>
-                <p className="text-xs text-muted-foreground">
-                  Dra i rutenettet for å legge inn · dra boksen for å flytte · dra i endene for å endre lengde
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="hidden text-xs text-muted-foreground lg:block">
+                    Dra i rutenettet for å legge inn · dra boksen for å flytte · dra i endene for å endre lengde
+                  </p>
+                  <Button size="sm" variant="outline" onClick={nyRad}>
+                    <Plus className="mr-1 h-4 w-4" />Ny aktivitet
+                  </Button>
+                </div>
               </div>
-              <div className="min-w-[680px]">
-                <FremdriftRutenett
-                  akse={akse}
-                  aktiviteter={akt}
-                  aktivRad={aktivRad}
-                  onVelgRad={setAktivRad}
-                  onEndre={(i, patch) => settAkt(i, patch)}
-                />
+
+              {/* Én tabell, ikke to kort. Feltene og tiden hører til samme rad;
+                  var de delt, måtte man se opp og ned for hver aktivitet. */}
+              <div className="overflow-x-auto">
+                <div className="min-w-[1480px]">
+                  <FremdriftRutenett
+                    akse={akse}
+                    aktiviteter={akt}
+                    aktivRad={aktivRad}
+                    onVelgRad={setAktivRad}
+                    onEndre={(i, patch) => settAkt(i, patch)}
+                    venstreBredde={VENSTRE_BREDDE}
+                    venstreHode={
+                      <>
+                        <span className="w-6 shrink-0" />
+                        <span className="w-6 shrink-0" />
+                        <span className="flex-1 basis-[200px] text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Aktivitet
+                        </span>
+                        <span className="w-24 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Ansvarlig
+                        </span>
+                        <span className="w-24 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Fag
+                        </span>
+                        <span className="w-[108px] shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Periode
+                        </span>
+                        <span className="w-[118px] shrink-0" />
+                      </>
+                    }
+                    venstre={(i) => {
+                      const a = akt[i];
+                      const farge = finnFarge(a.color);
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            className="w-6 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                            draggable
+                            onDragStart={() => setDragIndex(i)}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={() => { if (dragIndex !== null) flyttRad(dragIndex, i); setDragIndex(null); }}
+                            title="Dra for å endre rekkefølgen"
+                          >
+                            <GripVertical className="h-4 w-4" />
+                          </button>
+
+                          {/* Fargen settes der raden er. Popover framfor åtte
+                              prikker på rad: prikkene tok like mye plass som
+                              selve navnefeltet. */}
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                title={"Farge: " + farge.navn}
+                                aria-label={"Farge: " + farge.navn}
+                                className="h-6 w-6 shrink-0 rounded-md border transition-transform hover:scale-110"
+                                style={{ background: farge.fyll, borderColor: farge.kant }}
+                              />
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-2" align="start">
+                              <div className="flex gap-1.5">
+                                {FARGER.map((c) => (
+                                  <button
+                                    key={c.key}
+                                    type="button"
+                                    title={c.navn}
+                                    aria-label={c.navn}
+                                    aria-pressed={a.color === c.key}
+                                    onClick={() => settAkt(i, { color: c.key })}
+                                    className={
+                                      "h-7 w-7 rounded-md border transition-transform " +
+                                      (a.color === c.key
+                                        ? "scale-110 ring-2 ring-offset-1 ring-foreground/60"
+                                        : "hover:scale-110")
+                                    }
+                                    style={{ background: c.fyll, borderColor: c.kant }}
+                                  />
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+
+                          <Input
+                            className="h-8 min-w-0 flex-1 basis-[200px]"
+                            value={a.name}
+                            placeholder="Aktivitet"
+                            onChange={(e) => settAkt(i, { name: e.target.value })}
+                          />
+                          <Input
+                            className="h-8 w-24 shrink-0"
+                            value={a.responsible}
+                            placeholder="Ansvarlig"
+                            onChange={(e) => settAkt(i, { responsible: e.target.value })}
+                          />
+                          <Input
+                            className="h-8 w-24 shrink-0"
+                            value={a.category}
+                            placeholder="Fag"
+                            list="plan-fag"
+                            onChange={(e) => settAkt(i, { category: e.target.value })}
+                          />
+
+                          {/* Ukene står i raden, ikke bare i grafen. Klikker man
+                              på dem, kommer datofeltene fram for eksakt dato. */}
+                          <button
+                            type="button"
+                            onClick={() => setDatoRad(datoRad === i ? null : i)}
+                            aria-expanded={datoRad === i}
+                            title="Klikk for å skrive inn eksakt dato"
+                            className={
+                              "w-[108px] shrink-0 rounded px-1.5 py-1 text-left text-xs tabular-nums transition-colors hover:bg-accent " +
+                              (datoRad === i ? "bg-accent font-medium" : "text-muted-foreground")
+                            }
+                          >
+                            {a.start_date
+                              ? ukeSpenn(a.start_date, a.is_milestone ? a.start_date : a.end_date || a.start_date)
+                              : "ikke satt"}
+                          </button>
+
+                          <div className="flex w-[118px] shrink-0 items-center justify-end">
+                            <label
+                              className="mr-1 flex items-center gap-1 text-xs text-muted-foreground"
+                              title="Milepæl er ett tidspunkt, ikke en periode"
+                            >
+                              <Checkbox
+                                checked={a.is_milestone}
+                                onCheckedChange={(v) =>
+                                  settAkt(i, { is_milestone: !!v, end_date: v ? a.start_date : a.end_date })
+                                }
+                              />
+                              <Diamond className="h-3 w-3" />
+                            </label>
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => flyttRad(i, i - 1)} disabled={i === 0} title="Flytt opp">
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => flyttRad(i, i + 1)} disabled={i === akt.length - 1} title="Flytt ned">
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => slettRad(i)} title="Slett">
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          </div>
+                        </>
+                      );
+                    }}
+                    under={(i) => {
+                      if (datoRad !== i) return null;
+                      const a = akt[i];
+                      return (
+                        <div className="flex flex-wrap items-end gap-3 border-b bg-accent/40 px-3 py-2">
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">
+                              {a.is_milestone ? "Dato" : "Fra og med"}
+                            </p>
+                            <Input
+                              type="date"
+                              className="h-8 w-40"
+                              value={a.start_date}
+                              onChange={(e) => settAkt(i, {
+                                start_date: e.target.value,
+                                end_date: a.is_milestone ? e.target.value : a.end_date,
+                              })}
+                            />
+                          </div>
+                          {!a.is_milestone && (
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Til og med</p>
+                              <Input
+                                type="date"
+                                className="h-8 w-40"
+                                value={a.end_date || a.start_date}
+                                min={a.start_date || undefined}
+                                onChange={(e) => settAkt(i, { end_date: e.target.value })}
+                              />
+                            </div>
+                          )}
+                          {a.start_date && (
+                            <p className="pb-2 text-xs tabular-nums text-muted-foreground">
+                              {a.is_milestone
+                                ? ukeTekst(a.start_date)
+                                : varighetDager(a.start_date, a.end_date || a.start_date) + " dager"}
+                            </p>
+                          )}
+                          <Button size="sm" variant="ghost" className="ml-auto h-8" onClick={() => setDatoRad(null)}>
+                            Lukk
+                          </Button>
+                        </div>
+                      );
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Forslagene gjør at samme fag skrives likt hver gang — ellers
+                  blir «Rør/VA» og «Rør VA» to farger i tegnforklaringen. */}
+              <datalist id="plan-fag">
+                {[...new Set([...MAL.map((m) => m.category), ...akt.map((a) => a.category)])]
+                  .filter((c): c is string => !!c && !!c.trim())
+                  .map((c) => <option key={c} value={c} />)}
+              </datalist>
+
+              <div className="mt-3">
+                <Button variant="outline" onClick={nyRad}>
+                  <Plus className="mr-2 h-4 w-4" />Ny aktivitet
+                </Button>
               </div>
             </div>
           )}

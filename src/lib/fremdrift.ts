@@ -167,6 +167,22 @@ export function ukeTekst(datoISO?: string | null, visAar = false): string {
   return visAar ? `uke ${uke} (${aar})` : `uke ${uke}`;
 }
 
+/**
+ * «uke 36–43» for et spenn. Ordet «uke» skrives én gang, ikke to — «uke 36–uke
+ * 43» leses tregere og tar plass i en tabellkolonne som er trang fra før.
+ * Året tas med når spennet krysser et årsskifte, for da er 52–3 ikke opplagt.
+ */
+export function ukeSpenn(startISO?: string | null, sluttISO?: string | null): string {
+  const s = parseDato(startISO);
+  if (!s) return "—";
+  const e = parseDato(sluttISO) ?? s;
+  const a = isoUke(s);
+  const b = isoUke(e);
+  if (a.aar === b.aar && a.uke === b.uke) return `uke ${a.uke}`;
+  if (a.aar === b.aar) return `uke ${a.uke}–${b.uke}`;
+  return `uke ${a.uke}–${b.uke} (${b.aar})`;
+}
+
 /** Antall kalenderdager, begge dager medregnet. */
 export function varighetDager(startISO?: string | null, sluttISO?: string | null): number {
   const s = parseDato(startISO);

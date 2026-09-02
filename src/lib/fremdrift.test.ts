@@ -4,7 +4,7 @@
 // plan som går over nyttår er nettopp der ukenumrene betyr mest.
 
 import {
-  isoUke, mandagI, parseDato, tilDato, lagTidsakse, plassering,
+  isoUke, mandagI, parseDato, tilDato, lagTidsakse, plassering, ukeSpenn,
   ukeTekst, varighetDager, planPeriode,
 } from "./fremdrift.ts";
 
@@ -114,6 +114,17 @@ sjekk("periode fra aktiviteter", planPeriode([
 ]), { start: "2026-03-02", slutt: "2026-04-01" });
 sjekk("periode uten datoer", planPeriode([{ start_date: null, end_date: null }]), null);
 sjekk("periode av tom liste", planPeriode([]), null);
+
+console.log("\n--- Ukespenn i tabellkolonnen ---");
+
+// «uke» skal stå én gang, ikke to — kolonnen er trang
+sjekk("spenn", ukeSpenn("2026-03-02", "2026-04-12"), "uke 10–15");
+sjekk("én uke blir ikke et spenn", ukeSpenn("2026-03-02", "2026-03-08"), "uke 10");
+sjekk("bare startdato", ukeSpenn("2026-03-02"), "uke 10");
+sjekk("samme dag", ukeSpenn("2026-03-04", "2026-03-04"), "uke 10");
+// Krysser spennet et årsskifte, er 52–1 ikke opplagt uten året
+sjekk("over årsskiftet får år", ukeSpenn("2026-12-21", "2027-01-10"), "uke 52–1 (2027)");
+sjekk("uten dato", ukeSpenn(null), "—");
 
 console.log(`\n${ok} i orden, ${feil} feil`);
 process.exit(feil ? 1 : 0);

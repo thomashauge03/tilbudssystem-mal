@@ -1,3 +1,16 @@
+/**
+ * Escaper tekst før den settes inn i HTML. Ligger her og ikke i pdf.ts fordi
+ * pdf.ts drar med seg hele dokumentmotoren — funksjonen må kunne brukes, og
+ * etterprøves, uten den.
+ */
+export const escapeHtml = (s: string | null | undefined) =>
+  String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
 export const nok = (n: number | null | undefined) =>
   new Intl.NumberFormat("nb-NO", { style: "currency", currency: "NOK", maximumFractionDigits: 2 }).format(Number(n ?? 0));
 

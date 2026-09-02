@@ -1,4 +1,6 @@
-import { offerHasDeadline } from "@/lib/format";
+import { offerHasDeadline, escapeHtml } from "@/lib/format";
+
+export { escapeHtml };
 
 export function openPrintPdf(title: string, bodyHtml: string) {
   const win = window.open("", "_blank", "width=900,height=1100");
@@ -30,13 +32,6 @@ export function openPrintPdf(title: string, bodyHtml: string) {
   win.document.close();
 }
 
-export const escapeHtml = (s: string | null | undefined) =>
-  String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 
 /**
  * Signaturbildene limes rett inn i et src-attributt, og kundesignaturen skrives av

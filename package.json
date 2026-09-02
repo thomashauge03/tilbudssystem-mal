@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "node --experimental-strip-types src/lib/anbud.test.ts && node --experimental-strip-types src/lib/anbud-duell.test.ts && node --experimental-strip-types src/lib/telefon.test.ts",
+    "test": "node --experimental-strip-types src/lib/anbud.test.ts && node --experimental-strip-types src/lib/anbud-duell.test.ts && node --experimental-strip-types src/lib/telefon.test.ts && node --experimental-strip-types src/lib/fremdrift.test.ts",
     "backup": "node scripts/sikkerhetskopi.mjs"
   },
   "dependencies": {

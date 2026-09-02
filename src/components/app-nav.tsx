@@ -18,6 +18,7 @@ const BASE_LINKS = [
   { to: "/tilbud", label: "Tilbud" },
   { to: "/ordre", label: "Ordre" },
   { to: "/endringsmeldinger", label: "Endringsmeldinger" },
+  { to: "/fremdriftsplan", label: "Fremdriftsplan" },
   { to: "/status", label: "Status" },
   { to: "/prosjekter", label: "Prosjekt" },
   { to: "/anbud", label: "Anbud" },

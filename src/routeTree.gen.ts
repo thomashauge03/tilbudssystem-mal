@@ -23,11 +23,14 @@ import { Route as AdmkostRouteImport } from './routes/admkost'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TilbudIndexRouteImport } from './routes/tilbud.index'
+import { Route as FremdriftsplanIndexRouteImport } from './routes/fremdriftsplan.index'
 import { Route as EndringsmeldingerIndexRouteImport } from './routes/endringsmeldinger.index'
 import { Route as TilbudNyRouteImport } from './routes/tilbud.ny'
 import { Route as TilbudIdRouteImport } from './routes/tilbud.$id'
 import { Route as SignerTokenRouteImport } from './routes/signer.$token'
 import { Route as SignerEndringTokenRouteImport } from './routes/signer-endring.$token'
+import { Route as FremdriftsplanNyRouteImport } from './routes/fremdriftsplan.ny'
+import { Route as FremdriftsplanIdRouteImport } from './routes/fremdriftsplan.$id'
 import { Route as EndringsmeldingerNyRouteImport } from './routes/endringsmeldinger.ny'
 import { Route as EndringsmeldingerIdRouteImport } from './routes/endringsmeldinger.$id'
 
@@ -101,6 +104,11 @@ const TilbudIndexRoute = TilbudIndexRouteImport.update({
   path: '/tilbud/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FremdriftsplanIndexRoute = FremdriftsplanIndexRouteImport.update({
+  id: '/fremdriftsplan/',
+  path: '/fremdriftsplan/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EndringsmeldingerIndexRoute = EndringsmeldingerIndexRouteImport.update({
   id: '/endringsmeldinger/',
   path: '/endringsmeldinger/',
@@ -124,6 +132,16 @@ const SignerTokenRoute = SignerTokenRouteImport.update({
 const SignerEndringTokenRoute = SignerEndringTokenRouteImport.update({
   id: '/signer-endring/$token',
   path: '/signer-endring/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FremdriftsplanNyRoute = FremdriftsplanNyRouteImport.update({
+  id: '/fremdriftsplan/ny',
+  path: '/fremdriftsplan/ny',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FremdriftsplanIdRoute = FremdriftsplanIdRouteImport.update({
+  id: '/fremdriftsplan/$id',
+  path: '/fremdriftsplan/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EndringsmeldingerNyRoute = EndringsmeldingerNyRouteImport.update({
@@ -153,11 +171,14 @@ export interface FileRoutesByFullPath {
   '/status': typeof StatusRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
+  '/fremdriftsplan/$id': typeof FremdriftsplanIdRoute
+  '/fremdriftsplan/ny': typeof FremdriftsplanNyRoute
   '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
   '/endringsmeldinger/': typeof EndringsmeldingerIndexRoute
+  '/fremdriftsplan/': typeof FremdriftsplanIndexRoute
   '/tilbud/': typeof TilbudIndexRoute
 }
 export interface FileRoutesByTo {
@@ -176,11 +197,14 @@ export interface FileRoutesByTo {
   '/status': typeof StatusRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
+  '/fremdriftsplan/$id': typeof FremdriftsplanIdRoute
+  '/fremdriftsplan/ny': typeof FremdriftsplanNyRoute
   '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
   '/endringsmeldinger': typeof EndringsmeldingerIndexRoute
+  '/fremdriftsplan': typeof FremdriftsplanIndexRoute
   '/tilbud': typeof TilbudIndexRoute
 }
 export interface FileRoutesById {
@@ -200,11 +224,14 @@ export interface FileRoutesById {
   '/status': typeof StatusRoute
   '/endringsmeldinger/$id': typeof EndringsmeldingerIdRoute
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
+  '/fremdriftsplan/$id': typeof FremdriftsplanIdRoute
+  '/fremdriftsplan/ny': typeof FremdriftsplanNyRoute
   '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
   '/endringsmeldinger/': typeof EndringsmeldingerIndexRoute
+  '/fremdriftsplan/': typeof FremdriftsplanIndexRoute
   '/tilbud/': typeof TilbudIndexRoute
 }
 export interface FileRouteTypes {
@@ -225,11 +252,14 @@ export interface FileRouteTypes {
     | '/status'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
+    | '/fremdriftsplan/$id'
+    | '/fremdriftsplan/ny'
     | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
     | '/endringsmeldinger/'
+    | '/fremdriftsplan/'
     | '/tilbud/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -248,11 +278,14 @@ export interface FileRouteTypes {
     | '/status'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
+    | '/fremdriftsplan/$id'
+    | '/fremdriftsplan/ny'
     | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
     | '/endringsmeldinger'
+    | '/fremdriftsplan'
     | '/tilbud'
   id:
     | '__root__'
@@ -271,11 +304,14 @@ export interface FileRouteTypes {
     | '/status'
     | '/endringsmeldinger/$id'
     | '/endringsmeldinger/ny'
+    | '/fremdriftsplan/$id'
+    | '/fremdriftsplan/ny'
     | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
     | '/endringsmeldinger/'
+    | '/fremdriftsplan/'
     | '/tilbud/'
   fileRoutesById: FileRoutesById
 }
@@ -295,11 +331,14 @@ export interface RootRouteChildren {
   StatusRoute: typeof StatusRoute
   EndringsmeldingerIdRoute: typeof EndringsmeldingerIdRoute
   EndringsmeldingerNyRoute: typeof EndringsmeldingerNyRoute
+  FremdriftsplanIdRoute: typeof FremdriftsplanIdRoute
+  FremdriftsplanNyRoute: typeof FremdriftsplanNyRoute
   SignerEndringTokenRoute: typeof SignerEndringTokenRoute
   SignerTokenRoute: typeof SignerTokenRoute
   TilbudIdRoute: typeof TilbudIdRoute
   TilbudNyRoute: typeof TilbudNyRoute
   EndringsmeldingerIndexRoute: typeof EndringsmeldingerIndexRoute
+  FremdriftsplanIndexRoute: typeof FremdriftsplanIndexRoute
   TilbudIndexRoute: typeof TilbudIndexRoute
 }
 
@@ -403,6 +442,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TilbudIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/fremdriftsplan/': {
+      id: '/fremdriftsplan/'
+      path: '/fremdriftsplan'
+      fullPath: '/fremdriftsplan/'
+      preLoaderRoute: typeof FremdriftsplanIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/endringsmeldinger/': {
       id: '/endringsmeldinger/'
       path: '/endringsmeldinger'
@@ -438,6 +484,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignerEndringTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/fremdriftsplan/ny': {
+      id: '/fremdriftsplan/ny'
+      path: '/fremdriftsplan/ny'
+      fullPath: '/fremdriftsplan/ny'
+      preLoaderRoute: typeof FremdriftsplanNyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fremdriftsplan/$id': {
+      id: '/fremdriftsplan/$id'
+      path: '/fremdriftsplan/$id'
+      fullPath: '/fremdriftsplan/$id'
+      preLoaderRoute: typeof FremdriftsplanIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/endringsmeldinger/ny': {
       id: '/endringsmeldinger/ny'
       path: '/endringsmeldinger/ny'
@@ -471,11 +531,14 @@ const rootRouteChildren: RootRouteChildren = {
   StatusRoute: StatusRoute,
   EndringsmeldingerIdRoute: EndringsmeldingerIdRoute,
   EndringsmeldingerNyRoute: EndringsmeldingerNyRoute,
+  FremdriftsplanIdRoute: FremdriftsplanIdRoute,
+  FremdriftsplanNyRoute: FremdriftsplanNyRoute,
   SignerEndringTokenRoute: SignerEndringTokenRoute,
   SignerTokenRoute: SignerTokenRoute,
   TilbudIdRoute: TilbudIdRoute,
   TilbudNyRoute: TilbudNyRoute,
   EndringsmeldingerIndexRoute: EndringsmeldingerIndexRoute,
+  FremdriftsplanIndexRoute: FremdriftsplanIndexRoute,
   TilbudIndexRoute: TilbudIndexRoute,
 }
 export const routeTree = rootRouteImport

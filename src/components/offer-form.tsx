@@ -16,6 +16,7 @@ import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, amend
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
+import { planPeriode, ukeTekst } from "@/lib/fremdrift";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { Passordbekreftelse } from "@/components/passordbekreftelse";
@@ -132,6 +133,21 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       ]);
       if (o.error) throw o.error;
       return { offer: o.data, lines: (l.data ?? []) as Line[] };
+    },
+  });
+
+  // Fremdriftsplaner som peker på dette tilbudet
+  const { data: planer } = useQuery({
+    queryKey: ["offer-progress-plans", offerId],
+    enabled: isEdit,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("progress_plans")
+        .select("id, title, revision, progress_plan_activities(start_date, end_date)")
+        .eq("offer_id", offerId!)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
@@ -1139,6 +1155,58 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               <div className="flex justify-between border-t pt-2 text-lg font-bold"><span>Totalt eks. mva</span><span className="text-primary">{nok(total)}</span></div>
             </div>
           </div>
+
+          {/* Fremdriftsplanen leveres sammen med tilbudet, så den skal være å
+              finne herfra — ikke bare på sin egen side. */}
+          {isEdit && (
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  Fremdriftsplan
+                  {(planer ?? []).length > 0 && (
+                    <span className="ml-2 text-xs font-normal normal-case">({planer!.length})</span>
+                  )}
+                </h2>
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/fremdriftsplan/ny" search={{ tilbud: offerId }}>
+                    <Plus className="mr-1 h-4 w-4" />Ny fremdriftsplan
+                  </Link>
+                </Button>
+              </div>
+              {(planer ?? []).length === 0 ? (
+                <p className="py-3 text-sm text-muted-foreground">Ingen fremdriftsplan på dette tilbudet.</p>
+              ) : (
+                <div className="divide-y">
+                  {planer!.map((p: any) => {
+                    const periode = planPeriode(p.progress_plan_activities ?? []);
+                    return (
+                      <Link
+                        key={p.id}
+                        to="/fremdriftsplan/$id"
+                        params={{ id: p.id }}
+                        className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm hover:bg-accent/40"
+                      >
+                        <span className="font-medium">{p.title || "Uten tittel"}</span>
+                        {p.revision && (
+                          <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                            rev. {p.revision}
+                          </span>
+                        )}
+                        <span className="text-muted-foreground">
+                          {(p.progress_plan_activities ?? []).length} aktiviteter
+                        </span>
+                        {periode && (
+                          <span className="ml-auto tabular-nums text-muted-foreground">
+                            {ukeTekst(periode.start)} – {ukeTekst(periode.slutt)}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Endringsmeldinger knyttet til dette tilbudet — så du finner veien
               begge veier, ikke bare fra endringsmeldingen til tilbudet */}

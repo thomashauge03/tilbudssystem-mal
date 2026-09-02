@@ -31,7 +31,7 @@ function FremdriftsplanPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("progress_plans")
-        .select("id, title, revision, plan_date, created_at, offer_id, offers(offer_number, title, customer_name), progress_plan_activities(start_date, end_date, is_milestone)")
+        .select("id, title, revision, plan_date, start_date, end_date, created_at, offer_id, offers(offer_number, title, customer_name), progress_plan_activities(start_date, end_date, is_milestone)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data ?? [];
@@ -109,7 +109,14 @@ function FremdriftsplanPage() {
               </tr>
             ) : rader.map((p: any, i: number) => {
               const akt = p.progress_plan_activities ?? [];
-              const periode = planPeriode(akt);
+              // Perioden er planens egen — den settes før aktivitetene, fordi
+              // den er kalenderen arbeidet legges inn i. En plan med periode,
+              // men uten daterte aktiviteter, har altså en periode å vise og
+              // skal ikke stå som «Ingen datoer». Eldre planer er lagret uten,
+              // og de faller tilbake på ytterpunktene til aktivitetene.
+              const periode = p.start_date && p.end_date
+                ? { start: p.start_date as string, slutt: p.end_date as string }
+                : planPeriode(akt);
               return (
                 <tr
                   key={p.id}

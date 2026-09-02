@@ -15,7 +15,7 @@ import {
   FileText, LayoutList, Copy, CalendarRange, CalendarDays, Paperclip, ChevronDown,
 } from "lucide-react";
 import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
-import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, antallUker, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
+import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, antallUker, erHeleUker, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
 import { FremdriftRutenett } from "@/components/fremdrift-rutenett";
 import { lagFremdriftsplanPdf, fremdriftsplanFilnavn } from "@/lib/pdf-fremdrift-fil";
 import { useAppSettings } from "@/hooks/use-app-settings";
@@ -307,7 +307,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
     queryFn: async () => {
       const { data } = await supabase
         .from("offers")
-        .select("id, offer_number, title, customer_name, project_number, project_id, status")
+        .select("id, offer_number, title, customer_name, project_number, project_id, our_ref, status")
         .eq("tenant_id", tenantId!)
         .order("offer_number", { ascending: false })
         .limit(300);
@@ -391,9 +391,19 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
     brukerHarEndretRef.current = true;
     setAkt((p) => p.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
   };
+  /**
+   * Ansvarlig, hentet fra tilbudets «Vår referanse».
+   *
+   * Samme grep som endringsmeldingen bruker: den som står som referanse på
+   * tilbudet er nesten alltid den som følger opp framdriften. Fylles bare inn
+   * på nye rader — vi skriver ikke over noe brukeren alt har satt.
+   */
+  const ansvarligFraTilbud = () =>
+    (offers ?? []).find((o: any) => o.id === plan.offer_id)?.our_ref ?? "";
+
   const nyRad = () => {
     brukerHarEndretRef.current = true;
-    setAkt((p) => [...p, tomAktivitet(p.length)]);
+    setAkt((p) => [...p, tomAktivitet(p.length, { responsible: ansvarligFraTilbud() })]);
   };
   const slettRad = (i: number) => {
     brukerHarEndretRef.current = true;
@@ -440,6 +450,22 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
   const [infoApen, setInfoApen] = useState(true);
   /** Raden som viser eksakte datofelt. Bare én om gangen — ellers blir lista full av datofelt igjen. */
   const [datoRad, setDatoRad] = useState<number | null>(null);
+
+  /**
+   * Rydder opp i en kobling til et tilbud som ikke finnes lenger.
+   *
+   * Slettes tilbudet mens et utkast ligger i nettleseren, blir id-en stående i
+   * utkastet. Da viser nedtrekket blankt — ikke «Ikke knyttet», for det finnes
+   * ingen oppføring som passer — og lagringen feiler mot fremmednøkkelen med en
+   * melding ingen kan gjøre noe med. Her fjernes koblingen i stedet, og det
+   * sies fra hvorfor.
+   */
+  useEffect(() => {
+    if (!offers || !plan.offer_id) return;
+    if (offers.some((o: any) => o.id === plan.offer_id)) return;
+    setPlan((p) => ({ ...p, offer_id: null }));
+    toast.error("Tilbudet planen var knyttet til, finnes ikke lenger. Koblingen er fjernet — velg et nytt tilbud om du vil.");
+  }, [offers, plan.offer_id]);
 
   const settPeriode = (startISO: string, sluttISO: string) => {
     brukerHarEndretRef.current = true;
@@ -841,7 +867,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <button
                   type="button"
-                  onClick={() => { brukerHarEndretRef.current = true; setAkt([tomAktivitet(0)]); }}
+                  onClick={() => { brukerHarEndretRef.current = true; setAkt([tomAktivitet(0, { responsible: ansvarligFraTilbud() })]); }}
                   className="rounded-lg border p-4 text-left transition-colors hover:border-primary hover:bg-accent/40"
                 >
                   <FileText className="mb-2 h-5 w-5 text-muted-foreground" />
@@ -1014,6 +1040,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                             className="h-8 w-28 shrink-0"
                             value={a.responsible}
                             placeholder="Ansvarlig"
+                            list="plan-ansvarlig"
                             onChange={(e) => settAkt(i, { responsible: e.target.value })}
                           />
                           <Input
@@ -1034,7 +1061,9 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                             type="button"
                             onClick={() => setDatoRad(datoRad === i ? null : i)}
                             aria-expanded={datoRad === i}
-                            title="Klikk for å skrive inn eksakt dato"
+                            title={a.start_date
+                              ? `${fmtDate(a.start_date)}${a.is_milestone ? "" : "–" + fmtDate(a.end_date || a.start_date)} — klikk for å endre`
+                              : "Klikk for å skrive inn eksakt dato"}
                             className={
                               "flex h-8 w-[108px] shrink-0 items-center gap-1 rounded-md border px-1.5 text-left text-xs tabular-nums transition-colors " +
                               (datoRad === i
@@ -1048,6 +1077,17 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                                 ? ukeSpenn(a.start_date, a.is_milestone ? a.start_date : a.end_date || a.start_date)
                                 : "sett dato"}
                             </span>
+                            {/* Dekker perioden ikke hele uker, er datoene satt
+                                for hånd — og da sier «uke 37–38» noe annet enn
+                                datofeltene: 11.–19. september er fredag til
+                                lørdag. Prikken sier at ukene er avrundet. */}
+                            {a.start_date && !a.is_milestone
+                              && !erHeleUker(a.start_date, a.end_date || a.start_date) && (
+                              <span
+                                className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                                title={`Eksakte datoer: ${fmtDate(a.start_date)}–${fmtDate(a.end_date || a.start_date)}`}
+                              />
+                            )}
                           </button>
 
                           <div className="flex w-[164px] shrink-0 items-center justify-end">
@@ -1186,6 +1226,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                           className="h-9"
                           value={a.responsible}
                           placeholder="Ansvarlig"
+                          list="plan-ansvarlig"
                           onChange={(e) => settAkt(i, { responsible: e.target.value })}
                         />
                         <Input
@@ -1244,6 +1285,18 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
 
               {/* Forslagene gjør at samme fag skrives likt hver gang — ellers
                   blir «Rør/VA» og «Rør VA» to farger i tegnforklaringen. */}
+              {/* Firmaets referanser først — det er dem som følger opp jobben —
+                  og deretter det som alt står i planen, som «UE asfalt». Ikke et
+                  lukket nedtrekk: underentreprenører står ikke i referanselista. */}
+              <datalist id="plan-ansvarlig">
+                {[...new Set([
+                  ...(appSettings?.our_refs ?? []).map((r) => r.name),
+                  ...akt.map((a) => a.responsible),
+                ])]
+                  .filter((n) => !!n && !!n.trim())
+                  .map((n) => <option key={n} value={n} />)}
+              </datalist>
+
               <datalist id="plan-fag">
                 {[...new Set([...MAL.map((m) => m.category), ...akt.map((a) => a.category)])]
                   .filter((c): c is string => !!c && !!c.trim())

@@ -219,6 +219,24 @@ export function antallUker(startISO?: string | null, sluttISO?: string | null): 
   return Math.floor((mandagI(til).getTime() - mandagI(fra).getTime()) / (7 * DAG)) + 1;
 }
 
+/**
+ * Dekker perioden hele uker — altså mandag til søndag?
+ *
+ * Drar man boksen i kalenderen, snapper den til hele uker. Skriver man datoene
+ * selv, gjør den ikke det, og da sier «uke 37–38» noe annet enn det som står i
+ * datofeltene: 11.–19. september er fredag til lørdag, ikke to hele uker.
+ * Da må visningen si fra.
+ */
+export function erHeleUker(startISO?: string | null, sluttISO?: string | null): boolean {
+  const s = parseDato(startISO);
+  if (!s) return true;
+  const e = parseDato(sluttISO) ?? s;
+  // Mandag = 1, søndag = 7 i ISO
+  const startdag = s.getUTCDay() || 7;
+  const sluttdag = e.getUTCDay() || 7;
+  return startdag === 1 && sluttdag === 7;
+}
+
 /** Antall kalenderdager, begge dager medregnet. */
 export function varighetDager(startISO?: string | null, sluttISO?: string | null): number {
   const s = parseDato(startISO);

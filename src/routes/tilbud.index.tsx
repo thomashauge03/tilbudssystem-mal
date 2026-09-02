@@ -68,7 +68,9 @@ export const Route = createFileRoute("/tilbud/")({
 function OffersList() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<
+    { id: string; title: string; endringer: number; planer: number; anbud: number } | null
+  >(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: appSettings } = useAppSettings();
@@ -102,7 +104,8 @@ function OffersList() {
           id, offer_number, title, status, valid_until, our_ref, customer_ref, created_at,
           customer_signed_at, contract_signed, admin_cost_pct,
           customers(name),
-          offer_lines(quantity, unit_price, discount_pct, included)
+          offer_lines(quantity, unit_price, discount_pct, included),
+          amendments(count), progress_plans(count), tenders(count)
         `)
         .order("offer_number", { ascending: false });
       if (error) throw error;
@@ -243,7 +246,12 @@ function OffersList() {
                   <td className="px-4 py-3 text-right font-medium">{nok(sumOf(o))}</td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: o.id, title: o.title }); }}
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget({
+                          id: o.id, title: o.title,
+                          endringer: o.amendments?.[0]?.count ?? 0,
+                          planer: o.progress_plans?.[0]?.count ?? 0,
+                          anbud: o.tenders?.[0]?.count ?? 0,
+                        }); }}
                       className="text-muted-foreground hover:text-destructive transition-colors"
                       title="Slett tilbud"
                     >
@@ -263,6 +271,22 @@ function OffersList() {
             <AlertDialogTitle>Slett tilbud</AlertDialogTitle>
             <AlertDialogDescription>
               Er du sikker på at du vil slette <strong>{deleteTarget?.title}</strong>? Dette kan ikke angres.
+              {/* Postene på tilbudet slettes med det, men endringsmeldinger,
+                  fremdriftsplaner og anbudsprotokoller er egne dokumenter og
+                  blir stående — de mister bare koblingen. Uten dette sto man
+                  igjen med en fremdriftsplan uten tilbud og ingen forklaring. */}
+              {!!(deleteTarget && (deleteTarget.endringer || deleteTarget.planer || deleteTarget.anbud)) && (
+                <span className="mt-2 block">
+                  Tilbudet er knyttet til{" "}
+                  {[
+                    deleteTarget.endringer && `${deleteTarget.endringer} endringsmelding${deleteTarget.endringer === 1 ? "" : "er"}`,
+                    deleteTarget.planer && `${deleteTarget.planer} fremdriftsplan${deleteTarget.planer === 1 ? "" : "er"}`,
+                    deleteTarget.anbud && `${deleteTarget.anbud} anbudsprotokoll${deleteTarget.anbud === 1 ? "" : "er"}`,
+                  ].filter(Boolean).join(", ")}
+                  . <strong>De blir stående</strong>, men mister koblingen til tilbudet.
+                  Postene på selve tilbudet slettes.
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

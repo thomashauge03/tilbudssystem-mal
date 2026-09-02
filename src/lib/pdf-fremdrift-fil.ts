@@ -305,8 +305,16 @@ export async function lagFremdriftsplanPdf(
   // og da la den gamle koden merknaden rett oppå fargerutene i forklaringen.
   const MERKNADSLINJE = 10;
   const merknadBredde = BREDDE - 2 * MARG;
-  const merknadTopp = (forste: boolean, antallRader: number) =>
-    Math.min(raderStart(forste) - antallRader * RADHOYDE - 14, bunn + 34);
+  // Blokken er ankret rett over tegnforklaringen, men vokser oppover mot siste
+  // rad når den trenger flere linjer enn ankeret gir — på en kort plan står det
+  // et tomt felt der, og det er bedre å bruke det enn å sende teksten over på
+  // en egen side. Nederste grunnlinje er `bunn`, for der under begynner
+  // fargerutene i forklaringen.
+  const merknadTopp = (forste: boolean, antallRader: number, behov: number) => {
+    const ledig = raderStart(forste) - antallRader * RADHOYDE - 14;
+    const trengs = bunn + (behov - 1) * MERKNADSLINJE;
+    return Math.min(ledig, Math.max(bunn + 34, trengs));
+  };
   const merknadPlass = (topp: number) => Math.floor((topp - bunn) / MERKNADSLINJE) + 1;
 
   const merknadLinjer = plan.notes ? brytLinjer(plan.notes, vanlig, 8, merknadBredde) : [];
@@ -319,7 +327,7 @@ export async function lagFremdriftsplanPdf(
   // egen side i stedet for å bli kuttet etter to linjer. Forbehold og
   // forutsetninger er nettopp det byggherren må lese, og en tekst som stopper
   // uten et tegn på at det er mer, leses som om det var hele forbeholdet.
-  const sisteTopp = merknadTopp(sider.length === 1, sider[sider.length - 1].length);
+  const sisteTopp = merknadTopp(sider.length === 1, sider[sider.length - 1].length, merknadBehov);
   const egenMerknadsside = merknadBehov > 0 && merknadBehov > merknadPlass(sisteTopp);
   const antallSider = sider.length + (egenMerknadsside ? 1 : 0);
 
@@ -351,24 +359,38 @@ export async function lagFremdriftsplanPdf(
     let tekstX = MARG;
     if (logo) {
       const h = 26;
-      const b = (logo.width / logo.height) * h;
-      side.drawImage(logo, { x: MARG, y: y - 8, width: b, height: h });
+      // Taket på bredden. En logo som er bred og lav — mange bygglogoer er det —
+      // ville ellers skjøvet firmanavnet helt bort i tittelen ute til høyre.
+      // Over taket krymper den i høyden i stedet, så forholdet holder seg.
+      const MAKS_LOGOBREDDE = 150;
+      const forhold = logo.width / logo.height;
+      const b = Math.min(forhold * h, MAKS_LOGOBREDDE);
+      const hoyde = b / forhold;
+      side.drawImage(logo, { x: MARG, y: y - 8 + (h - hoyde) / 2, width: b, height: hoyde });
       tekstX = MARG + b + 10;
     }
 
-    side.drawText(trygg(settings.company_name), { x: tekstX, y, size: 13, font: fet, color: BLEKK });
-    if (settings.company_tagline) {
-      side.drawText(trygg(settings.company_tagline), {
-        x: tekstX, y: y - 11, size: 7.5, font: vanlig, color: GRAA_400,
-      });
-    }
-
-    // «FREMDRIFTS» i svart, «PLAN» i rødt — samme grep som de andre dokumentene
+    // «FREMDRIFTS» i svart, «PLAN» i rødt — samme grep som de andre dokumentene.
+    // Bredden regnes ut før firmanavnet skrives, for tittelen står fast ute til
+    // høyre, og navnet må klippes mot den plassen som faktisk er igjen fram til
+    // den. «Hauge Maskin og Transport AS» er 190,9 punkt bredt, og tittelen
+    // begynner rundt x=638 — uten klippingen legger de seg oppå hverandre.
     const del1 = "FREMDRIFTS";
     const del2 = "PLAN";
     const st = 18;
     const b2 = fet.widthOfTextAtSize(del2, st);
     const b1 = fet.widthOfTextAtSize(del1, st);
+    const navnePlass = Math.max(40, BREDDE - MARG - b1 - b2 - 14 - tekstX);
+
+    side.drawText(klipp(settings.company_name, fet, 13, navnePlass), {
+      x: tekstX, y, size: 13, font: fet, color: BLEKK,
+    });
+    if (settings.company_tagline) {
+      side.drawText(klipp(settings.company_tagline, vanlig, 7.5, navnePlass), {
+        x: tekstX, y: y - 11, size: 7.5, font: vanlig, color: GRAA_400,
+      });
+    }
+
     side.drawText(del1, { x: BREDDE - MARG - b1 - b2, y, size: st, font: fet, color: BLEKK });
     side.drawText(del2, { x: BREDDE - MARG - b2, y, size: st, font: fet, color: AKSENT });
     const under = klipp(plan.title || "Uten tittel", vanlig, 8.5, 320);
@@ -467,7 +489,11 @@ export async function lagFremdriftsplanPdf(
       });
 
       const navnPlass = NAVNEBREDDE - 12 - (a.responsible ? 78 : 0);
-      side.drawText(klipp(a.name || "-", fet, 8, navnPlass), {
+      // En rad med dato, men uten navn, er en halvferdig rad skjermen ikke
+      // viser. Den tegnes likevel her, for datoen er noe brukeren faktisk har
+      // lagt inn — men den skal si hva den er, ikke bare stå som en bindestrek
+      // ingen kan tyde.
+      side.drawText(klipp(String(a.name ?? "").trim() || "(uten navn)", fet, 8, navnPlass), {
         x: MARG + 8, y: radBunn + 5.5, size: 8, font: fet, color: BLEKK,
       });
       if (a.responsible) {
@@ -535,26 +561,39 @@ export async function lagFremdriftsplanPdf(
 
     if (sisteSide) {
       let x = MARG;
-      const oppforinger: Array<[string, string | null]> = [
-        ...[...fag.entries()].map(([n, f]) => [n, f] as [string, string]),
-        // Æ, ø og å ligger i WinAnsi, så norsk skrives som norsk — det er bare
-        // tegn utenfor Latin-1 som må vike.
-        ["Milepæl", null],
+      // Forklaringen skal vise det planen faktisk inneholder. «Milepæl» sto her
+      // også når planen ikke hadde noen, og romben ble tegnet rød uansett — mens
+      // en milepæl brukeren selv legger inn får sin egen farge i diagrammet.
+      // Æ, ø og å ligger i WinAnsi, så norsk skrives som norsk — det er bare
+      // tegn utenfor Latin-1 som må vike.
+      //
+      // Har milepælene ulike farger, får hver farge sin egen rombe, og teksten
+      // står etter den siste av dem: forklaringen skal ikke påstå at de alle er
+      // like.
+      const oppforinger: Array<[string, string, boolean]> = [
+        ...[...fag.entries()].map(([n, f]) => [n, f, false] as [string, string, boolean]),
+        ...milepaelFarger.map((f, i) =>
+          [i === milepaelFarger.length - 1 ? "Milepæl" : "", f, true] as [string, string, boolean]),
       ];
-      if (!fag.size) oppforinger.unshift(["Aktivitet", finnFarge(null).fyll]);
+      // «Aktivitet» forklarer streken. Er alt i planen milepæler, finnes det
+      // ingen strek å forklare, og oppføringen sløyfes på samme vilkår.
+      if (!fag.size && medDato.some((a) => !a.is_milestone)) {
+        oppforinger.unshift(["Aktivitet", finnFarge(null).fyll, false]);
+      }
 
-      for (const [navn, fyll] of oppforinger) {
+      for (const [navn, fyll, erMilepael] of oppforinger) {
         const tekst = trygg(navn);
-        if (fyll) {
-          side.drawRectangle({ x, y: y + 1, width: 13, height: 5.5, color: hex(fyll) });
-        } else {
+        if (erMilepael) {
           const m = y + 3.7;
           const s = 3.4;
           const cx = x + 5;
-          side.drawLine({ start: { x: cx, y: m + s }, end: { x: cx + s, y: m }, thickness: 2.4, color: AKSENT });
-          side.drawLine({ start: { x: cx + s, y: m }, end: { x: cx, y: m - s }, thickness: 2.4, color: AKSENT });
-          side.drawLine({ start: { x: cx, y: m - s }, end: { x: cx - s, y: m }, thickness: 2.4, color: AKSENT });
-          side.drawLine({ start: { x: cx - s, y: m }, end: { x: cx, y: m + s }, thickness: 2.4, color: AKSENT });
+          const f = hex(fyll);
+          side.drawLine({ start: { x: cx, y: m + s }, end: { x: cx + s, y: m }, thickness: 2.4, color: f });
+          side.drawLine({ start: { x: cx + s, y: m }, end: { x: cx, y: m - s }, thickness: 2.4, color: f });
+          side.drawLine({ start: { x: cx, y: m - s }, end: { x: cx - s, y: m }, thickness: 2.4, color: f });
+          side.drawLine({ start: { x: cx - s, y: m }, end: { x: cx, y: m + s }, thickness: 2.4, color: f });
+        } else {
+          side.drawRectangle({ x, y: y + 1, width: 13, height: 5.5, color: hex(fyll) });
         }
         side.drawText(tekst, { x: x + 17, y, size: 7, font: vanlig, color: GRAA_600 });
         x += 17 + vanlig.widthOfTextAtSize(tekst, 7) + 14;
@@ -585,45 +624,64 @@ export async function lagFremdriftsplanPdf(
     });
   };
 
+  /**
+   * Merknaden og lista over udaterte aktiviteter, under en tynn strek.
+   *
+   * `plass` er antall linjer som er regnet ut å være ledige her, ikke et
+   * anslag. Måtte noe kuttes, skrives det — en tekst som stopper midt i en
+   * setning uten et tegn på at det er mer, leses som hele forbeholdet.
+   */
+  const tegnMerknader = (side: PDFPage, topp: number, plass: number) => {
+    side.drawLine({
+      start: { x: MARG, y: topp + 8 }, end: { x: BREDDE - MARG, y: topp + 8 },
+      thickness: 0.5, color: GRAA_200,
+    });
+    let y = topp;
+    // De udaterte aktivitetene får sin linje reservert først. De er en kort,
+    // avsluttet opplysning, og merknaden skal ikke kunne spise den opp.
+    const tilMerknad = Math.max(0, plass - (udatertLinje ? 1 : 0));
+    const vises = merknadLinjer.slice(0, tilMerknad);
+    const kuttet = vises.length < merknadLinjer.length;
+    const merke = " (fortsetter)";
+    vises.forEach((linje, idx) => {
+      const tekst = kuttet && idx === vises.length - 1
+        ? klipp(linje, vanlig, 8, merknadBredde - vanlig.widthOfTextAtSize(merke, 8)) + merke
+        : linje;
+      side.drawText(tekst, { x: MARG, y, size: 8, font: vanlig, color: GRAA_600 });
+      y -= MERKNADSLINJE;
+    });
+    if (udatertLinje) {
+      side.drawText(udatertLinje, { x: MARG, y, size: 8, font: vanlig, color: GRAA_400 });
+    }
+  };
+
   sider.forEach((rader, idx) => {
     const side = doc.addPage([BREDDE, HOYDE]);
     const etterTopp = tegnTopp(side, idx + 1, idx === 0);
     const etterAkse = tegnAksehode(side, etterTopp);
-    const etterRader = tegnRader(side, rader, etterAkse);
+    tegnRader(side, rader, etterAkse);
     const sisteSide = idx === sider.length - 1;
 
-    if (sisteSide && (plan.notes || utenDato.length)) {
-      let y = Math.min(etterRader - 14, bunn + 34);
-      side.drawLine({ start: { x: MARG, y: y + 8 }, end: { x: BREDDE - MARG, y: y + 8 }, thickness: 0.5, color: GRAA_200 });
-      if (plan.notes) {
-        // Merknader kan være lange; de brytes på ordgrense over inntil to linjer
-        const ord = trygg(plan.notes).replace(/\s+/g, " ").split(" ");
-        let linje = "";
-        let brukt = 0;
-        for (const o of ord) {
-          const prov = linje ? `${linje} ${o}` : o;
-          if (vanlig.widthOfTextAtSize(prov, 8) > BREDDE - 2 * MARG) {
-            side.drawText(linje, { x: MARG, y, size: 8, font: vanlig, color: GRAA_600 });
-            y -= 10;
-            linje = o;
-            if (++brukt >= 2) break;
-          } else linje = prov;
-        }
-        if (linje && brukt < 2) {
-          side.drawText(linje, { x: MARG, y, size: 8, font: vanlig, color: GRAA_600 });
-          y -= 10;
-        }
-      }
-      if (utenDato.length) {
-        const tekst = `Uten dato, ikke tegnet inn: ${utenDato.map((a) => a.name).join(", ")}`;
-        side.drawText(klipp(tekst, vanlig, 8, BREDDE - 2 * MARG), {
-          x: MARG, y, size: 8, font: vanlig, color: GRAA_400,
-        });
-      }
+    if (sisteSide && merknadBehov && !egenMerknadsside) {
+      tegnMerknader(side, sisteTopp, merknadPlass(sisteTopp));
     }
 
     tegnBunn(side, sisteSide);
   });
+
+  // Fikk ikke merknaden plass mellom siste rad og tegnforklaringen, får den en
+  // egen side. Å skyve den nedover hadde lagt teksten oppå fargerutene, og å la
+  // resten falle bort hadde skjult nettopp de forbeholdene planen skal formidle.
+  // Tegnforklaringen ble tegnet ferdig på siste diagramside, der den hører
+  // hjemme, så denne siden får bare bunnlinjen.
+  if (egenMerknadsside) {
+    const side = doc.addPage([BREDDE, HOYDE]);
+    const etterTopp = tegnTopp(side, antallSider, false);
+    side.drawText("MERKNADER", { x: MARG, y: etterTopp - 10, size: 6, font: vanlig, color: GRAA_400 });
+    const topp = etterTopp - 30;
+    tegnMerknader(side, topp, merknadPlass(topp));
+    tegnBunn(side, false);
+  }
 
   return await doc.save();
 }

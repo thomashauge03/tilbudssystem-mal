@@ -15,7 +15,7 @@ import {
   FileText, LayoutList, Copy, CalendarRange, CalendarDays, Paperclip, ChevronDown,
 } from "lucide-react";
 import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
-import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
+import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, antallUker, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
 import { FremdriftRutenett } from "@/components/fremdrift-rutenett";
 import { lagFremdriftsplanPdf, fremdriftsplanFilnavn } from "@/lib/pdf-fremdrift-fil";
 import { useAppSettings } from "@/hooks/use-app-settings";
@@ -123,7 +123,9 @@ function PeriodeSteg({
   const [sluttDato, setSluttDato] = useState(sluttInn || sluttEtterUker(start || toISODate(new Date()), 12));
 
   const gyldig = !!parseDato(dato) && !!parseDato(sluttDato) && sluttDato >= dato;
-  const antall = gyldig ? (lagTidsakse(dato, sluttDato)?.kolonner.length ?? 0) : 0;
+  // Uker, ikke kolonner. Over 34 uker er kolonnene måneder, og da viste feltet
+  // «12» om en 52-ukers plan — og settStart under kortet planen til 12 uker.
+  const antall = gyldig ? antallUker(dato, sluttDato) : 0;
 
   const settUker = (n: number) => setSluttDato(sluttEtterUker(dato, Math.max(1, Math.min(260, n))));
 
@@ -396,6 +398,11 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
   const slettRad = (i: number) => {
     brukerHarEndretRef.current = true;
     setAkt((p) => p.filter((_, idx) => idx !== i).map((a, idx) => ({ ...a, sort_order: idx })));
+    // Radene under rykker opp. Blir panelene stående på samme indeks, peker de
+    // nå på en annen aktivitet — og skriver man i datofeltet, endrer man hennes
+    // datoer uten å vite det.
+    setDatoRad((r) => (r === null ? r : r === i ? null : r > i ? r - 1 : r));
+    setAktivRad((r) => (r === null ? r : r === i ? null : r > i ? r - 1 : r));
   };
   const flyttRad = (fra: number, til: number) => {
     if (til < 0 || til >= akt.length || fra === til) return;
@@ -469,6 +476,28 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
       if (!window.confirm(
         `${utenDato.length} aktivitet(er) mangler startdato og blir ikke tegnet inn:\n\n${liste}\n\nLagre likevel?`,
       )) return null;
+    }
+
+    // Aktiviteter som ligger utenfor kalenderen forsvinner fra rutenettet uten
+    // et ord — typisk etter at perioden er kortet ned i ettertid. Datoene blir
+    // liggende i basen og dukker opp igjen i PDF-en, så stillheten er verre enn
+    // et spørsmål.
+    if (plan.start_date && plan.end_date) {
+      const utenfor = akt.filter((a) => {
+        if (!a.start_date) return false;
+        const slutt = a.is_milestone ? a.start_date : a.end_date || a.start_date;
+        return a.start_date > plan.end_date || slutt < plan.start_date;
+      });
+      if (utenfor.length) {
+        const liste = utenfor
+          .map((a) => `• ${a.name || "uten navn"} — ${ukeSpenn(a.start_date, a.is_milestone ? a.start_date : a.end_date || a.start_date)}`)
+          .join("\n");
+        if (!window.confirm(
+          `${utenfor.length} aktivitet(er) ligger utenfor planens periode ` +
+          `(${ukeSpenn(plan.start_date, plan.end_date)}) og vises ikke i kalenderen:\n\n${liste}\n\n` +
+          `Utvid perioden for å få dem fram. Lagre likevel?`,
+        )) return null;
+      }
     }
 
     lagrerRef.current = true;
@@ -890,7 +919,11 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
 
               {/* Én tabell, ikke to kort. Feltene og tiden hører til samme rad;
                   var de delt, måtte man se opp og ned for hver aktivitet. */}
-              <div className="hidden overflow-x-auto lg:block">
+              {/* Ruller i begge retninger, med tak på høyden. «sticky top-0» på
+                  ukeoverskriften festet seg mot denne beholderen, og siden den
+                  aldri rullet loddrett, slo den aldri inn — fra rad 13 og
+                  nedover dro man streker uten å se hvilken uke man traff. */}
+              <div className="hidden max-h-[calc(100vh-15rem)] overflow-auto lg:block">
                 <div style={{ minWidth: VENSTRE_BREDDE + akse.kolonner.length * (akse.type === "uke" ? 19 : 34) }}>
                   <FremdriftRutenett
                     akse={akse}
@@ -1027,10 +1060,10 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                               title={a.is_milestone
                                 ? "Milepæl — ett tidspunkt. Klikk for å gjøre om til periode."
                                 : "Periode — går over tid. Klikk for å gjøre om til milepæl."}
-                              onClick={() => settAkt(i, {
-                                is_milestone: !a.is_milestone,
-                                end_date: !a.is_milestone ? a.start_date : a.end_date,
-                              })}
+                              // Sluttdatoen røres ikke. Skrev vi start over den,
+                              // ble «2.–22. mars» til «2.–2. mars» etter to klikk
+                              // fram og tilbake — og den var ikke til å få igjen.
+                              onClick={() => settAkt(i, { is_milestone: !a.is_milestone })}
                               className={
                                 "mr-1 flex h-7 items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition-colors " +
                                 (a.is_milestone
@@ -1068,10 +1101,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                               type="date"
                               className="h-8 w-40"
                               value={a.start_date}
-                              onChange={(e) => settAkt(i, {
-                                start_date: e.target.value,
-                                end_date: a.is_milestone ? e.target.value : a.end_date,
-                              })}
+                              onChange={(e) => settAkt(i, { start_date: e.target.value })}
                             />
                           </div>
                           {!a.is_milestone && (
@@ -1171,10 +1201,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                         <button
                           type="button"
                           aria-pressed={a.is_milestone}
-                          onClick={() => settAkt(i, {
-                            is_milestone: !a.is_milestone,
-                            end_date: !a.is_milestone ? a.start_date : a.end_date,
-                          })}
+                          onClick={() => settAkt(i, { is_milestone: !a.is_milestone })}
                           className={
                             "flex h-9 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-colors " +
                             (a.is_milestone
@@ -1190,10 +1217,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                           type="date"
                           className="h-9 w-36"
                           value={a.start_date}
-                          onChange={(e) => settAkt(i, {
-                            start_date: e.target.value,
-                            end_date: a.is_milestone ? e.target.value : a.end_date,
-                          })}
+                          onChange={(e) => settAkt(i, { start_date: e.target.value })}
                         />
                         {!a.is_milestone && (
                           <Input

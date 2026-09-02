@@ -10,7 +10,7 @@
 // blir uskarp i utskrift og filen mange megabyte.
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import { lagTidsakse, plassering, planPeriode, isoUke, parseDato, finnFarge } from "./fremdrift.ts";
+import { lagTidsakse, plassering, planPeriode, isoUke, parseDato, tilDato, finnFarge } from "./fremdrift.ts";
 
 export interface PlanAktivitet {
   name: string;
@@ -28,6 +28,15 @@ export interface PlanDokument {
   title: string;
   revision?: string | null;
   plan_date?: string | null;
+  /**
+   * Planens egen periode — kalenderen brukeren setter opp før aktivitetene,
+   * fordi aktivitetene ikke kan definere aksen de skal legges inn i. Tidsaksen
+   * bygges av denne, slik at filen viser nøyaktig den samme kalenderen som
+   * skjermen. Eldre planer er lagret uten periode, og de faller tilbake på
+   * ytterpunktene til aktivitetene.
+   */
+  start_date?: string | null;
+  end_date?: string | null;
   notes?: string | null;
   offer_number?: number | string | null;
   offer_title?: string | null;
@@ -78,6 +87,13 @@ function trygg(s: unknown): string {
     .replace(/[“”„]/g, '"')
     .replace(/…/g, "...")
     .replace(/ /g, " ")
+    // Linjeskift og tabulator blir til mellomrom før resten strykes. En PDF-
+    // tekst kan uansett ikke inneholde et rått linjeskift, men fjernes det uten
+    // å sette noe i stedet, limes ordene på hver side sammen: merknaden
+    // «Forutsetninger:» med «Vinterstans uke 52.» på neste linje ble til
+    // «Forutsetninger:Vinterstans uke 52.», og merknadsfeltet er en textarea
+    // der Enter er det naturlige å trykke.
+    .replace(/[\r\n\t\f\v]+/g, " ")
     // Alt som fortsatt ligger utenfor Latin-1 blir borte heller enn å velte filen
     .replace(/[^\x20-\x7E -ÿ]/g, "");
 }
@@ -91,6 +107,30 @@ function klipp(tekst: string, font: PDFFont, storrelse: number, maks: number): s
     ut = ut.slice(0, -1);
   }
   return ut + "...";
+}
+
+/**
+ * Bryter en tekst på ordgrense til linjer som får plass i bredden.
+ *
+ * Skilles ut fordi merknaden nå kan gå over flere linjer og kan havne på en
+ * egen side: hvor mange linjer teksten blir, må være kjent før det avgjøres
+ * hvor den skal tegnes.
+ */
+function brytLinjer(tekst: string, font: PDFFont, storrelse: number, maks: number): string[] {
+  const ord = trygg(tekst).replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const linjer: string[] = [];
+  let linje = "";
+  for (const o of ord) {
+    const prov = linje ? `${linje} ${o}` : o;
+    // Et enkelt ord som er bredere enn linjen får stå alene og flyte over
+    // heller enn å sende løkken i evig runde uten å legge fra seg noe.
+    if (linje && font.widthOfTextAtSize(prov, storrelse) > maks) {
+      linjer.push(linje);
+      linje = o;
+    } else linje = prov;
+  }
+  if (linje) linjer.push(linje);
+  return linjer;
 }
 
 /**
@@ -124,14 +164,27 @@ const fmtDato = (s?: string | null) => {
  *
  * Bare i nettleseren — det er der PDF-en faktisk lages. Kjøres koden et sted
  * uten canvas, brukes originalen, og resultatet blir stort men riktig.
+ *
+ * Lerretet brukes også til å gjøre om formatet. pdf-lib kan bare bygge inn PNG
+ * og JPG, mens opplastingen tilbyr WEBP. En liten WEBP-logo trenger ingen
+ * nedskalering, men den må likevel innom her for å bli PNG — ellers faller den
+ * ut av dokumentet uten et ord, samtidig som den vises fint i menyen og på
+ * tilbudsutskriften.
  */
-async function nedskalertLogo(bytes: Uint8Array, maksHoyde: number): Promise<Uint8Array | null> {
+async function nedskalertLogo(
+  bytes: Uint8Array,
+  maksHoyde: number,
+  maaKonverteres = false,
+): Promise<Uint8Array | null> {
   if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas !== "function") return null;
   try {
     const bilde = await createImageBitmap(new Blob([bytes as BlobPart]));
-    if (bilde.height <= maksHoyde) return null;
-    const skala = maksHoyde / bilde.height;
-    const lerret = new OffscreenCanvas(Math.max(1, Math.round(bilde.width * skala)), maksHoyde);
+    if (bilde.height <= maksHoyde && !maaKonverteres) return null;
+    // Aldri opp — et lite bilde som bare skal skifte format skal beholde sin
+    // egen oppløsning, ikke blåses opp til taket og bli uskarpt.
+    const hoyde = Math.min(bilde.height, maksHoyde);
+    const skala = hoyde / bilde.height;
+    const lerret = new OffscreenCanvas(Math.max(1, Math.round(bilde.width * skala)), Math.max(1, hoyde));
     const ctx = lerret.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(bilde, 0, 0, lerret.width, lerret.height);
@@ -165,12 +218,18 @@ export async function lagFremdriftsplanPdf(
       const svar = await fetch(settings.logo_url);
       if (svar.ok) {
         const raa = new Uint8Array(await svar.arrayBuffer());
-        // 200 px er rikelig for et merke som tegnes 26 punkt høyt, også på skjerm
-        // med høy oppløsning og ved innzooming.
-        const bytes = (await nedskalertLogo(raa, 200)) ?? raa;
         // Formatet leses av de første bytene, ikke av filendelsen — URL-en har
-        // ofte en spørrestreng bak seg («?t=1782299268014»). Nedskaleringen gir
-        // alltid PNG, så sjekken gjøres på det som faktisk skal bygges inn.
+        // ofte en spørrestreng bak seg («?t=1782299268014»).
+        const erRaaPng = raa[0] === 0x89 && raa[1] === 0x50 && raa[2] === 0x4e;
+        const erRaaJpg = raa[0] === 0xff && raa[1] === 0xd8;
+        // 200 px er rikelig for et merke som tegnes 26 punkt høyt, også på skjerm
+        // med høy oppløsning og ved innzooming. Er formatet noe pdf-lib ikke kan
+        // bygge inn — WEBP er et av valgene i opplastingen — må bildet gjennom
+        // lerretet uansett hvor lite det er, ellers blir det aldri PNG.
+        const bytes = (await nedskalertLogo(raa, 200, !erRaaPng && !erRaaJpg)) ?? raa;
+        // Sjekken gjøres på nytt på det som faktisk skal bygges inn:
+        // nedskaleringen gir alltid PNG, men kan også ha gitt opp, og da er det
+        // originalen som ligger her.
         const erPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e;
         const erJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
         if (erPng) logo = await doc.embedPng(bytes);
@@ -183,19 +242,42 @@ export async function lagFremdriftsplanPdf(
 
   const medDato = aktiviteter.filter((a) => parseDato(a.start_date));
   const utenDato = aktiviteter.filter((a) => !parseDato(a.start_date) && String(a.name ?? "").trim());
-  const periode = planPeriode(medDato);
+  // Tidsaksen bygges av planens egen periode, ikke av ytterpunktene til
+  // aktivitetene. Brukeren setter perioden først nettopp fordi det er
+  // kalenderen arbeidet legges inn i, og slakken foran og bak er som regel lagt
+  // inn med vilje. Regnet vi aksen av aktivitetene, ville en plan med periode
+  // uke 10-44 og arbeid i uke 12-20 fått 34 kolonner på skjermen og 9 i filen —
+  // og grensen på 34 kolonner mellom uke- og månedsakse ville slått inn på to
+  // ulike spenn, så utskriften kunne blitt en annen graf enn den som ble
+  // godkjent.
+  //
+  // Eldre planer er lagret uten periode og faller tilbake på aktivitetene. Da
+  // må det være de samme aktivitetene som skjermen regner av: en rad med dato,
+  // men uten navn, er en halvferdig rad ingen ser på skjermen, og den skal ikke
+  // få strekke aksen.
+  const planStart = parseDato(plan.start_date);
+  const planSlutt = parseDato(plan.end_date);
+  const periode = planStart && planSlutt
+    ? { start: tilDato(planStart), slutt: tilDato(planSlutt) }
+    : planPeriode(medDato.filter((a) => String(a.name ?? "").trim()));
   const akse = periode ? lagTidsakse(periode.start, periode.slutt) : null;
 
   const tidX = MARG + NAVNEBREDDE;
   const tidBredde = BREDDE - MARG - tidX;
 
-  // Fagene som faktisk er i bruk. Milepæler holdes utenfor — rutersymbolet
-  // sier alt allerede.
+  // Fagene som faktisk er i bruk. Milepæler holdes utenfor faglista —
+  // rutersymbolet sier alt allerede — men fargene deres samles opp, for
+  // tegnforklaringen skal vise den fargen romben faktisk får i diagrammet.
   const fag = new Map<string, string>();
+  const milepaelFarger: string[] = [];
   for (const a of medDato) {
-    if (a.is_milestone) continue;
+    const fyll = finnFarge(a.color).fyll;
+    if (a.is_milestone) {
+      if (!milepaelFarger.includes(fyll)) milepaelFarger.push(fyll);
+      continue;
+    }
     const navn = String(a.category ?? "").trim();
-    if (navn && !fag.has(navn)) fag.set(navn, finnFarge(a.color).fyll);
+    if (navn && !fag.has(navn)) fag.set(navn, fyll);
   }
 
   // Hvor radene begynner regnes ut av de samme leddene som tegningen bruker,
@@ -217,6 +299,30 @@ export async function lagFremdriftsplanPdf(
   }
   if (!sider.length) sider.push([]);
 
+  // Merknaden og lista over udaterte aktiviteter deler den plassen som er igjen
+  // mellom siste rad og tegnforklaringen. Hvor mye det faktisk er, regnes ut av
+  // de samme leddene som tegningen bruker — med full siste side er svaret null,
+  // og da la den gamle koden merknaden rett oppå fargerutene i forklaringen.
+  const MERKNADSLINJE = 10;
+  const merknadBredde = BREDDE - 2 * MARG;
+  const merknadTopp = (forste: boolean, antallRader: number) =>
+    Math.min(raderStart(forste) - antallRader * RADHOYDE - 14, bunn + 34);
+  const merknadPlass = (topp: number) => Math.floor((topp - bunn) / MERKNADSLINJE) + 1;
+
+  const merknadLinjer = plan.notes ? brytLinjer(plan.notes, vanlig, 8, merknadBredde) : [];
+  const udatertLinje = utenDato.length
+    ? klipp(`Uten dato, ikke tegnet inn: ${utenDato.map((a) => a.name).join(", ")}`, vanlig, 8, merknadBredde)
+    : "";
+  const merknadBehov = merknadLinjer.length + (udatertLinje ? 1 : 0);
+
+  // Får ikke hele merknaden plass nederst på siste side, flyttes den til en
+  // egen side i stedet for å bli kuttet etter to linjer. Forbehold og
+  // forutsetninger er nettopp det byggherren må lese, og en tekst som stopper
+  // uten et tegn på at det er mer, leses som om det var hele forbeholdet.
+  const sisteTopp = merknadTopp(sider.length === 1, sider[sider.length - 1].length);
+  const egenMerknadsside = merknadBehov > 0 && merknadBehov > merknadPlass(sisteTopp);
+  const antallSider = sider.length + (egenMerknadsside ? 1 : 0);
+
   const naa = new Intl.DateTimeFormat("nb-NO", {
     day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
   }).format(new Date()).replace(",", " ");
@@ -234,7 +340,7 @@ export async function lagFremdriftsplanPdf(
     side.drawText(trygg(settings.company_name.toUpperCase()), {
       x: MARG, y, size: 6.5, font: vanlig, color: GRAA_600,
     });
-    const sideTekst = `SIDE ${sideNr} AV ${sider.length}`;
+    const sideTekst = `SIDE ${sideNr} AV ${antallSider}`;
     side.drawText(sideTekst, {
       x: BREDDE - MARG - vanlig.widthOfTextAtSize(sideTekst, 6.5), y, size: 6.5, font: vanlig, color: GRAA_600,
     });

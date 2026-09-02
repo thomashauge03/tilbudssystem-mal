@@ -204,6 +204,21 @@ export function ukeSpenn(startISO?: string | null, sluttISO?: string | null): st
   return `uke ${a.uke}–${b.uke} (${b.aar})`;
 }
 
+/**
+ * Antall hele uker perioden dekker, medregnet uken start og slutt ligger i.
+ *
+ * Egen funksjon fordi det er fristende å telle kolonnene i tidsaksen i stedet —
+ * og det gir feil svar: over 34 uker bytter aksen til månedskolonner, og da
+ * teller man måneder. En 52-ukers plan ble vist som «12 uker».
+ */
+export function antallUker(startISO?: string | null, sluttISO?: string | null): number {
+  const s = parseDato(startISO);
+  const e = parseDato(sluttISO) ?? s;
+  if (!s || !e) return 0;
+  const [fra, til] = s <= e ? [s, e] : [e, s];
+  return Math.floor((mandagI(til).getTime() - mandagI(fra).getTime()) / (7 * DAG)) + 1;
+}
+
 /** Antall kalenderdager, begge dager medregnet. */
 export function varighetDager(startISO?: string | null, sluttISO?: string | null): number {
   const s = parseDato(startISO);

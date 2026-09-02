@@ -46,6 +46,12 @@ interface Drag {
   start: number;
   fra: number;
   til: number;
+  /** Skjermkoordinaten draget startet på — brukes til å skille klikk fra drag. */
+  startX: number;
+  /** Har pekeren faktisk beveget seg? Se slippDrag. */
+  harFlyttet: boolean;
+  /** Var raden tom da draget startet? Da er et klikk en ufarlig nytegning. */
+  varTom: boolean;
 }
 
 export function FremdriftRutenett({
@@ -69,10 +75,18 @@ export function FremdriftRutenett({
     return Math.max(0, Math.min(antall - 1, k));
   };
 
+  /**
+   * Sluttdatoen som gjelder. En milepæl er ett tidspunkt, så sluttdatoen skal
+   * ignoreres — ikke slettes. Slettet vi den, ville et klikk fram og tilbake på
+   * «Milepæl» gjort «2.–22. mars» om til «2.–2. mars» for godt.
+   */
+  const sluttFor = (a: RutenettAktivitet) =>
+    a.is_milestone ? a.start_date : a.end_date || a.start_date;
+
   const spenn = (a: RutenettAktivitet): { fra: number; til: number } | null => {
     if (!a.start_date) return null;
     const s = new Date(`${a.start_date}T00:00:00Z`).getTime();
-    const e = new Date(`${a.end_date || a.start_date}T00:00:00Z`).getTime();
+    const e = new Date(`${sluttFor(a)}T00:00:00Z`).getTime();
     let fra = -1;
     let til = -1;
     akse.kolonner.forEach((k, i) => {
@@ -89,20 +103,34 @@ export function FremdriftRutenett({
     const b = Math.min(antall - 1, Math.max(fra, til));
     const erMilepael = aktiviteter[rad]?.is_milestone;
     const start = akse.kolonner[a].fra;
-    // En milepæl er én dag. Får den et helt ukespenn, blir rutersymbolet
-    // stående til venstre mens «perioden» sier noe annet.
-    const slutt = erMilepael ? start : new Date(akse.kolonner[b].til.getTime() - 86400000);
+    // En milepæl er ett tidspunkt. Da flyttes bare startdatoen — sluttdatoen
+    // ligger urørt, så den er der igjen om raden gjøres om til en periode.
+    if (erMilepael) {
+      onEndre(rad, { start_date: tilDato(start), end_date: aktiviteter[rad].end_date });
+      return;
+    }
+    const slutt = new Date(akse.kolonner[b].til.getTime() - 86400000);
     onEndre(rad, { start_date: tilDato(start), end_date: tilDato(slutt) });
   };
 
   const startDrag = (
     e: React.PointerEvent, rad: number, modus: Modus, naa: { fra: number; til: number } | null,
   ) => {
+    // Bare venstre museknapp. Uten denne skrev et høyreklikk — som folk bruker
+    // for å åpne menyen — like godt over aktivitetens datoer.
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     const k = kolonneUnder(e.clientX);
-    setDrag({ rad, modus, start: k, fra: naa?.fra ?? k, til: naa?.til ?? k });
+    setDrag({
+      rad, modus, start: k,
+      fra: naa?.fra ?? k, til: naa?.til ?? k,
+      startX: e.clientX, harFlyttet: false,
+      // Leses av raden, ikke av det som ble sendt inn: nytegning sender alltid
+      // null, og da ville en rad med data blitt regnet som tom.
+      varTom: !spenn(aktiviteter[rad]),
+    });
     setForhaand({ rad, fra: modus === "ny" ? k : (naa?.fra ?? k), til: modus === "ny" ? k : (naa?.til ?? k) });
     onVelgRad?.(rad);
   };
@@ -111,6 +139,11 @@ export function FremdriftRutenett({
     setHoverKol(kolonneUnder(e.clientX));
     if (!drag) return;
     const k = kolonneUnder(e.clientX);
+    // «Flyttet» betyr enten en ny kolonne eller mer enn noen få piksler. Uten
+    // pikselgrensen ville en skjelven hånd inne i samme uke telt som et drag.
+    if (!drag.harFlyttet && (k !== drag.start || Math.abs(e.clientX - drag.startX) > 4)) {
+      setDrag({ ...drag, harFlyttet: true });
+    }
     if (drag.modus === "ny") setForhaand({ rad: drag.rad, fra: drag.start, til: k });
     else if (drag.modus === "venstre") setForhaand({ rad: drag.rad, fra: Math.min(k, drag.til), til: drag.til });
     else if (drag.modus === "hoyre") setForhaand({ rad: drag.rad, fra: drag.fra, til: Math.max(k, drag.fra) });
@@ -122,7 +155,13 @@ export function FremdriftRutenett({
   };
 
   const slippDrag = () => {
-    if (drag && forhaand) skrivSpenn(forhaand.rad, forhaand.fra, forhaand.til);
+    // Et klikk uten bevegelse skal ikke endre noe. Før denne vakten holdt det å
+    // bomme med musa inne i en rad for å gjøre «uke 12–20» om til «uke 15» —
+    // uten bekreftelse og uten angremulighet. Nytegning på en tom rad er
+    // fortsatt lov, for der er det ingenting å ødelegge.
+    if (drag && forhaand && (drag.harFlyttet || (drag.modus === "ny" && drag.varTom))) {
+      skrivSpenn(forhaand.rad, forhaand.fra, forhaand.til);
+    }
     setDrag(null);
     setForhaand(null);
   };
@@ -184,9 +223,9 @@ export function FremdriftRutenett({
       {/* Aksen. Ukenummeret står stort nok til å leses, og måneden over det —
           det er ukenummeret folk snakker i, så det skal ikke være det minste
           på skjermen. */}
-      <div className="sticky top-0 z-10 flex border-b-2 border-foreground/70 bg-card">
+      <div className="sticky top-0 z-30 flex border-b-2 border-foreground/70 bg-card">
         <div
-          className="flex shrink-0 items-end gap-2 pb-1.5 pr-3"
+          className="sticky left-0 z-20 flex shrink-0 items-end gap-2 bg-card pb-1.5 pr-3"
           style={{ width: venstreBredde }}
         >
           {venstreHode}
@@ -226,7 +265,7 @@ export function FremdriftRutenett({
         const naa = spenn(a);
         const vises = forhaand?.rad === rad ? { fra: forhaand.fra, til: forhaand.til } : naa;
         const f = finnFarge(a.color);
-        const eksakt = forhaand?.rad === rad ? null : plassering(akse, a.start_date, a.end_date || a.start_date);
+        const eksakt = forhaand?.rad === rad ? null : plassering(akse, a.start_date, sluttFor(a));
         const bruk = eksakt ?? (vises
           ? {
               venstre: (Math.min(vises.fra, vises.til) / antall) * 100,
@@ -237,8 +276,12 @@ export function FremdriftRutenett({
         return (
           <div key={rad} className={aktivRad === rad ? "bg-primary/5" : rad % 2 ? "bg-muted/30" : ""}>
             <div className="flex items-center border-b border-border/60" style={{ minHeight: radHoyde }}>
+              {/* Kleber til venstre. På en lang plan ruller tidsaksen forbi,
+                  og uten dette satt man igjen med streker uten å vite hvilken
+                  aktivitet de hørte til. Ugjennomsiktig bakgrunn, ellers
+                  skinner kolonnene gjennom. */}
               <div
-                className="flex shrink-0 items-center gap-1.5 border-r pr-3"
+                className="sticky left-0 z-10 flex shrink-0 items-center gap-1.5 border-r bg-card pr-3"
                 style={{ width: venstreBredde }}
                 onFocusCapture={() => onVelgRad?.(rad)}
               >

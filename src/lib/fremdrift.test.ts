@@ -4,7 +4,7 @@
 // plan som går over nyttår er nettopp der ukenumrene betyr mest.
 
 import {
-  isoUke, mandagI, parseDato, tilDato, lagTidsakse, plassering, ukeSpenn,
+  isoUke, mandagI, parseDato, tilDato, lagTidsakse, plassering, ukeSpenn, antallUker,
   ukeTekst, varighetDager, planPeriode,
 } from "./fremdrift.ts";
 
@@ -128,6 +128,24 @@ sjekk("periode fra aktiviteter", planPeriode([
 ]), { start: "2026-03-02", slutt: "2026-04-01" });
 sjekk("periode uten datoer", planPeriode([{ start_date: null, end_date: null }]), null);
 sjekk("periode av tom liste", planPeriode([]), null);
+
+console.log("\n--- Antall uker ---");
+
+// Den viktige: over 34 uker bytter tidsaksen til månedskolonner. Teller man
+// kolonnene, får man antall måneder — og en 52-ukers plan ble vist som «12 uker»,
+// hvorpå en flytting av oppstarten kortet planen til nettopp 12 uker.
+sjekk("én uke", antallUker("2026-03-02", "2026-03-08"), 1);
+sjekk("to uker", antallUker("2026-03-02", "2026-03-09"), 2);
+sjekk("seks uker", antallUker("2026-03-02", "2026-04-12"), 6);
+sjekk("34 uker", antallUker("2026-01-05", "2026-08-30"), 34);
+sjekk("35 uker — der aksen bytter til måneder", antallUker("2026-01-05", "2026-09-06"), 35);
+sjekk("52 uker", antallUker("2026-03-02", "2027-02-28"), 52);
+// Kolonnetellingen ville gitt 12 her. Det er selve feilen.
+sjekk("kolonnene lyver over grensen", lagTidsakse("2026-03-02", "2027-02-28")!.kolonner.length, 12);
+sjekk("men ukene stemmer", antallUker("2026-03-02", "2027-02-28"), 52);
+sjekk("bare startdato", antallUker("2026-03-02"), 1);
+sjekk("uten dato", antallUker(null), 0);
+sjekk("snudd rekkefølge tåles", antallUker("2026-04-12", "2026-03-02"), 6);
 
 console.log("\n--- Ukespenn i tabellkolonnen ---");
 

@@ -10,7 +10,10 @@
 // blir uskarp i utskrift og filen mange megabyte.
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import { lagTidsakse, plassering, planPeriode, isoUke, parseDato, tilDato, finnFarge } from "./fremdrift.ts";
+import {
+  lagTidsakse, plassering, planPeriode, isoUke, parseDato, tilDato, finnFarge, naarTekst,
+  type Tidsakse,
+} from "./fremdrift.ts";
 
 export interface PlanAktivitet {
   name: string;
@@ -59,15 +62,34 @@ const BREDDE = 841.89;
 const HOYDE = 595.28;
 
 const MARG = 38;
-const NAVNEBREDDE = 196;
-const RADHOYDE = 17.5;
+const NAVNEBREDDE = 226;
+
+/**
+ * Radhøyden er ikke fast.
+ *
+ * Med en fast høyde på 17,5 punkt endte en plan på tolv aktiviteter med
+ * diagrammet i øverste tredel og et halvt A4 blankt papir under. Radene får
+ * derfor vokse til de fyller siden, opp til et tak — over det blir det luft
+ * mellom hver strek i stedet for et diagram.
+ *
+ * Minsteverdien er også den sideinndelingen regner med. Ellers ville en side
+ * med høye rader tatt færre aktiviteter enn kapasiteten som ble regnet ut, og
+ * de siste radene falt ut av dokumentet.
+ */
+const RAD_MIN = 17.5;
+const RAD_MAKS = 27;
 
 const BLEKK = rgb(0.04, 0.04, 0.04);
+const GRAA_700 = rgb(0.18, 0.18, 0.19);
 const GRAA_600 = rgb(0.27, 0.27, 0.28);
 const GRAA_400 = rgb(0.48, 0.48, 0.51);
 const GRAA_300 = rgb(0.78, 0.78, 0.8);
 const GRAA_200 = rgb(0.9, 0.9, 0.9);
 const GRAA_100 = rgb(0.96, 0.96, 0.95);
+/** Panelene: infofeltene på toppen og tegnforklaringen nederst. */
+const PANEL = rgb(0.973, 0.973, 0.968);
+/** Annenhver måned får et hvilende bånd bak radene, så øyet finner måneden. */
+const MAANEDSBAAND = rgb(0.957, 0.959, 0.965);
 const AKSENT = rgb(0.89, 0.02, 0.07);
 
 const hex = (h: string) => {
@@ -134,19 +156,21 @@ function brytLinjer(tekst: string, font: PDFFont, storrelse: number, maks: numbe
 }
 
 /**
- * «36-42» eller «36» — skrives på streken, så plassen er knapp og «uke»
- * utelates. Krysser spennet et årsskifte, blir året med: «45-12 (2027)».
- * Uke 12 alene er umulig å tidfeste på en plan som går over nyttår.
+ * Månedene som sammenhengende bolker, ikke som enkeltkolonner.
+ *
+ * Aksen setter månedsnavnet på den første kolonnen i måneden og lar resten stå
+ * tomme. Det holdt til å skrive navnet, men ikke til å tegne det båndet bak
+ * radene som gjør at øyet finner mars uten å telle uker — til det trengs første
+ * og siste kolonne i hver bolk.
  */
-const ukeMerkelapp = (startISO?: string | null, sluttISO?: string | null): string => {
-  const s = parseDato(startISO);
-  if (!s) return "";
-  const e = parseDato(sluttISO) ?? s;
-  const a = isoUke(s);
-  const b = isoUke(e);
-  const spenn = a.uke === b.uke && a.aar === b.aar ? String(a.uke) : `${a.uke}-${b.uke}`;
-  return a.aar === b.aar ? spenn : `${spenn} (${b.aar})`;
-};
+function maanedsbolker(akse: Tidsakse): Array<{ fra: number; til: number; navn: string }> {
+  const bolker: Array<{ fra: number; til: number; navn: string }> = [];
+  akse.kolonner.forEach((k, i) => {
+    if (i === 0 || k.overskrift) bolker.push({ fra: i, til: i, navn: k.overskrift });
+    else bolker[bolker.length - 1].til = i;
+  });
+  return bolker;
+}
 
 const fmtDato = (s?: string | null) => {
   const d = parseDato(s);
@@ -261,6 +285,7 @@ export async function lagFremdriftsplanPdf(
     ? { start: tilDato(planStart), slutt: tilDato(planSlutt) }
     : planPeriode(medDato.filter((a) => String(a.name ?? "").trim()));
   const akse = periode ? lagTidsakse(periode.start, periode.slutt) : null;
+  const bolker = akse ? maanedsbolker(akse) : [];
 
   const tidX = MARG + NAVNEBREDDE;
   const tidBredde = BREDDE - MARG - tidX;
@@ -283,12 +308,12 @@ export async function lagFremdriftsplanPdf(
   // Hvor radene begynner regnes ut av de samme leddene som tegningen bruker,
   // ikke av et anslag. Første forsøk hadde hardkodede marger som lå 11 punkt
   // feil, og da havnet siste rad oppå tegnforklaringen.
-  const bunn = 74;
-  const AKSEHODE = 25;
+  const bunn = 86;
+  const AKSEHODE = 27;
   const raderStart = (forste: boolean) =>
-    HOYDE - MARG - 16 - 22 - 26 - (forste ? 34 : 0) - AKSEHODE;
-  const raderForste = Math.floor((raderStart(true) - bunn) / RADHOYDE);
-  const raderSenere = Math.floor((raderStart(false) - bunn) / RADHOYDE);
+    HOYDE - MARG - 16 - 22 - 26 - (forste ? 44 : 0) - AKSEHODE;
+  const raderForste = Math.floor((raderStart(true) - bunn) / RAD_MIN);
+  const raderSenere = Math.floor((raderStart(false) - bunn) / RAD_MIN);
 
   const sider: PlanAktivitet[][] = [];
   let i = 0;
@@ -305,16 +330,6 @@ export async function lagFremdriftsplanPdf(
   // og da la den gamle koden merknaden rett oppå fargerutene i forklaringen.
   const MERKNADSLINJE = 10;
   const merknadBredde = BREDDE - 2 * MARG;
-  // Blokken er ankret rett over tegnforklaringen, men vokser oppover mot siste
-  // rad når den trenger flere linjer enn ankeret gir — på en kort plan står det
-  // et tomt felt der, og det er bedre å bruke det enn å sende teksten over på
-  // en egen side. Nederste grunnlinje er `bunn`, for der under begynner
-  // fargerutene i forklaringen.
-  const merknadTopp = (forste: boolean, antallRader: number, behov: number) => {
-    const ledig = raderStart(forste) - antallRader * RADHOYDE - 14;
-    const trengs = bunn + (behov - 1) * MERKNADSLINJE;
-    return Math.min(ledig, Math.max(bunn + 34, trengs));
-  };
   const merknadPlass = (topp: number) => Math.floor((topp - bunn) / MERKNADSLINJE) + 1;
 
   const merknadLinjer = plan.notes ? brytLinjer(plan.notes, vanlig, 8, merknadBredde) : [];
@@ -323,21 +338,66 @@ export async function lagFremdriftsplanPdf(
     : "";
   const merknadBehov = merknadLinjer.length + (udatertLinje ? 1 : 0);
 
+  // Radhøyden settes etter hvor mye plass planen faktisk trenger. Går alt inn
+  // på én side, får radene vokse til de fyller den — en plan på tolv linjer
+  // skal ikke levere et halvt blankt ark. Går den over flere sider, er sidene
+  // fulle likevel, og da holder minstehøyden dem like høye fra side til side.
+  // Merknaden får sin plass reservert først, ellers ville radene dyttet den
+  // over på en egen side bare fordi de kunne vokse.
+  const enSide = sider.length === 1;
+  const merknadReserv = merknadBehov ? merknadBehov * MERKNADSLINJE + 16 : 0;
+  const ledigTilRader = raderStart(true) - bunn - merknadReserv;
+  const radHoyde = enSide && sider[0].length
+    ? Math.min(RAD_MAKS, Math.max(RAD_MIN, ledigTilRader / sider[0].length))
+    : RAD_MIN;
+
+  /**
+   * Hvor kalenderen slutter på en side.
+   *
+   * Rammen fylles med tomme rader ned til gulvet, og merknaden skal stå under
+   * den — ikke oppå de nederste rutene. Derfor må bunnen være regnet ut av de
+   * samme leddene som tegningen bruker, ikke anslått.
+   */
+  const kartBunn = (forste: boolean, antallRader: number, gulv: number) => {
+    const topp = raderStart(forste);
+    const tomme = Math.max(0, Math.floor((topp - antallRader * radHoyde - gulv) / radHoyde));
+    return topp - (antallRader + tomme) * radHoyde;
+  };
+
   // Får ikke hele merknaden plass nederst på siste side, flyttes den til en
   // egen side i stedet for å bli kuttet etter to linjer. Forbehold og
   // forutsetninger er nettopp det byggherren må lese, og en tekst som stopper
   // uten et tegn på at det er mer, leses som om det var hele forbeholdet.
-  const sisteTopp = merknadTopp(sider.length === 1, sider[sider.length - 1].length, merknadBehov);
+  const sisteAntall = sider[sider.length - 1].length;
+  const sisteTopp = kartBunn(enSide, sisteAntall, bunn + merknadReserv) - 14;
   const egenMerknadsside = merknadBehov > 0 && merknadBehov > merknadPlass(sisteTopp);
   const antallSider = sider.length + (egenMerknadsside ? 1 : 0);
+  // Skal merknaden på egen side, er det ingen grunn til å holde av plass til
+  // den nederst — da fylles kalenderen helt ned.
+  const sisteGulv = merknadBehov && !egenMerknadsside ? bunn + merknadReserv : bunn;
 
-  const naa = new Intl.DateTimeFormat("nb-NO", {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-  }).format(new Date()).replace(",", " ");
-
-  const periodeTekst = akse
-    ? `Uke ${isoUke(akse.fra).uke} - uke ${isoUke(new Date(akse.til.getTime() - 86400000)).uke}`
+  // Perioden vises som de datoene planen faktisk gjelder, ikke som ytterkanten
+  // av tidsaksen: aksen er trukket ut til hele uker, så en plan som starter en
+  // onsdag ville stått med mandagen foran.
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const sisteDagIAkse = akse ? new Date(akse.til.getTime() - 86400000) : null;
+  const fraDato = plan.start_date || (akse ? iso(akse.fra) : null);
+  const tilDatoTekst = plan.end_date || (sisteDagIAkse ? iso(sisteDagIAkse) : null);
+  const periodeTekst = fraDato && tilDatoTekst
+    ? `${fmtDato(fraDato)} - ${fmtDato(tilDatoTekst)}`
     : "Ingen datoer lagt inn";
+  // Uker og antall uker hører sammen: ukenumrene sier hvor på kalenderen det
+  // ligger, tallet sier hvor lenge det varer.
+  const ukerIAlt = akse ? Math.round((akse.til.getTime() - akse.fra.getTime()) / (7 * 86400000)) : 0;
+  const kryssarAar = !!akse && !!sisteDagIAkse && isoUke(akse.fra).aar !== isoUke(sisteDagIAkse).aar;
+  // Ukenumrene tas bare med når planen holder seg innenfor året. Krysser den
+  // nyttår, sier «uke 1 - 26» over 78 uker mer forvirrende enn det opplyser —
+  // og datoene står i feltet ved siden av.
+  const varighetTekst = !akse
+    ? "-"
+    : kryssarAar
+      ? `${ukerIAlt} uker`
+      : `Uke ${isoUke(akse.fra).uke} - ${isoUke(sisteDagIAkse!).uke} (${ukerIAlt} uker)`;
 
   const tegnTopp = (side: PDFPage, sideNr: number, forste: boolean) => {
     let y = HOYDE - MARG;
@@ -400,29 +460,51 @@ export async function lagFremdriftsplanPdf(
     y -= 26;
 
     if (forste) {
-      side.drawLine({ start: { x: MARG, y }, end: { x: BREDDE - MARG, y }, thickness: 0.5, color: GRAA_200 });
+      // Nøkkelopplysningene i et eget felt med egen bakgrunn. Som løs tekst på
+      // hvitt fløt de sammen med diagrammet under; en ramme rundt sier at dette
+      // er dokumentets hode, og gjør det raskt å slå opp tilbudsnummeret.
+      const panelH = 38;
+      const panelY = y - panelH;
+      side.drawRectangle({
+        x: MARG, y: panelY, width: BREDDE - 2 * MARG, height: panelH,
+        color: PANEL, borderColor: GRAA_200, borderWidth: 0.5,
+      });
+
       const felt: Array<[string, string]> = [
         ["PROSJEKT", plan.project_ref || plan.offer_title || "-"],
         ["TILBUD", plan.offer_number ? `#${plan.offer_number}` : "-"],
         ["BYGGHERRE", plan.customer_name || "-"],
         ["PERIODE", periodeTekst],
+        ["VARIGHET", varighetTekst],
         ["AKTIVITETER", String(medDato.length)],
         ["REVISJON", plan.revision || "-"],
         ["PLANDATO", fmtDato(plan.plan_date)],
       ];
-      let x = MARG;
-      for (const [merkelapp, verdi] of felt) {
-        const bredde = Math.max(
-          vanlig.widthOfTextAtSize(merkelapp, 6) + 6,
-          fet.widthOfTextAtSize(trygg(verdi), 8.5) + 6,
-        );
-        side.drawText(merkelapp, { x, y: y - 11, size: 6, font: vanlig, color: GRAA_400 });
-        side.drawText(klipp(verdi, fet, 8.5, 150), { x, y: y - 23, size: 8.5, font: fet, color: BLEKK });
-        x += Math.min(bredde, 156) + 14;
-      }
-      y -= 30;
-      side.drawLine({ start: { x: MARG, y }, end: { x: BREDDE - MARG, y }, thickness: 0.5, color: GRAA_200 });
-      y -= 4;
+      // Feltene deler bredden mellom seg etter hvor mye hver av dem trenger.
+      // Med fast bredde ble «Strand kommune Vest-Agder» klippet mens «REVISJON:
+      // B» sto med tom plass ved siden av.
+      const luft = 16;
+      const onsket = felt.map(([m, v]) =>
+        Math.max(vanlig.widthOfTextAtSize(m, 6), fet.widthOfTextAtSize(trygg(v), 9)),
+      );
+      const tilgjengelig = BREDDE - 2 * MARG - 2 * 12 - luft * (felt.length - 1);
+      const sum = onsket.reduce((a, b) => a + b, 0);
+      const skala = sum > tilgjengelig ? tilgjengelig / sum : 1;
+
+      let x = MARG + 12;
+      felt.forEach(([merkelapp, verdi], idx) => {
+        if (idx > 0) {
+          side.drawLine({
+            start: { x: x - luft / 2, y: panelY + 7 }, end: { x: x - luft / 2, y: panelY + panelH - 7 },
+            thickness: 0.5, color: GRAA_300,
+          });
+        }
+        const b = Math.max(28, onsket[idx] * skala);
+        side.drawText(merkelapp, { x, y: panelY + 23, size: 6, font: vanlig, color: GRAA_400 });
+        side.drawText(klipp(verdi, fet, 9, b), { x, y: panelY + 10, size: 9, font: fet, color: BLEKK });
+        x += b + luft;
+      });
+      y = panelY - 6;
     }
     return y;
   };
@@ -430,24 +512,56 @@ export async function lagFremdriftsplanPdf(
   const tegnAksehode = (side: PDFPage, y: number) => {
     if (!akse) return y - 18;
     const kolBredde = tidBredde / akse.kolonner.length;
+    const baandH = 13;
 
-    side.drawText("AKTIVITET", { x: MARG, y: y - 16, size: 6, font: vanlig, color: GRAA_400 });
+    side.drawText("AKTIVITET", { x: MARG + 8, y: y - 19, size: 6, font: vanlig, color: GRAA_400 });
+    // Overskriften settes bare når ansvarlig faktisk står i sin egen kolonne
+    // ute til høyre. Er radene høye nok til at navnet står under aktiviteten,
+    // ville overskriften pekt på tom plass.
+    if (radHoyde < 22) {
+      side.drawText("ANSVARLIG", {
+        x: tidX - 8 - vanlig.widthOfTextAtSize("ANSVARLIG", 6), y: y - 19, size: 6, font: vanlig, color: GRAA_400,
+      });
+    }
+
+    // Måneden skrives midt over sine egne uker, på et bånd som viser hvor den
+    // begynner og slutter. Før sto navnet klemt inn over den første uken i
+    // måneden, og «okt» kunne like gjerne ha hørt til uken før.
+    bolker.forEach((b, i) => {
+      const x = tidX + b.fra * kolBredde;
+      const bredde = (b.til - b.fra + 1) * kolBredde;
+      if (i % 2 === 1) {
+        side.drawRectangle({ x, y: y - baandH, width: bredde, height: baandH, color: MAANEDSBAAND });
+      }
+      const navn = trygg((b.navn || "").toUpperCase());
+      if (navn) {
+        const tb = fet.widthOfTextAtSize(navn, 7);
+        // Får navnet ikke plass i sin egen bolk, står det venstrestilt i stedet
+        // for å flyte inn i naboen — en måned kan være én ukekolonne bred.
+        const tx = tb + 4 <= bredde ? x + bredde / 2 - tb / 2 : x + 1;
+        side.drawText(navn, { x: tx, y: y - 9.5, size: 7, font: fet, color: GRAA_700 });
+      }
+    });
 
     akse.kolonner.forEach((k, idx) => {
       const x = tidX + idx * kolBredde;
-      if (k.overskrift) {
-        side.drawText(trygg(k.overskrift.toUpperCase()), {
-          x: x + 1, y: y - 8, size: 6.5, font: fet, color: GRAA_400,
-        });
-      }
       const etikett = trygg(k.etikett);
       const b = vanlig.widthOfTextAtSize(etikett, 6.5);
       side.drawText(etikett, {
-        x: x + kolBredde / 2 - b / 2, y: y - 20, size: 6.5, font: vanlig, color: GRAA_600,
+        x: x + kolBredde / 2 - b / 2, y: y - baandH - 9, size: 6.5, font: vanlig, color: GRAA_600,
       });
     });
 
-    const linjeY = y - 25;
+    // «UKE» én gang ute i margen, ikke foran hvert tall. Uten den leses
+    // tallrekken like gjerne som datoer.
+    if (akse.type === "uke") {
+      side.drawText("UKE", {
+        x: tidX - 3 - vanlig.widthOfTextAtSize("UKE", 5.5),
+        y: y - baandH - 9, size: 5.5, font: vanlig, color: GRAA_300,
+      });
+    }
+
+    const linjeY = y - AKSEHODE;
     side.drawLine({
       start: { x: MARG, y: linjeY }, end: { x: BREDDE - MARG, y: linjeY },
       thickness: 1.2, color: BLEKK,
@@ -455,18 +569,39 @@ export async function lagFremdriftsplanPdf(
     return linjeY;
   };
 
-  const tegnRader = (side: PDFPage, rader: PlanAktivitet[], topp: number) => {
+  const tegnRader = (side: PDFPage, rader: PlanAktivitet[], topp: number, gulv: number) => {
     if (!akse) return topp;
     const kolBredde = tidBredde / akse.kolonner.length;
-    let y = topp;
+    // Kalenderen tegnes ferdig ned til gulvet, også der planen har færre
+    // aktiviteter enn det er plass til. En plan på to linjer så ellers ut som
+    // et uferdig ark med et diagram klistret øverst — og de tomme radene er noe
+    // man faktisk bruker: de fylles ut for hånd på byggemøtet.
+    const tomme = Math.max(0, Math.floor((topp - rader.length * radHoyde - gulv) / radHoyde));
+    const antall = rader.length + tomme;
+    const nederst = topp - antall * radHoyde;
 
+    // Månedsbåndene tegnes i full høyde før radene, ikke per rad. Da står de
+    // som sammenhengende felt bak diagrammet, og øyet finner mars uten å telle
+    // uker bortover fra begynnelsen.
+    bolker.forEach((b, i) => {
+      if (i % 2 === 0) return;
+      side.drawRectangle({
+        x: tidX + b.fra * kolBredde, y: nederst,
+        width: (b.til - b.fra + 1) * kolBredde, height: topp - nederst,
+        color: MAANEDSBAAND,
+      });
+    });
+
+    let y = topp;
     rader.forEach((a, idx) => {
       const radTopp = y;
-      const radBunn = y - RADHOYDE;
+      const radBunn = y - radHoyde;
 
+      // Stripen legges bare i navnefeltet. Over hele bredden slo den ut
+      // månedsbåndene annenhver rad, og kalenderen bak ble et sjakkbrett.
       if (idx % 2 === 1) {
         side.drawRectangle({
-          x: MARG, y: radBunn, width: BREDDE - 2 * MARG, height: RADHOYDE, color: GRAA_100,
+          x: MARG, y: radBunn, width: NAVNEBREDDE, height: radHoyde, color: GRAA_100,
         });
       }
 
@@ -485,58 +620,102 @@ export async function lagFremdriftsplanPdf(
       // Fargemerket foran navnet, så raden kan spores til sitt fag uten å følge
       // streken bortover
       side.drawRectangle({
-        x: MARG, y: radBunn + 4, width: 3, height: RADHOYDE - 8, color: hex(farge.fyll),
+        x: MARG, y: radBunn + 3.5, width: 3.5, height: radHoyde - 7, color: hex(farge.fyll),
       });
 
-      const navnPlass = NAVNEBREDDE - 12 - (a.responsible ? 78 : 0);
+      // Er raden høy nok, står ansvarlig under navnet i stedet for å ta av
+      // navnets bredde. Da slipper «Grunnarbeid og masseutskifting» å bli
+      // klippet for å gi plass til et navn den ikke har noe med.
+      const toLinjer = radHoyde >= 22;
+      const navnStorrelse = radHoyde >= 24 ? 8.5 : 8;
+      const navnPlass = NAVNEBREDDE - 14 - (toLinjer || !a.responsible ? 0 : 78);
       // En rad med dato, men uten navn, er en halvferdig rad skjermen ikke
       // viser. Den tegnes likevel her, for datoen er noe brukeren faktisk har
       // lagt inn — men den skal si hva den er, ikke bare stå som en bindestrek
       // ingen kan tyde.
-      side.drawText(klipp(String(a.name ?? "").trim() || "(uten navn)", fet, 8, navnPlass), {
-        x: MARG + 8, y: radBunn + 5.5, size: 8, font: fet, color: BLEKK,
+      const navn = String(a.name ?? "").trim() || "(uten navn)";
+      side.drawText(klipp(navn, fet, navnStorrelse, navnPlass), {
+        x: MARG + 9,
+        y: toLinjer ? radBunn + radHoyde / 2 - 0.5 : radBunn + radHoyde / 2 - 3,
+        size: navnStorrelse, font: fet, color: BLEKK,
       });
       if (a.responsible) {
-        const r = klipp(a.responsible, vanlig, 7, 74);
-        side.drawText(r, {
-          x: tidX - 6 - vanlig.widthOfTextAtSize(r, 7), y: radBunn + 5.5,
-          size: 7, font: vanlig, color: GRAA_400,
-        });
+        const r = klipp(a.responsible, vanlig, 7, toLinjer ? navnPlass : 74);
+        if (toLinjer) {
+          side.drawText(r, { x: MARG + 9, y: radBunn + radHoyde / 2 - 9.5, size: 7, font: vanlig, color: GRAA_400 });
+        } else {
+          side.drawText(r, {
+            x: tidX - 8 - vanlig.widthOfTextAtSize(r, 7), y: radBunn + radHoyde / 2 - 3,
+            size: 7, font: vanlig, color: GRAA_400,
+          });
+        }
       }
 
       const p = plassering(akse, a.start_date, a.end_date);
       if (p) {
         const x = tidX + (p.venstre / 100) * tidBredde;
+        const midt = radBunn + radHoyde / 2;
         if (a.is_milestone) {
           // Ruter tegnet som fire hjørner. pdf-lib har ingen rotasjon på
           // rektangler, så formen settes sammen av linjer i stedet.
-          const m = radBunn + RADHOYDE / 2;
-          const s = 4.6;
-          side.drawLine({ start: { x, y: m + s }, end: { x: x + s, y: m }, thickness: 3.2, color: hex(farge.fyll) });
-          side.drawLine({ start: { x: x + s, y: m }, end: { x, y: m - s }, thickness: 3.2, color: hex(farge.fyll) });
-          side.drawLine({ start: { x, y: m - s }, end: { x: x - s, y: m }, thickness: 3.2, color: hex(farge.fyll) });
-          side.drawLine({ start: { x: x - s, y: m }, end: { x, y: m + s }, thickness: 3.2, color: hex(farge.fyll) });
+          const s = Math.min(5.4, radHoyde / 2 - 3);
+          const f = hex(farge.fyll);
+          side.drawLine({ start: { x, y: midt + s }, end: { x: x + s, y: midt }, thickness: 3.4, color: f });
+          side.drawLine({ start: { x: x + s, y: midt }, end: { x, y: midt - s }, thickness: 3.4, color: f });
+          side.drawLine({ start: { x, y: midt - s }, end: { x: x - s, y: midt }, thickness: 3.4, color: f });
+          side.drawLine({ start: { x: x - s, y: midt }, end: { x, y: midt + s }, thickness: 3.4, color: f });
+
+          // Datoen ved siden av romben. En milepæl er ett punkt i tid, og det
+          // punktet er hele poenget — uten datoen må leseren peile symbolet mot
+          // ukelinjen og gjette seg til dagen.
+          // Året tas med når planen selv krysser nyttår. «26.03» alene kan da
+          // være to helt ulike dager.
+          const dato = trygg(naarTekst(a.start_date, a.start_date, true, !kryssarAar));
+          const db = vanlig.widthOfTextAtSize(dato, 6.5);
+          const hoyre = x + s + 3;
+          const plassTilHoyre = BREDDE - MARG - hoyre >= db;
+          side.drawText(dato, {
+            x: plassTilHoyre ? hoyre : x - s - 3 - db, y: midt - 2.2,
+            size: 6.5, font: fet, color: GRAA_700,
+          });
         } else {
           const b = Math.max((p.bredde / 100) * tidBredde, 2.5);
+          const bh = Math.min(radHoyde - 7, 13);
           side.drawRectangle({
-            x, y: radBunn + 3.5, width: b, height: RADHOYDE - 7,
+            x, y: midt - bh / 2, width: b, height: bh,
             color: hex(farge.fyll), borderColor: hex(farge.kant), borderWidth: 0.7,
           });
 
-          // Ukene skrives på selve streken når den er bred nok. Uten det må
-          // leseren følge streken opp til aksen for hver rad, og det er nettopp
-          // ukene en fremdriftsplan leses etter. Hvit tekst, fordi fyllet er
-          // mørkt nok i alle åtte fargene.
-          const merkelapp = trygg(ukeMerkelapp(a.start_date, a.end_date));
-          const tb = fet.widthOfTextAtSize(merkelapp, 7);
-          if (merkelapp && tb + 8 <= b) {
-            side.drawText(merkelapp, {
-              x: x + b / 2 - tb / 2,
-              y: radBunn + RADHOYDE / 2 - 2.4,
-              size: 7,
-              font: fet,
-              color: rgb(1, 1, 1),
-            });
+          // Når den varer skrives på selve streken. Uten det må leseren følge
+          // streken opp til aksen for hver rad, og det er nettopp tiden en
+          // fremdriftsplan leses etter. Følger aktiviteten hele uker, står
+          // ukenumrene der; er datoene satt midt i en uke, står datoene, slik
+          // at filen sier det samme som skjermen.
+          //
+          // Er streken for smal, skrives teksten utenfor i stedet for å
+          // forsvinne — en kort aktivitet er ikke en aktivitet uten tid.
+          // «uke» sløyfes på selve streken når aksen viser uker: kolonnene sier
+          // allerede at tallene er ukenumre, og plassen inne i en strek på to
+          // uker er knapp. På en månedsakse må ordet stå — der ville «14-21»
+          // like gjerne vært datoer.
+          const raa = naarTekst(a.start_date, a.end_date || a.start_date, false, true);
+          const merkelapp = trygg(akse.type === "uke" ? raa.replace(/^uke\s*/i, "") : raa);
+          if (merkelapp) {
+            const tb = fet.widthOfTextAtSize(merkelapp, 7);
+            if (tb + 8 <= b) {
+              // Hvit tekst, fordi fyllet er mørkt nok i alle åtte fargene.
+              side.drawText(merkelapp, {
+                x: x + b / 2 - tb / 2, y: midt - 2.4, size: 7, font: fet, color: rgb(1, 1, 1),
+              });
+            } else if (BREDDE - MARG - (x + b + 3) >= tb) {
+              side.drawText(merkelapp, {
+                x: x + b + 3, y: midt - 2.4, size: 7, font: fet, color: GRAA_700,
+              });
+            } else if (x - 3 - tb >= tidX) {
+              side.drawText(merkelapp, {
+                x: x - 3 - tb, y: midt - 2.4, size: 7, font: fet, color: GRAA_700,
+              });
+            }
           }
         }
       }
@@ -548,19 +727,48 @@ export async function lagFremdriftsplanPdf(
       y = radBunn;
     });
 
+    // De tomme radene: samme rutenett og samme striper, uten innhold.
+    for (let t = 0; t < tomme; t++) {
+      const idx = rader.length + t;
+      const radTopp = y;
+      const radBunn = y - radHoyde;
+      if (idx % 2 === 1) {
+        side.drawRectangle({ x: MARG, y: radBunn, width: NAVNEBREDDE, height: radHoyde, color: GRAA_100 });
+      }
+      akse.kolonner.forEach((k, kIdx) => {
+        if (kIdx === 0) return;
+        const x = tidX + kIdx * kolBredde;
+        side.drawLine({
+          start: { x, y: radTopp }, end: { x, y: radBunn },
+          thickness: k.overskrift ? 0.7 : 0.4,
+          color: k.overskrift ? GRAA_300 : GRAA_200,
+        });
+      });
+      side.drawLine({
+        start: { x: MARG, y: radBunn }, end: { x: BREDDE - MARG, y: radBunn },
+        thickness: 0.4, color: GRAA_200,
+      });
+      y = radBunn;
+    }
+
     // Skillet mellom navn og tidsakse går hele veien ned
     side.drawLine({
       start: { x: tidX, y: topp }, end: { x: tidX, y },
       thickness: 0.7, color: GRAA_300,
     });
+    // Ramme rundt kalenderen, så diagrammet er et felt og ikke løse streker
+    side.drawRectangle({
+      x: MARG, y, width: BREDDE - 2 * MARG, height: topp - y,
+      borderColor: GRAA_300, borderWidth: 0.5,
+    });
     return y;
   };
 
   const tegnBunn = (side: PDFPage, sisteSide: boolean) => {
-    let y = bunn - 12;
+    const y = bunn - 22;
 
     if (sisteSide) {
-      let x = MARG;
+      let x = MARG + 12;
       // Forklaringen skal vise det planen faktisk inneholder. «Milepæl» sto her
       // også når planen ikke hadde noen, og romben ble tegnet rød uansett — mens
       // en milepæl brukeren selv legger inn får sin egen farge i diagrammet.
@@ -581,26 +789,37 @@ export async function lagFremdriftsplanPdf(
         oppforinger.unshift(["Aktivitet", finnFarge(null).fyll, false]);
       }
 
+      // Forklaringen står i sitt eget felt. Som løse ruter på hvitt så den ut
+      // som noe som var blitt til overs nederst på arket. Er det ingenting å
+      // forklare — en tom plan har ingen farger — tegnes heller ikke feltet:
+      // en tom grå stripe forklarer ingenting.
+      if (oppforinger.length || akse?.type === "maaned") {
+        side.drawRectangle({
+          x: MARG, y: y - 7, width: BREDDE - 2 * MARG, height: 22,
+          color: PANEL, borderColor: GRAA_200, borderWidth: 0.5,
+        });
+      }
+
       for (const [navn, fyll, erMilepael] of oppforinger) {
         const tekst = trygg(navn);
         if (erMilepael) {
-          const m = y + 3.7;
-          const s = 3.4;
+          const m = y + 3.2;
+          const s = 4;
           const cx = x + 5;
           const f = hex(fyll);
-          side.drawLine({ start: { x: cx, y: m + s }, end: { x: cx + s, y: m }, thickness: 2.4, color: f });
-          side.drawLine({ start: { x: cx + s, y: m }, end: { x: cx, y: m - s }, thickness: 2.4, color: f });
-          side.drawLine({ start: { x: cx, y: m - s }, end: { x: cx - s, y: m }, thickness: 2.4, color: f });
-          side.drawLine({ start: { x: cx - s, y: m }, end: { x: cx, y: m + s }, thickness: 2.4, color: f });
+          side.drawLine({ start: { x: cx, y: m + s }, end: { x: cx + s, y: m }, thickness: 2.6, color: f });
+          side.drawLine({ start: { x: cx + s, y: m }, end: { x: cx, y: m - s }, thickness: 2.6, color: f });
+          side.drawLine({ start: { x: cx, y: m - s }, end: { x: cx - s, y: m }, thickness: 2.6, color: f });
+          side.drawLine({ start: { x: cx - s, y: m }, end: { x: cx, y: m + s }, thickness: 2.6, color: f });
         } else {
-          side.drawRectangle({ x, y: y + 1, width: 13, height: 5.5, color: hex(fyll) });
+          side.drawRectangle({ x, y: y - 0.5, width: 15, height: 7.5, color: hex(fyll) });
         }
-        side.drawText(tekst, { x: x + 17, y, size: 7, font: vanlig, color: GRAA_600 });
-        x += 17 + vanlig.widthOfTextAtSize(tekst, 7) + 14;
+        side.drawText(tekst, { x: x + 20, y, size: 7.5, font: vanlig, color: GRAA_600 });
+        x += 20 + vanlig.widthOfTextAtSize(tekst, 7.5) + 16;
       }
 
       if (akse?.type === "maaned") {
-        side.drawText("Tidsaksen viser måneder — planen er for lang til ukeinndeling", {
+        side.drawText("Tidsaksen viser måneder - planen er for lang til ukeinndeling", {
           x, y, size: 7, font: vanlig, color: GRAA_400,
         });
       }
@@ -608,20 +827,25 @@ export async function lagFremdriftsplanPdf(
 
     const linjeY = 46;
     side.drawLine({ start: { x: MARG, y: linjeY }, end: { x: BREDDE - MARG, y: linjeY }, thickness: 0.5, color: GRAA_200 });
+    // Samme røde strek som på toppen, i kort utgave. Den binder de to endene av
+    // arket sammen og er igjen i dokumentmalen fra de andre PDF-ene.
+    side.drawRectangle({ x: MARG, y: linjeY - 0.5, width: 46, height: 1.5, color: AKSENT });
 
-    const deler = [
-      settings.company_name,
+    // Hvem man ringer. Navnet uthevet, resten i grått — nummeret er det som
+    // faktisk skal brukes, og da skal det ikke drukne i orgnummeret.
+    let fx = MARG;
+    const firma = trygg(settings.company_name);
+    side.drawText(firma, { x: fx, y: linjeY - 13, size: 7.5, font: fet, color: GRAA_600 });
+    fx += fet.widthOfTextAtSize(firma, 7.5);
+    const resten = [
       settings.company_org_nr ? `Org.nr ${settings.company_org_nr}` : "",
       settings.ref_name, settings.ref_phone, settings.ref_email,
     ].filter(Boolean).join("  |  ");
-    side.drawText(klipp(deler, vanlig, 7, BREDDE - 2 * MARG - 150), {
-      x: MARG, y: linjeY - 12, size: 7, font: vanlig, color: GRAA_400,
-    });
-    const utTekst = `Skrevet ut ${naa}`;
-    side.drawText(trygg(utTekst), {
-      x: BREDDE - MARG - vanlig.widthOfTextAtSize(trygg(utTekst), 7),
-      y: linjeY - 12, size: 7, font: vanlig, color: GRAA_400,
-    });
+    if (resten) {
+      side.drawText(klipp(`  |  ${resten}`, vanlig, 7.5, BREDDE - 2 * MARG - fx + MARG - 60), {
+        x: fx, y: linjeY - 13, size: 7.5, font: vanlig, color: GRAA_400,
+      });
+    }
   };
 
   /**
@@ -657,13 +881,14 @@ export async function lagFremdriftsplanPdf(
 
   sider.forEach((rader, idx) => {
     const side = doc.addPage([BREDDE, HOYDE]);
+    const sisteSide = idx === sider.length - 1;
     const etterTopp = tegnTopp(side, idx + 1, idx === 0);
     const etterAkse = tegnAksehode(side, etterTopp);
-    tegnRader(side, rader, etterAkse);
-    const sisteSide = idx === sider.length - 1;
+    const etterRader = tegnRader(side, rader, etterAkse, sisteSide ? sisteGulv : bunn);
 
     if (sisteSide && merknadBehov && !egenMerknadsside) {
-      tegnMerknader(side, sisteTopp, merknadPlass(sisteTopp));
+      const topp = etterRader - 14;
+      tegnMerknader(side, topp, merknadPlass(topp));
     }
 
     tegnBunn(side, sisteSide);

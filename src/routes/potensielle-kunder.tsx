@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Plus, Trash2, Pencil, X, Check, Phone, Mail, ChevronDown, AlertTriangle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useAppSettings } from "@/hooks/use-app-settings";
+import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/potensielle-kunder")({
@@ -438,7 +438,9 @@ function PotensielleKunderPage() {
           <tbody className="divide-y">
             {editingId === "new" && (
               <EditRow
-                lead={EMPTY_LEAD}
+                // Ny forespørsel starter på standardreferansen, som nye tilbud
+                // og fremdriftsplaner. Eksisterende rader røres ikke.
+                lead={{ ...EMPTY_LEAD, ansvarlig: standardRef(appSettings?.our_refs)?.name ?? "" }}
                 refs={refs}
                 draftKey="lead-draft-new"
                 onSave={(data) => save("new", data)}

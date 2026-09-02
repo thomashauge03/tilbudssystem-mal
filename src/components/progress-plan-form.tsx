@@ -12,7 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { toast } from "sonner";
 import {
   Plus, Trash2, Save, FileDown, ArrowLeft, GripVertical, ArrowUp, ArrowDown, Diamond, Minus,
-  FileText, LayoutList, Copy, CalendarRange, Paperclip, ChevronDown,
+  FileText, LayoutList, Copy, CalendarRange, CalendarDays, Paperclip, ChevronDown,
 } from "lucide-react";
 import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
 import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
@@ -102,40 +102,47 @@ const tomAktivitet = (sort: number, over: Partial<Aktivitet> = {}): Aktivitet =>
 /**
  * «Hvor lenge varer jobben?»
  *
- * Varighet i uker framfor en sluttdato: det er slik man tenker om en jobb — «vi
- * har seks uker på oss» — og det fjerner en hel klasse feil der sluttdatoen
- * havner før startdatoen.
+ * Både varighet og sluttdato står framme samtidig, og de holder hverandre
+ * oppdatert. Første utgave hadde en bryter mellom de to, og da fant ingen den
+ * eksakte sluttdatoen — den lå bak et valg man måtte vite fantes. To felter tar
+ * knapt mer plass enn ett, og «vi har seks uker på oss» og «det skal stå ferdig
+ * 14. mars» er begge måter folk tenker om den samme jobben.
  */
 function PeriodeSteg({
-  start, slutt: sluttInn, uker, kanAvbryte, onAvbryt, onSett,
+  start, slutt: sluttInn, kanAvbryte, onAvbryt, onSett,
 }: {
   start: string;
   slutt: string;
-  uker: number;
   kanAvbryte: boolean;
   onAvbryt: () => void;
   onSett: (start: string, slutt: string) => void;
 }) {
   const [dato, setDato] = useState(start || toISODate(new Date()));
-  const [antall, setAntall] = useState(uker || 12);
-  // To veier til samme svar. «Vi har seks uker på oss» og «det skal stå ferdig
-  // 14. mars» er begge måter folk tenker på, og hvilken som gjelder avhenger av
-  // om det er egen framdrift eller byggherrens frist som styrer.
-  const [modus, setModus] = useState<"uker" | "dato">(sluttInn ? "dato" : "uker");
-  const [sluttDato, setSluttDato] = useState(sluttInn || sluttEtterUker(dato, uker || 12));
+  // Sluttdatoen er sannheten. Varigheten regnes ut av den, og skriver man i
+  // varigheten, er det sluttdatoen som flyttes — da kan de to aldri sprike.
+  const [sluttDato, setSluttDato] = useState(sluttInn || sluttEtterUker(start || toISODate(new Date()), 12));
 
-  const slutt = modus === "uker" ? sluttEtterUker(dato, antall) : sluttDato;
-  const gyldig = !!parseDato(dato) && !!parseDato(slutt) && slutt >= dato;
-  const antallUker = gyldig ? (lagTidsakse(dato, slutt)?.kolonner.length ?? 0) : 0;
+  const gyldig = !!parseDato(dato) && !!parseDato(sluttDato) && sluttDato >= dato;
+  const antall = gyldig ? (lagTidsakse(dato, sluttDato)?.kolonner.length ?? 0) : 0;
+
+  const settUker = (n: number) => setSluttDato(sluttEtterUker(dato, Math.max(1, Math.min(260, n))));
+
+  // Flyttes oppstarten, følger lengden med — man har flyttet jobben, ikke
+  // forkortet den.
+  const settStart = (ny: string) => {
+    if (parseDato(ny) && antall > 0) setSluttDato(sluttEtterUker(ny, antall));
+    setDato(ny);
+  };
 
   return (
     <div className="rounded-xl border bg-card p-5 shadow-sm">
       <h2 className="text-sm font-semibold">Hvor lenge varer jobben?</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Dette blir kalenderen du plasserer aktivitetene i. Du kan endre den etterpå.
+        Dette blir kalenderen du plasserer aktivitetene i. Fyll inn enten varighet eller sluttdato —
+        det andre feltet regner seg selv ut.
       </p>
 
-      <div className="mt-4 flex flex-wrap items-end gap-4">
+      <div className="mt-4 flex flex-wrap items-start gap-4">
         <div className="space-y-1.5">
           <Label htmlFor="per-start">Oppstart</Label>
           <Input
@@ -143,106 +150,78 @@ function PeriodeSteg({
             type="date"
             className="w-44"
             value={dato}
-            onChange={(e) => setDato(e.target.value)}
+            onChange={(e) => settStart(e.target.value)}
           />
           {/* Aksen starter alltid på en mandag, så det sies her framfor å flytte
               datoen bak ryggen på brukeren. */}
           <p className="text-xs text-muted-foreground">
-            {parseDato(dato) ? `Starter ${ukeTekst(dato)}, fra mandag` : "Velg en dato"}
+            {parseDato(dato) ? `${ukeTekst(dato)}, fra mandag` : "Velg en dato"}
           </p>
         </div>
 
         <div className="space-y-1.5">
-          <Label>Slutt</Label>
-          <div className="flex rounded-md border p-0.5">
-            {([["uker", "Antall uker"], ["dato", "Bestemt dato"]] as const).map(([k, tekst]) => (
+          <Label htmlFor="per-uker">Varighet</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="per-uker"
+              type="number"
+              min={1}
+              max={260}
+              className="w-20"
+              value={antall || ""}
+              onChange={(e) => settUker(Number(e.target.value) || 1)}
+            />
+            <span className="text-sm text-muted-foreground">uker</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {[4, 8, 12, 16, 26, 52].map((u) => (
               <button
-                key={k}
+                key={u}
                 type="button"
-                onClick={() => {
-                  // Bytter man vei, følger den andre verdien med — ellers ville
-                  // et bytte nullstilt det man nettopp la inn.
-                  if (k === "dato") setSluttDato(sluttEtterUker(dato, antall));
-                  else if (parseDato(sluttDato)) {
-                    setAntall(lagTidsakse(dato, sluttDato)?.kolonner.length || antall);
-                  }
-                  setModus(k);
-                }}
-                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                  modus === k ? "bg-primary text-primary-foreground" : "hover:bg-accent"
-                }`}
+                onClick={() => settUker(u)}
+                className={
+                  "rounded border px-1.5 py-0.5 text-xs transition-colors " +
+                  (antall === u ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent")
+                }
               >
-                {tekst}
+                {u}
               </button>
             ))}
           </div>
         </div>
 
-        {modus === "uker" ? (
-          <>
-            <div className="space-y-1.5">
-              <Label htmlFor="per-uker">Varighet</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="per-uker"
-                  type="number"
-                  min={1}
-                  max={260}
-                  className="w-24"
-                  value={antall || ""}
-                  onChange={(e) => setAntall(Math.max(1, Math.min(260, Number(e.target.value) || 1)))}
-                />
-                <span className="text-sm text-muted-foreground">uker</span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {[4, 8, 12, 16, 26, 52].map((u) => (
-                <Button
-                  key={u}
-                  size="sm"
-                  variant={antall === u ? "default" : "outline"}
-                  onClick={() => setAntall(u)}
-                >
-                  {u} uker
-                </Button>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="space-y-1.5">
-            <Label htmlFor="per-slutt">Siste dag</Label>
-            <Input
-              id="per-slutt"
-              type="date"
-              className="w-44"
-              value={sluttDato}
-              min={dato || undefined}
-              onChange={(e) => setSluttDato(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              {parseDato(sluttDato)
-                ? (sluttDato < dato ? "Ligger før oppstart" : `Slutter ${ukeTekst(sluttDato)}`)
-                : "Velg en dato"}
-            </p>
-          </div>
-        )}
+        <div className="space-y-1.5">
+          <Label htmlFor="per-slutt">Siste dag</Label>
+          <Input
+            id="per-slutt"
+            type="date"
+            className="w-44"
+            value={sluttDato}
+            min={dato || undefined}
+            onChange={(e) => setSluttDato(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            {!parseDato(sluttDato)
+              ? "Velg en dato"
+              : sluttDato < dato
+                ? "Ligger før oppstart"
+                : ukeTekst(sluttDato, true)}
+          </p>
+        </div>
       </div>
 
       {gyldig && (
         <p className="mt-4 text-sm">
           <span className="text-muted-foreground">Perioden blir </span>
-          <span className="font-medium tabular-nums">
-            {ukeTekst(dato)} – {ukeTekst(slutt)}
-          </span>
+          <span className="font-medium tabular-nums">{ukeSpenn(dato, sluttDato)}</span>
           <span className="text-muted-foreground">
-            {" · "}{antallUker} uker · {fmtDate(dato)} til {fmtDate(slutt)}
+            {` · ${antall} uker · ${fmtDate(dato)} til ${fmtDate(sluttDato)}`}
           </span>
         </p>
       )}
 
       <div className="mt-4 flex gap-2">
-        <Button onClick={() => onSett(dato, slutt)} disabled={!gyldig}>
+        <Button onClick={() => onSett(dato, sluttDato)} disabled={!gyldig}>
           <CalendarRange className="mr-2 h-4 w-4" />
           {kanAvbryte ? "Oppdater perioden" : "Lag kalenderen"}
         </Button>
@@ -464,7 +443,6 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
     setPeriodeApen(false);
   };
 
-  const ukerIPerioden = harPeriode && akse ? akse.kolonner.length : 12;
 
   const velgTilbud = (id: string) => {
     if (id === "__none") { settPlan("offer_id", null); return; }
@@ -796,7 +774,6 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
             <PeriodeSteg
               start={plan.start_date}
               slutt={plan.end_date}
-              uker={ukerIPerioden}
               kanAvbryte={harPeriode}
               onAvbryt={() => setPeriodeApen(false)}
               onSett={settPeriode}
@@ -807,7 +784,12 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border bg-muted/40 px-4 py-3 text-sm">
               <CalendarRange className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="font-medium tabular-nums">
-                {ukeTekst(plan.start_date)} – {ukeTekst(plan.end_date)}
+                {ukeSpenn(plan.start_date, plan.end_date)}
+              </span>
+              {/* Datoene står framme. Ukenummer alene svarer ikke på «når skal
+                  vi være ferdige», og det er det spørsmålet man stiller. */}
+              <span className="tabular-nums text-muted-foreground">
+                {fmtDate(plan.start_date)} – {fmtDate(plan.end_date)}
               </span>
               <span className="text-muted-foreground">
                 {akse?.kolonner.length} {akse?.type === "uke" ? "uker" : "måneder"}
@@ -1011,19 +993,28 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
 
                           {/* Ukene står i raden, ikke bare i grafen. Klikker man
                               på dem, kommer datofeltene fram for eksakt dato. */}
+                          {/* Så det ER en knapp. Første utgave så ut som ren
+                              tekst, og da fant ingen datofeltene som ligger bak
+                              den — ramme og kalenderikon sier at her kan man
+                              trykke. */}
                           <button
                             type="button"
                             onClick={() => setDatoRad(datoRad === i ? null : i)}
                             aria-expanded={datoRad === i}
                             title="Klikk for å skrive inn eksakt dato"
                             className={
-                              "w-[108px] shrink-0 rounded px-1.5 py-1 text-left text-xs tabular-nums transition-colors hover:bg-accent " +
-                              (datoRad === i ? "bg-accent font-medium" : "text-muted-foreground")
+                              "flex h-8 w-[108px] shrink-0 items-center gap-1 rounded-md border px-1.5 text-left text-xs tabular-nums transition-colors " +
+                              (datoRad === i
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:border-foreground/30 hover:bg-accent hover:text-foreground")
                             }
                           >
-                            {a.start_date
-                              ? ukeSpenn(a.start_date, a.is_milestone ? a.start_date : a.end_date || a.start_date)
-                              : "ikke satt"}
+                            <CalendarDays className="h-3 w-3 shrink-0 opacity-70" />
+                            <span className="truncate">
+                              {a.start_date
+                                ? ukeSpenn(a.start_date, a.is_milestone ? a.start_date : a.end_date || a.start_date)
+                                : "sett dato"}
+                            </span>
                           </button>
 
                           <div className="flex w-[164px] shrink-0 items-center justify-end">

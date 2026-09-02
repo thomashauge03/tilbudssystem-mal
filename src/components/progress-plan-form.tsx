@@ -11,11 +11,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import {
   Plus, Trash2, Save, FileDown, ArrowLeft, GripVertical, ArrowUp, ArrowDown, Diamond,
-  FileText, LayoutList, Copy,
+  FileText, LayoutList, Copy, CalendarRange, Paperclip, Printer,
 } from "lucide-react";
-import { toISODate, OFFER_WON_STATUSES } from "@/lib/format";
-import { lagTidsakse, plassering, planPeriode, ukeTekst, varighetDager, FARGER, finnFarge } from "@/lib/fremdrift";
+import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
+import { lagTidsakse, planPeriode, ukeTekst, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
+import { FremdriftRutenett } from "@/components/fremdrift-rutenett";
 import { openProgressPlanPdf } from "@/lib/pdf-fremdrift";
+import { lagFremdriftsplanPdf, fremdriftsplanFilnavn } from "@/lib/pdf-fremdrift-fil";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -62,18 +64,132 @@ interface PlanState {
   project_id: string | null;
   revision: string;
   plan_date: string;
+  /** Tidsaksens ytterpunkter. Settes før aktivitetene, så det finnes en
+   *  kalender å tegne i — aktivitetene kan ikke definere aksen de skal inn i. */
+  start_date: string;
+  end_date: string;
   notes: string;
 }
 
 const tomPlan = (): PlanState => ({
   title: "", offer_id: null, project_id: null,
-  revision: "", plan_date: toISODate(new Date()), notes: "",
+  revision: "", plan_date: toISODate(new Date()),
+  start_date: "", end_date: "", notes: "",
 });
+
+/** Mandagen i uken datoen ligger i — aksen starter alltid på en mandag. */
+const mandagISO = (iso: string): string => {
+  const d = parseDato(iso);
+  if (!d) return iso;
+  return tilDato(mandagI(d));
+};
+
+/** Søndagen n uker etter start, altså siste dag i perioden. */
+const sluttEtterUker = (startISO: string, uker: number): string => {
+  const d = parseDato(mandagISO(startISO));
+  if (!d) return "";
+  return tilDato(new Date(d.getTime() + (Math.max(1, uker) * 7 - 1) * 86400000));
+};
 
 const tomAktivitet = (sort: number, over: Partial<Aktivitet> = {}): Aktivitet => ({
   sort_order: sort, name: "", responsible: "", category: "", color: "graa",
   start_date: "", end_date: "", is_milestone: false, notes: "", ...over,
 });
+
+/**
+ * «Hvor lenge varer jobben?»
+ *
+ * Varighet i uker framfor en sluttdato: det er slik man tenker om en jobb — «vi
+ * har seks uker på oss» — og det fjerner en hel klasse feil der sluttdatoen
+ * havner før startdatoen.
+ */
+function PeriodeSteg({
+  start, uker, kanAvbryte, onAvbryt, onSett,
+}: {
+  start: string;
+  uker: number;
+  kanAvbryte: boolean;
+  onAvbryt: () => void;
+  onSett: (start: string, uker: number) => void;
+}) {
+  const [dato, setDato] = useState(start || toISODate(new Date()));
+  const [antall, setAntall] = useState(uker || 12);
+  const slutt = sluttEtterUker(dato, antall);
+
+  return (
+    <div className="rounded-xl border bg-card p-5 shadow-sm">
+      <h2 className="text-sm font-semibold">Hvor lenge varer jobben?</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Dette blir kalenderen du plasserer aktivitetene i. Du kan endre den etterpå.
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-end gap-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="per-start">Oppstart</Label>
+          <Input
+            id="per-start"
+            type="date"
+            className="w-44"
+            value={dato}
+            onChange={(e) => setDato(e.target.value)}
+          />
+          {/* Aksen starter alltid på en mandag, så det sies her framfor å flytte
+              datoen bak ryggen på brukeren. */}
+          <p className="text-xs text-muted-foreground">
+            {parseDato(dato) ? `Starter ${ukeTekst(dato)}, fra mandag` : "Velg en dato"}
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="per-uker">Varighet</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="per-uker"
+              type="number"
+              min={1}
+              max={260}
+              className="w-24"
+              value={antall || ""}
+              onChange={(e) => setAntall(Math.max(1, Math.min(260, Number(e.target.value) || 1)))}
+            />
+            <span className="text-sm text-muted-foreground">uker</span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          {[4, 8, 12, 16, 26, 52].map((u) => (
+            <Button
+              key={u}
+              size="sm"
+              variant={antall === u ? "default" : "outline"}
+              onClick={() => setAntall(u)}
+            >
+              {u} uker
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {slutt && (
+        <p className="mt-4 text-sm">
+          <span className="text-muted-foreground">Perioden blir </span>
+          <span className="font-medium tabular-nums">
+            {ukeTekst(dato)} – {ukeTekst(slutt)}
+          </span>
+          <span className="text-muted-foreground"> · siste dag {fmtDate(slutt)}</span>
+        </p>
+      )}
+
+      <div className="mt-4 flex gap-2">
+        <Button onClick={() => onSett(dato, antall)} disabled={!parseDato(dato)}>
+          <CalendarRange className="mr-2 h-4 w-4" />
+          {kanAvbryte ? "Oppdater perioden" : "Lag kalenderen"}
+        </Button>
+        {kanAvbryte && <Button variant="outline" onClick={onAvbryt}>Avbryt</Button>}
+      </div>
+    </div>
+  );
+}
 
 export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; initialOfferId?: string }) {
   const navigate = useNavigate();
@@ -198,6 +314,8 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
         offer_id: p.offer_id ?? null,
         project_id: p.project_id ?? null,
         revision: p.revision ?? "",
+        start_date: p.start_date ?? "",
+        end_date: p.end_date ?? "",
         plan_date: p.plan_date ?? toISODate(new Date()),
         notes: p.notes ?? "",
       });
@@ -254,11 +372,33 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
 
   // Forhåndsvisning: samme regnestykke som PDF-en bruker
   const gyldige = akt.filter((a) => a.start_date && a.name.trim());
-  const periode = useMemo(() => planPeriode(gyldige), [akt]);
+
+  // Aksen kommer fra planens egen periode. Uten den ville det ikke finnes noen
+  // kalender før første aktivitet var lagt inn — og det er nettopp kalenderen
+  // man legger aktivitetene inn i. Eldre planer uten periode faller tilbake på
+  // aktivitetene sine, så de fortsatt kan åpnes.
+  const harPeriode = !!(plan.start_date && plan.end_date);
+  const periode = useMemo(
+    () => (harPeriode
+      ? { start: plan.start_date, slutt: plan.end_date }
+      : planPeriode(gyldige)),
+    [harPeriode, plan.start_date, plan.end_date, akt],
+  );
   const akse = useMemo(
     () => (periode ? lagTidsakse(periode.start, periode.slutt) : null),
     [periode],
   );
+  const [aktivRad, setAktivRad] = useState<number | null>(null);
+  const [periodeApen, setPeriodeApen] = useState(false);
+
+  const settPeriode = (startISO: string, uker: number) => {
+    brukerHarEndretRef.current = true;
+    const start = mandagISO(startISO);
+    setPlan((p) => ({ ...p, start_date: start, end_date: sluttEtterUker(start, uker) }));
+    setPeriodeApen(false);
+  };
+
+  const ukerIPerioden = harPeriode && akse ? akse.kolonner.length : 12;
 
   const velgTilbud = (id: string) => {
     if (id === "__none") { settPlan("offer_id", null); return; }
@@ -296,6 +436,8 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
         offer_id: plan.offer_id,
         project_id: plan.project_id,
         revision: plan.revision.trim(),
+        start_date: plan.start_date || null,
+        end_date: plan.end_date || null,
         plan_date: plan.plan_date || null,
         notes: plan.notes,
       };
@@ -356,6 +498,109 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
     if (!isEdit) navigate({ to: "/fremdriftsplan/$id", params: { id } });
   };
 
+  /** Feltene PDF-en trenger, samlet ett sted så fil og utskrift ikke kan sprike. */
+  const pdfData = () => {
+    const ref = (appSettings?.our_refs ?? [])[0];
+    return {
+      dok: {
+        title: plan.title,
+        revision: plan.revision,
+        plan_date: plan.plan_date,
+        notes: plan.notes,
+        offer_number: valgtTilbud?.offer_number ?? null,
+        offer_title: valgtTilbud?.title ?? null,
+        project_ref: valgtTilbud?.project_number ?? null,
+        customer_name: valgtTilbud?.customer_name ?? null,
+      },
+      rader: akt.filter((a) => a.name.trim() || a.start_date),
+      innst: {
+        company_name: appSettings?.company_name ?? "",
+        company_tagline: (appSettings as any)?.company_tagline ?? "",
+        company_org_nr: (appSettings as any)?.company_org_nr ?? "",
+        logo_url: appSettings?.logo_url ?? "",
+        ref_name: ref?.name ?? "",
+        ref_phone: ref?.phone ?? "",
+        ref_email: ref?.email ?? "",
+      },
+    };
+  };
+
+  /** Ekte PDF-fil, ikke utskriftsdialog — den kan lagres, sendes og legges ved. */
+  const lastNedFil = async () => {
+    if (!appSettings) { toast.error("Firmainnstillingene er ikke lastet ennå"); return; }
+    const id = await lagre();
+    if (!id) return;
+    const { dok, rader, innst } = pdfData();
+    const bytes = await lagFremdriftsplanPdf(dok, rader, innst);
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fremdriftsplanFilnavn(dok);
+    a.click();
+    // Uten dette holder nettleseren på filen i minnet så lenge fanen er åpen
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  };
+
+  /**
+   * Legger planen som vedlegg på tilbudet, slik at den følger med når tilbudet
+   * sendes. Skriver til samme bøtte og samme felt som vedleggsfeltet på
+   * tilbudssiden, så den dukker opp der uten videre.
+   */
+  const leggVedPaaTilbud = async () => {
+    if (!appSettings) { toast.error("Firmainnstillingene er ikke lastet ennå"); return; }
+    if (!plan.offer_id) { toast.error("Knytt planen til et tilbud først"); return; }
+    const id = await lagre();
+    if (!id) return;
+
+    setLagrer(true);
+    try {
+      const { dok, rader, innst } = pdfData();
+      const bytes = await lagFremdriftsplanPdf(dok, rader, innst);
+      const filnavn = fremdriftsplanFilnavn(dok);
+      const sti = `${plan.offer_id}/${Date.now()}_${filnavn}`;
+
+      const { error: oppFeil } = await supabase.storage
+        .from("offer-attachments")
+        .upload(sti, new Blob([bytes], { type: "application/pdf" }), {
+          upsert: true, contentType: "application/pdf",
+        });
+      if (oppFeil) { toast.error(oppFeil.message); return; }
+
+      const { data: url } = supabase.storage.from("offer-attachments").getPublicUrl(sti);
+
+      // Kolonnen kan være jsonb eller text avhengig av hvor basen kommer fra.
+      // Vi leser den, og skriver tilbake i samme form som vi fikk den — ellers
+      // ville et tilbud med tekstkolonne fått en array den ikke kan lese.
+      const { data: rad, error: lesFeil } = await supabase
+        .from("offers").select("attachment_urls").eq("id", plan.offer_id).single();
+      if (lesFeil) { toast.error(lesFeil.message); return; }
+
+      const raa = (rad as any)?.attachment_urls;
+      const varTekst = typeof raa === "string";
+      let liste: Array<{ name: string; url: string }> = [];
+      if (Array.isArray(raa)) liste = raa;
+      else if (varTekst && raa.trim()) {
+        try { const p = JSON.parse(raa); if (Array.isArray(p)) liste = p; } catch { liste = []; }
+      }
+      // Er planen lagt ved før, byttes den ut i stedet for å legges ved en gang
+      // til — ellers samler det seg opp en utgave per revisjon.
+      liste = liste.filter((v) => v.name !== filnavn);
+      liste.push({ name: filnavn, url: url.publicUrl });
+
+      const { error: skrivFeil } = await supabase
+        .from("offers")
+        .update({ attachment_urls: varTekst ? JSON.stringify(liste) : liste } as any)
+        .eq("id", plan.offer_id);
+      if (skrivFeil) { toast.error(skrivFeil.message); return; }
+
+      qc.invalidateQueries({ queryKey: ["offer", plan.offer_id] });
+      toast.success(`Lagt ved på tilbud #${valgtTilbud?.offer_number ?? ""}`);
+    } finally {
+      setLagrer(false);
+    }
+  };
+
   const lastNedPdf = async () => {
     if (!appSettings) { toast.error("Firmainnstillingene er ikke lastet ennå"); return; }
     // Vinduet må åpnes i selve klikket, ellers regner nettleseren det som en
@@ -404,8 +649,16 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
           </h1>
         </div>
         <div className="flex flex-wrap gap-2 lg:justify-end">
-          <Button variant="outline" onClick={lastNedPdf} disabled={lagrer}>
-            <FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF
+          {plan.offer_id && (
+            <Button variant="outline" onClick={leggVedPaaTilbud} disabled={lagrer}>
+              <Paperclip className="mr-2 h-4 w-4" />Legg ved på tilbudet
+            </Button>
+          )}
+          <Button variant="outline" onClick={lastNedFil} disabled={lagrer}>
+            <FileDown className="mr-2 h-4 w-4" />Last ned PDF
+          </Button>
+          <Button variant="outline" onClick={lastNedPdf} disabled={lagrer} title="Åpner utskriftsvindu">
+            <Printer className="mr-2 h-4 w-4" />Skriv ut
           </Button>
           <Button onClick={lagreOgTilbake} disabled={lagrer}>
             <Save className="mr-2 h-4 w-4" />{lagrer ? "Lagrer…" : "Lagre"}
@@ -489,10 +742,37 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
         </div>
 
         <div className="space-y-4">
+          {/* Perioden først. Kalenderen kan ikke tegnes før den er satt, og en
+              aktivitet uten kalender å ligge i er bare to datofelt igjen. */}
+          {(!harPeriode || periodeApen) && (
+            <PeriodeSteg
+              start={plan.start_date}
+              uker={ukerIPerioden}
+              kanAvbryte={harPeriode}
+              onAvbryt={() => setPeriodeApen(false)}
+              onSett={settPeriode}
+            />
+          )}
+
+          {harPeriode && !periodeApen && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border bg-muted/40 px-4 py-3 text-sm">
+              <CalendarRange className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="font-medium tabular-nums">
+                {ukeTekst(plan.start_date)} – {ukeTekst(plan.end_date)}
+              </span>
+              <span className="text-muted-foreground">
+                {akse?.kolonner.length} {akse?.type === "uke" ? "uker" : "måneder"}
+              </span>
+              <Button size="sm" variant="outline" className="ml-auto" onClick={() => setPeriodeApen(true)}>
+                Endre periode
+              </Button>
+            </div>
+          )}
+
           {/* Utgangspunktet velges bare når planen er tom. Har man først lagt
               inn noe, ville en malknapp vært en felle: den ville lagt tretten
               rader oppå det man holdt på med. */}
-          {!akt.length && (
+          {harPeriode && !periodeApen && !akt.length && (
             <div className="rounded-xl border bg-card p-5 shadow-sm">
               <h2 className="text-sm font-semibold">Hvordan vil du begynne?</h2>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -618,23 +898,15 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                         />
                       ))}
                     </div>
-                    <Input
-                      type="date"
-                      className="min-w-0 basis-36"
-                      value={a.start_date}
-                      onChange={(e) => settAkt(i, { start_date: e.target.value })}
-                    />
-                    {/* En milepæl er et tidspunkt, ikke en periode — da er
-                        sluttdato meningsløs og skjules. */}
-                    {!a.is_milestone && (
-                      <Input
-                        type="date"
-                        className="min-w-0 basis-36"
-                        value={a.end_date}
-                        min={a.start_date || undefined}
-                        onChange={(e) => settAkt(i, { end_date: e.target.value })}
-                      />
-                    )}
+                    {/* Datoene settes i kalenderen under, ikke her. To datofelt
+                        per rad gjorde raden så trang at ingenting fikk plass. */}
+                    <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                      {a.start_date
+                        ? (a.is_milestone
+                            ? ukeTekst(a.start_date)
+                            : `${ukeTekst(a.start_date)}–${ukeTekst(a.end_date || a.start_date)}`)
+                        : "ikke plassert"}
+                    </span>
                     <label className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
                       <Checkbox
                         checked={a.is_milestone}
@@ -654,11 +926,9 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                       </Button>
                     </div>
                   </div>
-                  {a.start_date && (
+                  {a.start_date && !a.is_milestone && (
                     <p className="mt-1 pl-6 text-xs text-muted-foreground tabular-nums">
-                      {a.is_milestone
-                        ? ukeTekst(a.start_date)
-                        : `${ukeTekst(a.start_date)} – ${ukeTekst(a.end_date || a.start_date)} · ${varighetDager(a.start_date, a.end_date || a.start_date)} dager`}
+                      {varighetDager(a.start_date, a.end_date || a.start_date)} dager
                     </p>
                   )}
                 </div>
@@ -683,54 +953,26 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
             </div>
           </div>
 
-          {/* Forhåndsvisning. Samme tidsakse og samme plassering som PDF-en, så
-              det man ser her er det som kommer ut på papiret. */}
-          {akse && (
+          {/* Kalenderen. Her plasseres aktivitetene ved å dra dem inn, i
+              stedet for å taste to datoer per rad. Samme tidsakse som PDF-en. */}
+          {akse && akt.length > 0 && (
             <div className="overflow-x-auto rounded-xl border bg-card p-5 shadow-sm">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                Slik blir den
-              </h2>
-              <div className="min-w-[640px]">
-                <div className="flex border-b-2 border-foreground/70 pb-1">
-                  <div className="w-52 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Aktivitet
-                  </div>
-                  <div className="flex flex-1">
-                    {akse.kolonner.map((k, i) => (
-                      <div key={i} className="flex-1 border-r border-border/60 text-center last:border-r-0">
-                        <div className="h-3 text-[9px] font-semibold uppercase text-muted-foreground">
-                          {k.overskrift}
-                        </div>
-                        <div className="text-[10px] font-medium tabular-nums text-muted-foreground">
-                          {k.etikett}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {gyldige.map((a, i) => {
-                  const p = plassering(akse, a.start_date, a.end_date || a.start_date);
-                  const f = finnFarge(a.color);
-                  return (
-                    <div key={i} className={`flex h-7 items-center border-b border-border/60 ${i % 2 ? "bg-muted/30" : ""}`}>
-                      <div className="flex w-52 shrink-0 items-center gap-2 border-r pr-2">
-                        <span className="h-3.5 w-1 shrink-0 rounded-sm" style={{ background: f.fyll }} />
-                        <span className="truncate text-xs font-medium">{a.name}</span>
-                      </div>
-                      <div className="relative flex-1">
-                        <div className="absolute inset-0 flex">
-                          {akse.kolonner.map((_, k) => (
-                            <div key={k} className="flex-1 border-r border-border/40 last:border-r-0" />
-                          ))}
-                        </div>
-                        {p && (a.is_milestone
-                          ? <div className="absolute top-1.5 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border" style={{ left: `${p.venstre}%`, background: f.fyll, borderColor: f.kant }} />
-                          : <div className="absolute top-1.5 h-4 rounded-sm border" style={{ left: `${p.venstre}%`, width: `${Math.max(p.bredde, 0.8)}%`, background: f.fyll, borderColor: f.kant }} />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  Kalender
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Dra i rutenettet for å legge inn · dra boksen for å flytte · dra i endene for å endre lengde
+                </p>
+              </div>
+              <div className="min-w-[680px]">
+                <FremdriftRutenett
+                  akse={akse}
+                  aktiviteter={akt}
+                  aktivRad={aktivRad}
+                  onVelgRad={setAktivRad}
+                  onEndre={(i, patch) => settAkt(i, patch)}
+                />
               </div>
             </div>
           )}

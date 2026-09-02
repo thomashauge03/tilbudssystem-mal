@@ -605,6 +605,11 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
         title: plan.title,
         revision: plan.revision,
         plan_date: plan.plan_date,
+        // Planens egen periode, så filen tegner nøyaktig samme kalender som
+        // skjermen. Uten den bygde PDF-en aksen av aktivitetene, og slakken man
+        // bevisst la inn i begge ender forsvant i utskriften.
+        start_date: plan.start_date,
+        end_date: plan.end_date,
         notes: plan.notes,
         offer_number: valgtTilbud?.offer_number ?? null,
         offer_title: valgtTilbud?.title ?? null,

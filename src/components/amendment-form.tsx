@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, FilePlus2 } from "lucide-react";
 import { nok, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openAmendmentPdf } from "@/lib/pdf";
 import { AttachmentField } from "@/components/attachment-field";
@@ -52,7 +52,13 @@ function empty(): AState {
   };
 }
 
-export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: string; initialOfferId?: string }) {
+export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, initialProjectRef }: {
+  amendmentId?: string;
+  initialOfferId?: string;
+  /** Prosjekt og prosjektreferanse fra lenken — se ruten for hvorfor de ligger der. */
+  initialProjectId?: string;
+  initialProjectRef?: string;
+}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isEdit = !!amendmentId;
@@ -118,13 +124,21 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
   // vellykket lagring, ellers ville save() sin setA() skrevet utkastet tilbake
   // rett etter at det ble fjernet.
   const userEditedRef = useRef(false);
+  // Sant mens en vedleggsfil er på vei opp. Se vakten i lagreNaa().
+  const lasterOppVedleggRef = useRef(false);
   // Kommer man fra et tilbud, hører utkastet til akkurat den kombinasjonen.
   // Ellers ville utkastet fra ett tilbud dukket opp på et annet.
-  const DRAFT_KEY = `amendment-draft-${amendmentId ?? "new"}${initialOfferId ? `-${initialOfferId}` : ""}`;
+  // Kommer man uten tilbud, men med et prosjekt, skiller referansen utkastene
+  // fra hverandre på samme måte. Ellers deler alle løse krav én plass: et
+  // halvskrevet krav på ett prosjekt ble gjenopprettet da man begynte på et
+  // krav på et annet, med feil prosjektreferanse — og dermed feil nummerserie.
+  const DRAFT_KEY = `amendment-draft-${amendmentId ?? "new"}${
+    initialOfferId ? `-${initialOfferId}` : initialProjectRef ? `-p${initialProjectRef}` : ""
+  }`;
 
   // Når kravet opprettes fra inne i et tilbud, hentes tilbudet slik at både
   // tilbudskoblingen og prosjektet kan fylles inn på forhånd.
-  const { data: initialOffer } = useQuery({
+  const { data: initialOffer, isPending: initialOfferVenter } = useQuery({
     queryKey: ["offer-for-new-amendment", initialOfferId],
     enabled: !!initialOfferId && !amendmentId,
     queryFn: async () => {
@@ -139,8 +153,16 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
   });
 
   useEffect(() => {
-    // Vent på tilbudet før skjemaet initialiseres, ellers ville det blitt tomt
-    if (!isEdit && initialOfferId && !initialOffer) return;
+    // Vent på tilbudet før skjemaet initialiseres, ellers ville det blitt tomt.
+    //
+    // Det ventes på at spørringen er AVGJORT, ikke på at den henter. Er
+    // tilbudet slettet, ender den i feil, og da skal skjemaet komme opp tomt
+    // heller enn å bli hengende på «Laster…». Er nettet nede, står den derimot
+    // på pause: med `isLoading` (som er «pending og henter») slapp vakten
+    // gjennom med én gang, skjemaet ble satt opp tomt, og når nettet kom
+    // tilbake sa `init` at det var gjort — kravet ble liggende uten tilbud,
+    // uten prosjektreferanse og uten et ord om hvorfor.
+    if (!isEdit && initialOfferId && initialOfferVenter) return;
 
     if (!isEdit && !init) {
       // Utkastet har forrang framfor forhåndsutfyllingen fra tilbudet. Ellers
@@ -162,14 +184,32 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
         setA({
           ...empty(),
           offer_id: initialOffer.id,
-          project_id: initialOffer.project_id ?? null,
-          project_ref: initialOffer.project_number || proj?.project_number || proj?.name || "",
+          project_id: initialProjectId ?? initialOffer.project_id ?? null,
+          // Kom prosjektreferansen med i lenken, er det den som gjelder: den er
+          // skrevet av en som satt med denne endringen, mens tilbudets
+          // prosjektnummer kan være tomt — og referansen er det løpenummeret
+          // regnes ut av.
+          project_ref: initialProjectRef || initialOffer.project_number || proj?.project_number || proj?.name || "",
           internal_description: initialOffer.title ?? "",
           customer_email: initialOffer.customer_email ?? "",
           // Tilbudets "Vår referanse" er den samme personen som står som
-          // prosjektleder på endringen. Mangler den, brukes firmaets første
-          // referanse fra innstillingene.
+          // prosjektleder på endringen. Mangler den, brukes standardreferansen
+          // fra innstillingene.
           project_manager: initialOffer.our_ref || standardRef(appSettings?.our_refs)?.name || "",
+        });
+        setInit(true);
+        return;
+      }
+
+      // Uten tilbud, men med prosjekt fra lenken: en endring kan høre til et
+      // prosjekt som ikke har noe tilbud i systemet, og da er prosjektet og
+      // referansen hele konteksten som skal følge med.
+      if (initialProjectId || initialProjectRef) {
+        setA({
+          ...empty(),
+          project_id: initialProjectId ?? null,
+          project_ref: initialProjectRef ?? "",
+          project_manager: standardRef(appSettings?.our_refs)?.name || "",
         });
         setInit(true);
         return;
@@ -216,7 +256,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
       setLines(loaded.lines);
       setInit(true);
     }
-  }, [isEdit, loaded, init, initialOfferId, initialOffer, appSettings]);
+  }, [isEdit, loaded, init, initialOfferId, initialOffer, initialOfferVenter, initialProjectId, initialProjectRef, appSettings]);
 
   // Lagre skjematilstand i sessionStorage ved hver endring
   useEffect(() => {
@@ -379,7 +419,37 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     return `${prefix}-${next}`;
   }
 
+  /**
+   * Én lagring om gangen.
+   *
+   * Nummeret regnes ut ved å lese det høyeste som finnes i basen, og raden
+   * skrives først etterpå. To klikk rett etter hverandre rakk derfor begge å
+   * lese samme tall, og begge satte inn sin rad: to meldinger med samme
+   * løpenummer. Det samme gjelder alle knappene som lagrer — PDF, e-post og
+   * signeringslenke — så vakten ligger her og ikke på knappen.
+   *
+   * Med «Lagre og ny» ble det verre: den tømmer skjemaet, så den ene av de to
+   * radene forsvant fra skjermen i samme øyeblikk den ble laget.
+   */
+  const lagrerRef = useRef(false);
   const save = async (): Promise<string | null> => {
+    if (lagrerRef.current) return null;
+    lagrerRef.current = true;
+    try {
+      return await lagreNaa();
+    } finally {
+      lagrerRef.current = false;
+    }
+  };
+
+  const lagreNaa = async (): Promise<string | null> => {
+    // Et vedlegg som er på vei opp, skrives inn i skjemaet først når det er
+    // ferdig. Lagrer vi nå, blir filen liggende utenfor meldingen — og etter et
+    // «Lagre og ny» havner den i den neste i stedet, som om den hørte til der.
+    if (lasterOppVedleggRef.current) {
+      toast.error("Vent til vedlegget er ferdig lastet opp");
+      return null;
+    }
     // Feltene kan komme tilbake som null fra databasen, så .trim() må skjermes
     const projectRef = (a.project_ref ?? "").trim();
     const internalDesc = (a.internal_description ?? "").trim();
@@ -481,6 +551,64 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
   };
 
   const handleSave = async () => { const id = await save(); if (id && !isEdit) navigate({ to: "/endringsmeldinger/$id", params: { id } }); };
+
+  /**
+   * Lagrer denne og setter opp den neste på samme tilbud.
+   *
+   * Endringer på et prosjekt kommer som regel i klynge, og da er det bare
+   * innholdet som skifter: tilbudet, prosjektet, prosjektreferansen,
+   * prosjektlederen og kundens e-post er de samme. Uten denne måtte man ut i
+   * oversikten, inn i tilbudet og velge «Nytt krav om endring» på nytt for
+   * hver eneste melding — og fylle inn den samme konteksten hver gang.
+   */
+  const lagreOgNy = async () => {
+    const id = await save();
+    if (!id) return;
+
+    if (!isEdit) {
+      // Vi står allerede på skjemaet for et nytt krav, så siden skal ikke
+      // byttes ut — bare tømmes. Uten å nullstille referansene her ville neste
+      // lagring skrevet oppå meldingen vi nettopp la inn, og nummeret fra den
+      // forrige fulgt med inn i PDF-en og e-posten.
+      //
+      // Konteksten blir stående; innholdet gjør det ikke. Beskrivelse, årsak,
+      // merknader, linjer og vedlegg hører til meldingen som nettopp ble
+      // lagret. Det gjør «Dato varslet» også: den sier når akkurat denne
+      // endringen ble varslet, og i en NS-kontrakt er det nettopp den datoen
+      // som avgjør om kravet kom i tide. Den settes derfor til i dag, som på et
+      // hvilket som helst annet nytt krav.
+      currentAmendmentIdRef.current = undefined;
+      currentNumberRef.current = "";
+      userEditedRef.current = false;
+      sessionStorage.removeItem(DRAFT_KEY);
+      setLines([]);
+      setA({
+        ...empty(),
+        offer_id: a.offer_id,
+        project_id: a.project_id,
+        project_ref: a.project_ref,
+        project_manager: a.project_manager,
+        customer_email: a.customer_email,
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      toast.success("Lagret — klar for neste endring");
+      return;
+    }
+
+    // Fra en lagret melding må vi over på skjemaet for nye krav, og konteksten
+    // følger med i adressen. Den lå først i sessionStorage, men en mal appen
+    // legger igjen der, blir liggende: forlot man skjemaet uten å lagre, dukket
+    // den opp igjen i neste krav — også i et som skulle handlet om et annet
+    // prosjekt. Adressen har ingen slik hukommelse.
+    navigate({
+      to: "/endringsmeldinger/ny",
+      search: {
+        offer: a.offer_id ?? undefined,
+        prosjekt: a.project_id ?? undefined,
+        prosjektref: a.project_ref || undefined,
+      },
+    });
+  };
   // Uten firmainnstillingene får dokumentet feil (eller manglende) firmanavn
   const requireSettings = () => {
     if (!appSettings) { toast.error("Firmainnstillingene er ikke lastet enda – prøv igjen om et øyeblikk"); return false; }
@@ -635,7 +763,10 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
     toast.success("Signatur nullstilt. Du kan nå sende ut en ny signeringslenke.");
   };
 
-  if (isEdit && !init) return <div className="text-muted-foreground">Laster…</div>;
+  // Også et nytt krav venter på at det er ferdig satt opp. Uten dette sto
+  // skjemaet åpent og skrivbart mens tilbudet ble hentet, og det man rakk å
+  // skrive ble overskrevet uten varsel i det forhåndsutfyllingen slo inn.
+  if (!init) return <div className="text-muted-foreground">Laster…</div>;
 
   return (
     <div className="space-y-6">
@@ -673,6 +804,9 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
           )}
           <Button variant="outline" onClick={handleEmail}><Mail className="mr-2 h-4 w-4" />Send på e-post</Button>
           <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF</Button>
+          <Button variant="outline" onClick={lagreOgNy} title="Lagrer denne og setter opp et nytt krav med samme tilbud, prosjekt og prosjektreferanse. Beskrivelse, linjer, vedlegg og dato starter på nytt.">
+            <FilePlus2 className="mr-2 h-4 w-4" />Lagre og ny
+          </Button>
           <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre</Button>
         </div>
       </div>
@@ -781,6 +915,7 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
             value={a.attachment_urls ?? []}
             onChange={(next) => set("attachment_urls", next)}
             pathPrefix={`${tenantId}/amendment/${currentAmendmentIdRef.current ?? amendmentId ?? "ny"}`}
+            onUploadingChange={(laster) => { lasterOppVedleggRef.current = laster; }}
           />
         </div>
 
@@ -959,6 +1094,9 @@ export function AmendmentForm({ amendmentId, initialOfferId }: { amendmentId?: s
           <div className="flex flex-wrap gap-2">
             {!laast && <Button variant="outline" onClick={addLine}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>}
             <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF</Button>
+            <Button variant="outline" onClick={lagreOgNy} title="Lagrer denne og setter opp et nytt krav med samme tilbud, prosjekt og prosjektreferanse. Beskrivelse, linjer, vedlegg og dato starter på nytt.">
+              <FilePlus2 className="mr-2 h-4 w-4" />Lagre og ny
+            </Button>
             <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre</Button>
           </div>
         </div>

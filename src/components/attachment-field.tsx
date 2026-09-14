@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -19,21 +19,45 @@ export function AttachmentField({
   onChange,
   pathPrefix,
   label = "Vedlegg (PDF)",
+  onUploadingChange,
 }: {
   value: Attachment[];
   onChange: (next: Attachment[]) => void;
   /** Mappe i bøtta, f.eks. `${tenantId}/amendment/${id}` */
   pathPrefix: string;
   label?: string;
+  /**
+   * Sier fra mens filer er på vei opp.
+   *
+   * Opplastingen ligger i en asynkron lukking over den `value` som gjaldt da
+   * filen ble sluppet, og skriver først når den er ferdig. Skjemaet rundt kan
+   * rekke å lagre eller bli tømt i mellomtiden, og da havner vedlegget på feil
+   * melding. Skjemaet trenger derfor å vite at det pågår en opplasting, slik at
+   * det kan la være å lagre før den er i havn.
+   */
+  onUploadingChange?: (laster: boolean) => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [dropActive, setDropActive] = useState(false);
+
+  // Hvor mange slipp som er på vei opp samtidig. Slippsonen, filvelgeren og
+  // Ctrl+V tar alle imot nye filer mens en opplasting pågår, og med et enkelt
+  // av/på-flagg slo den som ble ferdig først av lampa for begge: «Laster opp…»
+  // forsvant, og skjemaet rundt fikk lov til å lagre midt i den andre.
+  const opplastingerRef = useRef(0);
+  // Den ferskeste lista, speilet ved hver render. Opplastingen er asynkron og
+  // lukker over den `value` som gjaldt da filen ble sluppet — legger den til på
+  // den, forsvinner alt som er kommet til i mellomtiden.
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   const uploadFiles = async (files: File[]) => {
     const pdfs = files.filter((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
     if (files.length && !pdfs.length) { toast.error("Bare PDF-filer kan legges ved"); return; }
     if (!pdfs.length) return;
+    opplastingerRef.current += 1;
     setUploading(true);
+    onUploadingChange?.(true);
     try {
       // Samles opp lokalt og sendes videre i én oppdatering, slik at flere filer
       // i samme slipp ikke overskriver hverandre.
@@ -47,9 +71,16 @@ export function AttachmentField({
         lagtTil.push({ name: file.name, url: data.publicUrl });
         toast.success(`${file.name} lagt til`);
       }
-      if (lagtTil.length) onChange([...(value ?? []), ...lagtTil]);
+      if (lagtTil.length) onChange([...(valueRef.current ?? []), ...lagtTil]);
     } finally {
-      setUploading(false);
+      opplastingerRef.current -= 1;
+      // Først når den siste er i havn. Ellers sier lampa at det er trygt å
+      // lagre mens det fortsatt ligger en fil på veien.
+      if (opplastingerRef.current <= 0) {
+        opplastingerRef.current = 0;
+        setUploading(false);
+        onUploadingChange?.(false);
+      }
     }
   };
 

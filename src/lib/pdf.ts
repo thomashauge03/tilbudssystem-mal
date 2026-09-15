@@ -637,11 +637,20 @@ const PDF_REFLOW_SCRIPT = `(function() {
       // Passer den ikke, åpne ny side — men aldri legg igjen en tom side
       if (bodyContentMm(current) > availFor(current) && tb.querySelectorAll('tr[data-sum]').length > 1) {
         tb.removeChild(row);
+        // En overskrift skal ikke bli stående alene nederst mens bolken sin
+        // flytter videre. Da ville siden sluttet med «GRUNNARBEID» og ingenting
+        // under, og neste side begynt midt i en bolk uten å si hvilken.
+        var forrige = tb.lastElementChild;
+        var taMedOverskrift =
+          forrige && forrige.className.indexOf('heading-row') !== -1
+          && tb.querySelectorAll('tr[data-sum]').length > 1;
+        if (taMedOverskrift) tb.removeChild(forrige);
         var np = tpl.content.firstElementChild.cloneNode(true);
         np.querySelector('tbody').innerHTML = '';
         current.parentNode.insertBefore(np, current.nextSibling);
         current = np;
         used.push(np);
+        if (taMedOverskrift) current.querySelector('tbody').appendChild(forrige);
         current.querySelector('tbody').appendChild(row);
       }
     });
@@ -800,7 +809,11 @@ export function openOfferPdf(
     // En overskrift går over hele bredden. Tomme celler for antall og pris
     // ville sett ut som en post noen glemte å prise.
     if (l.is_heading) {
-      return `<tr class="heading-row"><td colspan="6">${escapeHtml(l.description)}</td></tr>`;
+      // data-sum="0" er ikke pynt: kjøreskriptet samler rader med `tr[data-sum]`,
+      // tømmer tabellen og legger dem tilbake. En rad uten attributtet ble
+      // samlet opp av ingen og lagt tilbake av ingen — overskriften forsvant
+      // ut av det ferdige dokumentet, mens den sto fint i skjemaet.
+      return `<tr class="heading-row" data-sum="0"><td colspan="6">${escapeHtml(l.description)}</td></tr>`;
     }
     const gross = l.quantity * l.unit_price;
     const net = calcLineSum(l);
@@ -1579,7 +1592,9 @@ export function openAmendmentPdf(
     // En overskrift går over hele bredden. Tomme celler for antall og pris
     // ville sett ut som en post noen glemte å prise.
     if (l.is_heading) {
-      return `<tr class="heading-row"><td colspan="5">${escapeHtml(l.description)}</td></tr>`;
+      // Se kommentaren i tilbudets lineRow: uten data-sum blir raden liggende
+      // igjen når kjøreskriptet pakker om tabellen.
+      return `<tr class="heading-row" data-sum="0"><td colspan="5">${escapeHtml(l.description)}</td></tr>`;
     }
     const net = lineSum(l);
     return `<tr data-sum="${net}">

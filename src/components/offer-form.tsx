@@ -1382,6 +1382,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
             <span className="font-bold text-primary">{nok(total)}</span>
           </div>
           <div className="flex flex-wrap gap-2">
+            {/* Overskriften legges inn der postene legges inn. På et langt
+                tilbud er det denne linjen man jobber fra — måtte man opp til
+                korthodet for å skille en bolk, ble skillet ikke satt. */}
+            <Button variant="outline" onClick={addHeading} disabled={laast} title="Skiller oppstillingen i bolker — bare tekst, ingen pris"><Heading className="mr-2 h-4 w-4" />Ny overskrift</Button>
             <Button variant="outline" onClick={addLine} disabled={laast}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>
             <Button variant="outline" onClick={handlePdf} disabled={saving}><FileDown className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Last ned PDF"}</Button>
             <Button onClick={handleSave} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Lagre tilbud"}</Button>

@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, XCircle } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, XCircle, Heading } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, amendmentTotal, OFFER_REJECTED, UNITS as FALLBACK_UNITS } from "@/lib/format";
@@ -25,6 +25,8 @@ interface Line {
   id?: string;
   sort_order: number;
   included: boolean;
+  /** Overskrift i oppstillingen: bare tekst, ingen pris, ingen hake. */
+  is_heading?: boolean;
   description: string;
   comment: string;
   quantity: number;
@@ -265,6 +267,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   };
 
   const addLine = () => { userEditedRef.current = true; setLines((p) => [...p, { sort_order: p.length, included: true, description: "", comment: "", quantity: 1, unit: units[0] ?? "", unit_price: 0, discount_pct: 0 }]); };
+  // En overskrift deler oppstillingen i bolker — grunnarbeid, VA, veg. Tallene
+  // settes til null her og ikke bare skjules: ellers ville en pris blitt
+  // liggende usynlig i raden og dukket opp igjen i summen.
+  const addHeading = () => { userEditedRef.current = true; setLines((p) => [...p, { sort_order: p.length, included: true, description: "", comment: "", quantity: 0, unit: "", unit_price: 0, discount_pct: 0, is_heading: true }]); };
   const removeLine = (i: number) => { userEditedRef.current = true; setLines((p) => p.filter((_, idx) => idx !== i)); };
   const updLine = (i: number, patch: Partial<Line>) => { userEditedRef.current = true; setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l)); };
 
@@ -323,7 +329,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     // et uhell. Feltene markeres ved klikk, og ett tastetrykk tømmer dem —
     // Number("") er 0.
     const mistenkelige = lines.filter(
-      (l) => l.included && l.description.trim() &&
+      // Overskrifter summerer til null med vilje — det er hele poenget med dem
+      (l) => !l.is_heading && l.included && l.description.trim() &&
         Number(l.quantity || 0) * Number(l.unit_price || 0) === 0,
     );
     if (!mistenkelige.length) return true;
@@ -356,6 +363,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       forbehold: offer.forbehold ?? [],
       attachment_urls: offer.attachment_urls ?? [],
       ...(isEdit && offer.status ? { status: offer.status } : {}),
+      // Flytter brukeren statusen bort fra «avslått», skal avslaget vekk med
+      // den. Ellers ble det røde feltet stående for alltid — og teksten der ba
+      // nettopp om å sette statusen tilbake.
+      ...(isEdit && avslagInfo.rejected_at && offer.status !== OFFER_REJECTED
+        ? { rejected_at: null, rejected_by: null, rejected_note: null }
+        : {}),
     };
 
     let id = currentOfferIdRef.current ?? offerId;
@@ -383,6 +396,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         tenant_id: tenantId,
         sort_order: idx,
         included: l.included,
+        is_heading: !!l.is_heading,
         description: l.description,
         comment: l.comment || null,
         quantity: Number(l.quantity || 0),
@@ -572,8 +586,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
     // Opprett signeringslenke og inkluder i e-posten. Feiler den, sier vi fra og
     // lar være å love en lenke i teksten som likevel ikke ble med.
+    //
+    // Er tilbudet avslått, følger det ingen lenke med: uten denne vakten kunne
+    // kunden signere et tilbud de nettopp hadde sagt nei til, og tilbudet ville
+    // stått som både avslått og godkjent på én gang.
     let signingLink = "";
-    if (!isSigned) {
+    if (!isSigned && !erAvslaatt) {
       const token = await getSigningToken(id);
       if (token) signingLink = `\n\nSigner tilbudet digitalt her:\n${window.location.origin}/signer/${token}`;
     }
@@ -710,7 +728,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               <FileSignature className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Kontrakt PDF"}
             </Button>
           )}
-          {!isSigned && (
+          {!isSigned && !erAvslaatt && (
             <Button variant="outline" onClick={handleSigningLink} disabled={saving} title="Generer signeringslenke og kopier til utklippstavle">
               <Link2 className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Signeringslenke"}
             </Button>
@@ -1009,7 +1027,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           <div className="rounded-xl border bg-card p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tilbudslinjer</h2>
-              <Button size="sm" variant="outline" onClick={addLine} disabled={laast}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={addHeading} disabled={laast} title="Skiller oppstillingen i bolker — bare tekst, ingen pris">
+                  <Heading className="mr-1 h-4 w-4" />Ny overskrift
+                </Button>
+                <Button size="sm" variant="outline" onClick={addLine} disabled={laast}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
+              </div>
             </div>
             <table className="hidden w-full text-sm md:table">
               <thead className="border-b text-xs uppercase tracking-wider text-muted-foreground">
@@ -1030,6 +1053,53 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                   <tr><td colSpan={9} className="px-2 py-6 text-center text-muted-foreground">Ingen linjer. Klikk "Ny linje" for å starte.</td></tr>
                 ) : lines.map((l, i) => {
                   const isCustomUnit = !!l.unit && !units.includes(l.unit);
+                  // Overskriften strekker seg over priskolonnene. Den har
+                  // heller ingen hake: en overskrift er ikke noe man kan velge
+                  // bort fra summen, den er ikke med i den.
+                  if (l.is_heading) {
+                    return (
+                      <tr
+                        key={i}
+                        className={`border-b transition-colors ${dragIndex === i ? "opacity-40" : ""} ${dragOverIndex === i && dragIndex !== i ? "bg-accent/40" : ""}`}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
+                        onDrop={(e) => { e.preventDefault(); dropOn(i); }}
+                      >
+                        <td
+                          className="px-1 pt-3.5"
+                          draggable={!laast}
+                          onDragStart={() => setDragIndex(i)}
+                          onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                          title="Dra for å flytte overskriften"
+                        >
+                          <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />
+                        </td>
+                        <td className="px-2 py-2" colSpan={7}>
+                          <Input
+                            readOnly={laast}
+                            value={l.description}
+                            onChange={(e) => updLine(i, { description: e.target.value })}
+                            placeholder="Overskrift, f.eks. GRUNNARBEID"
+                            className="border-0 border-b border-border bg-muted/40 font-semibold uppercase tracking-wide"
+                          />
+                        </td>
+                        <td className="px-1 py-2">
+                          {!laast && (
+                            <div className="flex items-center justify-end gap-0.5">
+                              <div className="flex flex-col">
+                                <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
+                                  <ArrowUp className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
+                                  <ArrowDown className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                              <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett overskrift"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }
                   return (
                     <tr
                       key={i}
@@ -1112,6 +1182,32 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <p className="px-2 py-6 text-center text-muted-foreground">Ingen linjer. Klikk "Ny linje" for å starte.</p>
               ) : lines.map((l, i) => {
                 const isCustomUnit = !!l.unit && !units.includes(l.unit);
+                // Overskriften har bare teksten — ingen hake, ingen tall.
+                if (l.is_heading) {
+                  return (
+                    <div key={i} className="space-y-3 rounded-lg border bg-muted/40 p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Overskrift</span>
+                        <div className="flex items-center gap-0.5">
+                          <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
+                            <ArrowUp className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
+                            <ArrowDown className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett overskrift"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        </div>
+                      </div>
+                      <Input
+                        readOnly={laast}
+                        value={l.description}
+                        onChange={(e) => updLine(i, { description: e.target.value })}
+                        placeholder="Overskrift, f.eks. GRUNNARBEID"
+                        className="font-semibold uppercase tracking-wide"
+                      />
+                    </div>
+                  );
+                }
                 return (
                   <div key={i} className="space-y-3 rounded-lg border p-3">
                     <div className="flex items-center justify-between">

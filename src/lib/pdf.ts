@@ -54,6 +54,8 @@ interface OfferLine {
   unit_price: number;
   discount_pct?: number;
   included: boolean;
+  /** Overskrift i oppstillingen: bare tekst, over hele bredden, ingen tall. */
+  is_heading?: boolean;
 }
 
 interface OfferPdfData {
@@ -264,6 +266,15 @@ const PDF_STYLES = `  :root {
   .desc-text { display: block; }
   .comment { font-size: 8.5pt; color: var(--slate-600); font-weight: 400; font-style: italic; display: block; margin-top: 2px; }
   .strikethrough { font-size: 8pt; color: var(--slate-400); text-decoration: line-through; display: block; }
+
+  /* Overskrift i oppstillingen. Den skal leses som et skille, ikke som en post
+     uten pris: uthevet, med litt luft over, og en tynn strek som binder bolken
+     under seg sammen. */
+  .items tbody tr.heading-row td {
+    font-weight: 700; font-size: 9pt; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink); padding: 14px 0 5px; border-bottom: 1.5px solid var(--slate-600);
+  }
+  .items tbody tr:first-child.heading-row td { padding-top: 4px; }
 
   /* Skyver avslutning til bunnen på siste side */
   .flex-fill { flex: 1; }
@@ -786,6 +797,11 @@ export function openOfferPdf(
   }
 
   function lineRow(l: OfferLine) {
+    // En overskrift går over hele bredden. Tomme celler for antall og pris
+    // ville sett ut som en post noen glemte å prise.
+    if (l.is_heading) {
+      return `<tr class="heading-row"><td colspan="6">${escapeHtml(l.description)}</td></tr>`;
+    }
     const gross = l.quantity * l.unit_price;
     const net = calcLineSum(l);
     const hasDiscount = (l.discount_pct ?? 0) > 0;
@@ -1488,6 +1504,8 @@ interface AmendmentLine {
   quantity: number;
   unit: string;
   unit_price: number;
+  /** Overskrift i oppstillingen: bare tekst, over hele bredden, ingen tall. */
+  is_heading?: boolean;
 }
 
 interface AmendmentTotals {
@@ -1553,10 +1571,16 @@ export function openAmendmentPdf(
   }).format(now).replace(",", " ·");
 
   // Endringslinjer har ingen rabatt — summen er rett og slett antall × pris
-  const lineSum = (l: AmendmentLine) => l.quantity * l.unit_price;
+  // Overskrifter bærer ingen tall og skal ikke telle med i summen
+  const lineSum = (l: AmendmentLine) => (l.is_heading ? 0 : l.quantity * l.unit_price);
   const linesTotal = lines.reduce((s, l) => s + lineSum(l), 0);
 
   function lineRow(l: AmendmentLine) {
+    // En overskrift går over hele bredden. Tomme celler for antall og pris
+    // ville sett ut som en post noen glemte å prise.
+    if (l.is_heading) {
+      return `<tr class="heading-row"><td colspan="5">${escapeHtml(l.description)}</td></tr>`;
+    }
     const net = lineSum(l);
     return `<tr data-sum="${net}">
       <td class="desc-cell"><span class="desc-text">${escapeHtml(l.description)}</span></td>

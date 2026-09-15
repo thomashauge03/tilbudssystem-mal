@@ -24,6 +24,7 @@ export function AvslagKnapp({
   dokument,
   knappetekst,
   forhandsNavn,
+  grunnPaakrevd = false,
   onAvslaa,
 }: {
   /** Det kunden faktisk sier nei til: «tilbud #1042» eller «krav om endring 2026118-3». */
@@ -31,6 +32,16 @@ export function AvslagKnapp({
   knappetekst: string;
   /** Navnet som alt står i signeringsskjemaet, så det ikke må skrives to ganger. */
   forhandsNavn?: string;
+  /**
+   * Krever begrunnelse før avslaget kan sendes.
+   *
+   * På et krav om endring er begrunnelsen ikke en høflighet: den er svaret
+   * entreprenøren må forholde seg til, og den eneste opplysningen som sier om
+   * uenigheten gjelder prisen, omfanget eller selve behovet for endringen.
+   * Uten den står det bare «avslått» i systemet, og da må noen ta en telefon
+   * for å finne ut av det som like gjerne kunne stått her.
+   */
+  grunnPaakrevd?: boolean;
   onAvslaa: (navn: string, grunn: string) => Promise<void>;
 }) {
   const [apen, setApen] = useState(false);
@@ -50,6 +61,10 @@ export function AvslagKnapp({
 
   const bekreft = async () => {
     if (!navn.trim()) { setFeil("Skriv inn navnet ditt — et avslag uten avsender kan ikke etterprøves."); return; }
+    if (grunnPaakrevd && !grunn.trim()) {
+      setFeil("Skriv en kort begrunnelse — entreprenøren trenger å vite hva dere er uenige i.");
+      return;
+    }
     setSender(true);
     setFeil("");
     try {
@@ -95,7 +110,7 @@ export function AvslagKnapp({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="avslag-grunn">Begrunnelse (frivillig)</Label>
+              <Label htmlFor="avslag-grunn">{grunnPaakrevd ? "Begrunnelse *" : "Begrunnelse (frivillig)"}</Label>
               <Textarea
                 id="avslag-grunn"
                 value={grunn}
@@ -104,7 +119,9 @@ export function AvslagKnapp({
                 rows={3}
               />
               <p className="text-xs text-muted-foreground">
-                Begrunnelsen går til entreprenøren og hjelper dem å forstå hva som skal til neste gang.
+                {grunnPaakrevd
+                  ? "Begrunnelsen blir stående sammen med avslaget hos entreprenøren, og er det de svarer på."
+                  : "Begrunnelsen går til entreprenøren og hjelper dem å forstå hva som skal til neste gang."}
               </p>
             </div>
             {feil && <p className="text-sm font-medium text-destructive">{feil}</p>}

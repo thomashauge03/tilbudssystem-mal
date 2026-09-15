@@ -52,10 +52,25 @@ export interface LineLike {
   unit_price?: number | null;
   discount_pct?: number | null;
   included?: boolean | null;
+  /** Overskrift i oppstillingen: bare tekst, ingen pris. */
+  is_heading?: boolean | null;
 }
+
+/**
+ * Er linjen en overskrift?
+ *
+ * Ligger her og ikke i hvert skjema, for spørsmålet stilles overalt der linjer
+ * summeres, tegnes eller telles — og et sted som glemmer den, får en overskrift
+ * inn i et beløp.
+ */
+export const erOverskrift = (l: LineLike | null | undefined) => !!l?.is_heading;
 
 /** Nettosum for én linje: antall × pris, minus eventuell rabatt. */
 export function lineNet(l: LineLike) {
+  // En overskrift bærer ingen tall. Vakten står her og ikke bare i databasen,
+  // fordi en rad som nettopp ble gjort om til overskrift i skjemaet, ennå kan
+  // ha prisen sin med seg i minnet.
+  if (erOverskrift(l)) return 0;
   const gross = Number(l.quantity ?? 0) * Number(l.unit_price ?? 0);
   return gross * (1 - Number(l.discount_pct ?? 0) / 100);
 }

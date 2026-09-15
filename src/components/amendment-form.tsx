@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, FilePlus2, MailCheck, MailX, MailWarning, XCircle } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, FilePlus2, MailCheck, MailX, MailWarning, XCircle, Heading } from "lucide-react";
 import { nok, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openAmendmentPdf } from "@/lib/pdf";
 import { AttachmentField } from "@/components/attachment-field";
@@ -17,7 +17,7 @@ import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { Passordbekreftelse } from "@/components/passordbekreftelse";
 
-interface ALine { id?: string; sort_order: number; description: string; quantity: number; unit: string; unit_price: number; }
+interface ALine { id?: string; sort_order: number; description: string; quantity: number; unit: string; unit_price: number; is_heading?: boolean; }
 interface AState {
   id?: string; amendment_number: string; offer_id: string | null; project_id: string | null; project_ref: string; internal_description: string;
   is_mass_settlement: boolean; is_additional_work: boolean; is_price_increase: boolean;
@@ -425,8 +425,34 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
   };
 
   const addLine = () => { userEditedRef.current = true; setLines((p) => [...p, { sort_order: p.length, description: "", quantity: 1, unit: "stk", unit_price: 0 }]); };
+  // En overskrift deler oppstillingen i bolker — grunnarbeid, VA, veg. Den
+  // bærer ingen tall, og tallene settes til null her og ikke bare skjules:
+  // ellers ville en pris blitt liggende usynlig i raden og dukket opp igjen
+  // hvis noen gjorde overskriften om til en vanlig linje.
+  const addHeading = () => { userEditedRef.current = true; setLines((p) => [...p, { sort_order: p.length, description: "", quantity: 0, unit: "", unit_price: 0, is_heading: true }]); };
   const removeLine = (i: number) => { userEditedRef.current = true; setLines((p) => p.filter((_, idx) => idx !== i)); };
   const updLine = (i: number, patch: Partial<ALine>) => { userEditedRef.current = true; setLines((p) => p.map((l, idx) => idx === i ? { ...l, ...patch } : l)); };
+
+  /**
+   * Flytt opp, flytt ned og slett — likt for prislinjer og overskrifter.
+   *
+   * Skilt ut fordi en overskrift tegnes som en helt annen rad, og to kopier av
+   * de samme knappene ville skilt lag første gang en av dem ble endret.
+   */
+  const radKnapper = (i: number) =>
+    laast ? null : (
+      <div className="flex items-center justify-end gap-0.5">
+        <div className="flex flex-col">
+          <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
+            <ArrowUp className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
+            <ArrowDown className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett linje"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+      </div>
+    );
 
   // Flytt en linje fra en posisjon til en annen og oppdater sort_order
   const moveLine = (from: number, to: number) => {
@@ -559,7 +585,8 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
       // begge, er tapet like reelt. Er linjen bevisst uprist, bekrefter man og
       // går videre.
       const mistenkelige = lines.filter(
-        (l) => l.description.trim() && Number(l.quantity || 0) * Number(l.unit_price || 0) === 0,
+        // Overskrifter skal summere til null — det er hele poenget med dem
+        (l) => !l.is_heading && l.description.trim() && Number(l.quantity || 0) * Number(l.unit_price || 0) === 0,
       );
       if (mistenkelige.length) {
         const liste = mistenkelige
@@ -576,6 +603,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         tenant_id: tenantId,
         sort_order: idx,
         description: l.description,
+        is_heading: !!l.is_heading,
         quantity: Number(l.quantity || 0),
         unit: l.unit,
         unit_price: Number(l.unit_price || 0),
@@ -707,6 +735,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         quantity: Number(l.quantity || 0),
         unit: l.unit,
         unit_price: Number(l.unit_price || 0),
+        is_heading: !!l.is_heading,
       })),
       // Endringsmeldingen har ingen adm.påslag, så totalen er summen av linjene
       { subtotal, total: subtotal },
@@ -807,8 +836,13 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
     // Er kravet ikke signert, legger vi ved en signeringslenke slik tilbudene
     // gjør. Feiler den, sier vi fra og lar være å love en lenke i teksten som
     // likevel ikke ble med.
+    //
+    // Er kravet avslått, følger det ingen lenke med. Knappen «Signeringslenke»
+    // er skjult i det tilfellet, men e-posten lager sin egen — og uten denne
+    // vakten var sperren uten virkning: ett klikk her ga byggherren en fersk
+    // lenke til å signere det de nettopp sa nei til.
     let signingLink = "";
-    if (!isSigned) {
+    if (!isSigned && !erAvslaatt) {
       if (!tenantId) {
         toast.error("Ingen tenant – e-posten blir uten signeringslenke");
       } else {
@@ -1144,7 +1178,12 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
               {laast ? (
                 <span className="text-xs text-muted-foreground">Låst — linjene kan ikke endres etter at kunden har signert</span>
               ) : (
-                <Button size="sm" variant="outline" onClick={addLine}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={addHeading} title="Skiller oppstillingen i bolker — bare tekst, ingen pris">
+                    <Heading className="mr-1 h-4 w-4" />Ny overskrift
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={addLine}><Plus className="mr-1 h-4 w-4" />Ny linje</Button>
+                </div>
               )}
             </div>
             <table className="hidden w-full text-sm md:table">
@@ -1164,6 +1203,39 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
                   <tr><td colSpan={7} className="px-2 py-6 text-center text-muted-foreground">Ingen linjer ennå.</td></tr>
                 ) : lines.map((l, i) => {
                   const isCustomUnit = !!l.unit && !units.includes(l.unit);
+                  // Overskriften strekker seg over priskolonnene. Tomme felt
+                  // for antall og pris ville sett ut som noe man hadde glemt å
+                  // fylle ut — og det er nettopp det en overskrift ikke er.
+                  if (l.is_heading) {
+                    return (
+                      <tr
+                        key={i}
+                        className={`border-b transition-colors ${dragIndex === i ? "opacity-40" : ""} ${dragOverIndex === i && dragIndex !== i ? "bg-accent/40" : ""}`}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
+                        onDrop={(e) => { e.preventDefault(); dropOn(i); }}
+                      >
+                        <td
+                          className="px-1 pt-3.5"
+                          draggable={!laast}
+                          onDragStart={() => setDragIndex(i)}
+                          onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                          title={laast ? "" : "Dra for å flytte overskriften"}
+                        >
+                          {!laast && <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />}
+                        </td>
+                        <td className="px-2 py-2" colSpan={5}>
+                          <Input
+                            value={l.description}
+                            readOnly={laast}
+                            onChange={(e) => updLine(i, { description: e.target.value })}
+                            placeholder="Overskrift, f.eks. GRUNNARBEID"
+                            className="border-0 border-b border-border bg-muted/40 font-semibold uppercase tracking-wide"
+                          />
+                        </td>
+                        <td className="px-1 py-2">{radKnapper(i)}</td>
+                      </tr>
+                    );
+                  }
                   return (
                     <tr
                       key={i}
@@ -1207,21 +1279,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
                       </td>
                       <td className="px-2 py-2"><Input type="number" step="1" className="text-right no-spinner" value={l.unit_price || ""} placeholder="0" readOnly={laast} onChange={(e) => updLine(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></td>
                       <td className="px-2 py-2 text-right font-medium">{nok(Number(l.quantity || 0) * Number(l.unit_price || 0))}</td>
-                      <td className="px-1 py-2">
-                        {!laast && (
-                          <div className="flex items-center justify-end gap-0.5">
-                            <div className="flex flex-col">
-                              <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
-                                <ArrowUp className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button size="icon" variant="ghost" className="h-5 w-6" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
-                                <ArrowDown className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                            <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett linje"><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                          </div>
-                        )}
-                      </td>
+                      <td className="px-1 py-2">{radKnapper(i)}</td>
                     </tr>
                   );
                 })}
@@ -1234,6 +1292,35 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
                 <p className="px-2 py-6 text-center text-muted-foreground">Ingen linjer ennå.</p>
               ) : lines.map((l, i) => {
                 const isCustomUnit = !!l.unit && !units.includes(l.unit);
+                // Overskriften har bare teksten. Feltene for antall, enhet og
+                // pris er ikke tomme her — de finnes ikke.
+                if (l.is_heading) {
+                  return (
+                    <div key={i} className="space-y-3 rounded-lg border bg-muted/40 p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Overskrift</span>
+                        {!laast && (
+                          <div className="flex items-center gap-0.5">
+                            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === 0} onClick={() => moveLine(i, i - 1)} title="Flytt opp">
+                              <ArrowUp className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === lines.length - 1} onClick={() => moveLine(i, i + 1)} title="Flytt ned">
+                              <ArrowDown className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett overskrift"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                          </div>
+                        )}
+                      </div>
+                      <Input
+                        value={l.description}
+                        readOnly={laast}
+                        onChange={(e) => updLine(i, { description: e.target.value })}
+                        placeholder="Overskrift, f.eks. GRUNNARBEID"
+                        className="font-semibold uppercase tracking-wide"
+                      />
+                    </div>
+                  );
+                }
                 return (
                   <div key={i} className="space-y-3 rounded-lg border p-3">
                     <div className="flex items-center justify-between">
@@ -1301,6 +1388,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
             <span className="font-bold text-primary">{nok(subtotal)}</span>
           </div>
           <div className="flex flex-wrap gap-2">
+            {!laast && <Button variant="outline" onClick={addHeading} title="Skiller oppstillingen i bolker — bare tekst, ingen pris"><Heading className="mr-2 h-4 w-4" />Ny overskrift</Button>}
             {!laast && <Button variant="outline" onClick={addLine}><Plus className="mr-2 h-4 w-4" />Ny linje</Button>}
             <Button variant="outline" onClick={handlePdf}><FileDown className="mr-2 h-4 w-4" />Lagre og last ned PDF</Button>
             <Button variant="outline" onClick={lagreOgNy} title="Lagrer denne og setter opp et nytt krav med samme tilbud, prosjekt og prosjektreferanse. Beskrivelse, linjer, vedlegg og dato starter på nytt.">

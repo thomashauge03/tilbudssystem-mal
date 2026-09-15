@@ -114,6 +114,15 @@ begin
   if p_navn is null or btrim(p_navn) = '' then
     raise exception 'Navn er påkrevd';
   end if;
+  -- På et krav om endring er begrunnelsen påkrevd, til forskjell fra på et
+  -- tilbud. Et avslag her er et svar i en pågående sak: entreprenøren må vite
+  -- om uenigheten gjelder prisen, omfanget eller selve behovet for endringen,
+  -- og «avslått» alene sender dem til telefonen for å spørre om noe som like
+  -- gjerne kunne stått her. Kravet ligger i basen og ikke bare i skjemaet —
+  -- funksjonen er åpen for hvem som helst med lenken.
+  if p_grunn is null or btrim(p_grunn) = '' then
+    raise exception 'Begrunnelse er påkrevd når du avslår et krav om endring';
+  end if;
 
   select * into t from amendment_signing_tokens where token = p_token for update;
   if not found then

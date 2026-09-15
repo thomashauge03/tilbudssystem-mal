@@ -17,6 +17,8 @@ interface AmendmentLine {
   quantity: number;
   unit: string;
   unit_price: number;
+  /** Overskrift i oppstillingen: bare tekst, over hele bredden. */
+  is_heading?: boolean;
 }
 
 interface AmendmentInfo {
@@ -329,6 +331,15 @@ function SignerAmendmentPage() {
                 </thead>
                 <tbody>
                   {lines.map((l, i) => (
+                    l.is_heading ? (
+                      // Overskriften deler oppstillingen i bolker. Sto den som
+                      // en vanlig rad, ville kunden sett en post til 0,00 kr.
+                      <tr key={i} className="border-b last:border-0">
+                        <td colSpan={5} className="px-2 pb-1.5 pt-4 text-xs font-bold uppercase tracking-wider text-gray-900">
+                          {l.description}
+                        </td>
+                      </tr>
+                    ) : (
                     <tr key={i} className="border-b last:border-0">
                       <td className="px-2 py-2 text-gray-700">{l.description}</td>
                       <td className="px-2 py-2 text-right text-gray-700">{num(l.quantity)}</td>
@@ -338,6 +349,7 @@ function SignerAmendmentPage() {
                         {nok(Number(l.quantity || 0) * Number(l.unit_price || 0))}
                       </td>
                     </tr>
+                    )
                   ))}
                 </tbody>
               </table>
@@ -404,6 +416,9 @@ function SignerAmendmentPage() {
               dokument={`krav om endring ${info.amendment_number}${info.project_ref ? ` for prosjekt ${info.project_ref}` : ""}`}
               knappetekst="Avslå kravet om endring"
               forhandsNavn={signerName}
+              // På et krav om endring er begrunnelsen svaret entreprenøren skal
+              // forholde seg til. Uten den står det bare «avslått» i systemet.
+              grunnPaakrevd
               onAvslaa={handleAvslag}
             />
           </div>

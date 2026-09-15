@@ -9,10 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, XCircle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, amendmentTotal, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, amendmentTotal, OFFER_REJECTED, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
@@ -415,6 +415,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const signaturMaate = (loaded?.offer as any)?.signature_method ?? "digital";
   const godkjenningsNotat = (loaded?.offer as any)?.manual_approved_note ?? "";
 
+  // Avslaget leses fra den lagrede raden, ikke fra skjemaet: statusen i
+  // skjemaet kan være endret av brukeren akkurat nå, mens hvem som avslo og
+  // hvorfor er noe kunden gjorde og som ikke skal flytte seg.
+  const avslagInfo = (loaded?.offer ?? {}) as any;
+  const erAvslaatt = offer.status === OFFER_REJECTED || !!avslagInfo.rejected_at;
+
   // Prisene kunden har signert på skal ikke kunne endres ved et uhell. De kan
   // endres — men da som en bevisst handling som blir stående i loggen.
   const { data: apenOpplasing } = useQuery({
@@ -731,6 +737,28 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           <Button onClick={handleSave} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Lagre tilbud"}</Button>
         </div>
       </div>
+
+      {/* Kunden har sagt nei via signeringslenken. Det står øverst og i rødt:
+          tilbudet skal ikke følges opp, og begrunnelsen er det eneste som sier
+          hva som skulle til — den er verdt mer enn statusen alene. */}
+      {erAvslaatt && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
+          <XCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
+          <div className="text-sm">
+            <div className="font-semibold text-red-700 dark:text-red-400">
+              Avslått av kunden
+              {avslagInfo.rejected_at ? ` ${fmtDate(avslagInfo.rejected_at)}` : ""}
+              {avslagInfo.rejected_by ? ` · ${avslagInfo.rejected_by}` : ""}
+            </div>
+            {avslagInfo.rejected_note && (
+              <div className="text-muted-foreground">«{avslagInfo.rejected_note}»</div>
+            )}
+            <div className="text-muted-foreground">
+              Vil dere likevel gå videre, sett statusen tilbake til «Sendt» i feltet under.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Godkjent uten digital signatur: da er begrunnelsen det eneste som sier
           hvor papiret eller e-posten ligger, så den hører hjemme øverst. */}

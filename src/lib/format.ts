@@ -85,6 +85,20 @@ export const OFFER_WON_STATUSES = [OFFER_APPROVED, OFFER_COMPLETED];
 
 export const isOfferWon = (status?: string | null) => OFFER_WON_STATUSES.includes(status ?? "");
 
+export const OFFER_REJECTED = "avslått";
+
+export const isOfferRejected = (status?: string | null) => (status ?? "") === OFFER_REJECTED;
+
+/**
+ * Tilbud som ikke lenger venter på svar: vunnet, fullført eller avslått.
+ *
+ * Et avslått tilbud er ute av spill. Det skal ikke telles som aktivt, ikke
+ * ligge i «utløper snart» og ikke dukke opp blant de utløpte når fristen
+ * passerer — kunden har alt sagt nei, og en påminnelse om å følge det opp er
+ * bare støy som skjuler de tilbudene man faktisk kan vinne.
+ */
+export const OFFER_CLOSED_STATUSES = [...OFFER_WON_STATUSES, OFFER_REJECTED];
+
 export const offerHasDeadline = (status?: string | null) => !isOfferWon(status);
 
 export const isOfferExpired = (

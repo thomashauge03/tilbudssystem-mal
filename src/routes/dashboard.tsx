@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate, offerTotal, amendmentTotal, OFFER_WON_STATUSES, OFFER_COMPLETED } from "@/lib/format";
+import { nok, fmtDate, offerTotal, amendmentTotal, OFFER_WON_STATUSES, OFFER_CLOSED_STATUSES, OFFER_COMPLETED } from "@/lib/format";
 import {
   FileText, TrendingUp, ClipboardEdit, CheckCircle2,
   Clock, AlertTriangle, ArrowRight, CircleDollarSign,
@@ -27,10 +27,12 @@ export function useDashboard() {
         supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").in("status", OFFER_WON_STATUSES).order("offer_number", { ascending: false }),
         supabase.from("amendments").select("id, amendment_number, project_ref, notified_date, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)"),
         supabase.from("offers").select("id, offer_number, title, customer_name, status, offer_date, valid_until, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").in("status", OFFER_WON_STATUSES).order("created_at", { ascending: false }).limit(6),
-        // Fristen gjelder bare tilbud som ennå ikke er godkjent — et godkjent
-        // tilbud er aktivt og kan ikke løpe ut.
-        supabase.from("offers").select("id, offer_number, title, customer_name, status, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).gte("valid_until", today).lte("valid_until", soon),
-        supabase.from("offers").select("id, status, valid_until").not("status", "in", `(${OFFER_WON_STATUSES.join(",")})`).lt("valid_until", today),
+        // Fristen gjelder bare tilbud som fortsatt venter på svar. Et godkjent
+        // tilbud er aktivt og kan ikke løpe ut, og et avslått er ute av spill:
+        // en påminnelse om å følge opp et tilbud kunden har sagt nei til,
+        // skjuler bare de tilbudene man faktisk kan vinne.
+        supabase.from("offers").select("id, offer_number, title, customer_name, status, valid_until, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)").not("status", "in", `(${OFFER_CLOSED_STATUSES.join(",")})`).gte("valid_until", today).lte("valid_until", soon),
+        supabase.from("offers").select("id, status, valid_until").not("status", "in", `(${OFFER_CLOSED_STATUSES.join(",")})`).lt("valid_until", today),
         // Alt vi har tilbudt, uansett hvordan det gikk — også avslåtte. Dette
         // er den eneste plassen tapte tilbud er synlige i tall.
         supabase.from("offers").select("id, invoiced_amount, admin_cost_pct, offer_lines(quantity, unit_price, discount_pct, included)"),
@@ -38,7 +40,10 @@ export function useDashboard() {
 
       // Uten dette ville en feilet spørring bare gitt tomme lister, og
       // dashbordet ville vist 0 kr som om alt var i orden.
-      const firstError = [offersRes, amendmentsRes, recentRes, expiringRes, expiredRes].find((r) => r.error)?.error;
+      // alleRes er med i sjekken: den er den eneste plassen avslåtte og
+      // usignerte tilbud telles, og feilet den, viste «Tilbudt totalt» bare et
+      // mindre tall uten å si fra at noe manglet.
+      const firstError = [offersRes, amendmentsRes, recentRes, expiringRes, expiredRes, alleRes].find((r) => r.error)?.error;
       if (firstError) throw firstError;
 
       const offers = offersRes.data ?? [];

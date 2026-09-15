@@ -9,26 +9,29 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2, MailCheck, MailWarning } from "lucide-react";
 
 // Livssyklusen: en endring opprettes som "Krav om endring", og blir til
 // "Endringsmelding" i det kunden signerer. Verdiene lagres i databasen og
 // må derfor stå urørt — det er bare etikettene som er norske.
-const STATUSES = ["krav", "endringsmelding"] as const;
+const STATUSES = ["krav", "endringsmelding", "avslått"] as const;
 type AmendmentStatus = typeof STATUSES[number];
 
 const STATUS_STYLE: Record<AmendmentStatus, string> = {
   krav:            "bg-yellow-100 text-yellow-800 border-yellow-300",
   endringsmelding: "bg-green-100 text-green-800 border-green-300",
+  "avslått":       "bg-red-100 text-red-800 border-red-300",
 };
 
 const STATUS_LABEL: Record<AmendmentStatus, string> = {
-  krav: "Krav om endring", endringsmelding: "Endringsmelding",
+  krav: "Krav om endring", endringsmelding: "Endringsmelding", "avslått": "Avslått",
 };
 
 // Rader fra før statusfeltet ble tatt i bruk regnes som krav om endring
 const statusOf = (a: any): AmendmentStatus =>
-  a?.status === "endringsmelding" ? "endringsmelding" : "krav";
+  a?.status === "endringsmelding" ? "endringsmelding"
+    : a?.status === "avslått" ? "avslått"
+    : "krav";
 
 /** Kort merke for endringstype — tre avhukingskolonner tok for mye bredde. */
 function Merke({ children }: { children: React.ReactNode }) {
@@ -105,23 +108,34 @@ function AmendmentsList() {
         a.offers?.title, a.offers?.customer_name,
         a.offers?.offer_number != null ? `#${a.offers.offer_number}` : null,
         status, STATUS_LABEL[status],
-      ].some((s) => String(s ?? "").toLowerCase().includes(t));
+      ].some((s) => String(s ?? "").toLowerCase().includes(t))
+        // Sendt-statusen sammenlignes fra starten av frasen, ikke som
+        // delstreng: «ikke sendt» inneholder «sendt», så et delstrengsøk på
+        // «sendt» ga hele lista — altså det motsatte av å finne fram.
+        || (a.sent_at ? "sendt" : "ikke sendt").startsWith(t);
     });
   }, [data, q, statusFilter]);
 
-  // Undertittelen viser fordelingen mellom krav og signerte endringsmeldinger
+  // Undertittelen viser fordelingen mellom krav, signerte endringsmeldinger og
+  // dem byggherren har sagt nei til
   const counts = useMemo(() => {
-    let krav = 0, endringsmelding = 0;
+    let krav = 0, endringsmelding = 0, avslått = 0;
     for (const a of rows as any[]) {
-      if (statusOf(a) === "endringsmelding") endringsmelding++; else krav++;
+      const s = statusOf(a);
+      if (s === "endringsmelding") endringsmelding++;
+      else if (s === "avslått") avslått++;
+      else krav++;
     }
-    return { krav, endringsmelding };
+    return { krav, endringsmelding, avslått };
   }, [rows]);
 
   const summary = [
     `${counts.krav} krav`,
     `${counts.endringsmelding} ${counts.endringsmelding === 1 ? "endringsmelding" : "endringsmeldinger"}`,
-  ].join(" · ");
+    // Avslåtte nevnes bare når det finnes noen. På de fleste prosjektene er
+    // tallet null, og «0 avslåtte» er støy i en undertittel.
+    counts.avslått ? `${counts.avslått} avslått` : "",
+  ].filter(Boolean).join(" · ");
 
   const sumOf = (a: any) => (a.amendment_lines ?? []).reduce((s: number, l: any) => s + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
 
@@ -193,7 +207,23 @@ function AmendmentsList() {
                 className={`cursor-pointer border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
                 onClick={() => navigate({ to: "/endringsmeldinger/$id", params: { id: a.id } })}>
                 <td className="whitespace-nowrap px-3 py-3 tabular-nums text-sm text-primary">{a.amendment_number}</td>
-                <td className="px-3 py-3"><StatusBadge status={statusOf(a)} /></td>
+                <td className="px-3 py-3">
+                  <StatusBadge status={statusOf(a)} />
+                  {/* Om byggherren faktisk har fått den. Den står under
+                      statusmerket og ikke i egen kolonne — tabellen har alt
+                      flere kolonner enn det er plass til — men den må stå her:
+                      et krav som aldri ble sendt, er et krav som ikke er
+                      varslet, og det er ikke noe man skal måtte åpne hver
+                      enkelt melding for å finne ut av. */}
+                  <div
+                    className={`mt-1 flex items-center gap-1 whitespace-nowrap text-[11px] ${a.sent_at ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500"}`}
+                    title={a.sent_at ? `Sendt til ${a.sent_to ?? "kunden"}` : "Ikke sendt til kunden ennå"}
+                  >
+                    {a.sent_at
+                      ? <><MailCheck className="h-3 w-3 flex-shrink-0" />Sendt {fmtDate(a.sent_at)}</>
+                      : <><MailWarning className="h-3 w-3 flex-shrink-0" />Ikke sendt</>}
+                  </div>
+                </td>
                 <td className="px-3 py-3">
                   <div className="tabular-nums">{a.project_ref ?? "—"}</div>
                   {a.offers ? (

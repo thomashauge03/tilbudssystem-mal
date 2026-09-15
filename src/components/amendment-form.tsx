@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, FilePlus2 } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, FilePlus2, MailCheck, MailX, MailWarning, XCircle } from "lucide-react";
 import { nok, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openAmendmentPdf } from "@/lib/pdf";
 import { AttachmentField } from "@/components/attachment-field";
@@ -32,6 +32,17 @@ interface AState {
   signature_method?: string;
   manual_approved_note?: string | null;
   attachment_urls?: Array<{ name: string; url: string }>;
+  // Når kravet sist gikk til kunden, og til hvem. Skrives av seg selv når
+  // e-posten klargjøres, men kan settes og fjernes for hånd: et krav kan være
+  // levert på papir i et byggemøte, og en e-post kan bli avbrutt.
+  sent_at?: string | null;
+  sent_to?: string | null;
+  sent_count?: number | null;
+  // Sa byggherren nei via signeringslenken. Et avslått krav er ikke et slettet
+  // krav: det er dokumentasjonen på at endringen ble varslet, og hva svaret ble.
+  rejected_at?: string | null;
+  rejected_by?: string | null;
+  rejected_note?: string | null;
 }
 
 /** Hvordan kunden godkjente, skrevet ut for dokumentet og skjermen. */
@@ -49,6 +60,8 @@ function empty(): AState {
     project_manager: "", customer_email: "",
     change_description: "", reason: "", other_notes: "",
     status: "krav", customer_signed_at: null, attachment_urls: [],
+    sent_at: null, sent_to: null, sent_count: 0,
+    rejected_at: null, rejected_by: null, rejected_note: null,
   };
 }
 
@@ -229,7 +242,20 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
           // utkastet lå og ventet, ville et gammelt øyeblikksbilde ellers vist
           // meldingen som usignert og forsøkt å skrive linjene på nytt.
           const signert = !!la.customer_signed_at || la.status === "endringsmelding";
-          setA({ ...sa, status: la.status, customer_signed_at: la.customer_signed_at });
+          // Det samme gjelder sendingen: den skjedde, og et gammelt utkast skal
+          // ikke få skjemaet til å påstå at kravet aldri gikk ut.
+          setA({
+            ...sa,
+            status: la.status,
+            customer_signed_at: la.customer_signed_at,
+            sent_at: la.sent_at,
+            sent_to: la.sent_to,
+            sent_count: la.sent_count,
+            // Og avslaget: kunden kan ha sagt nei mens utkastet lå og ventet.
+            rejected_at: la.rejected_at,
+            rejected_by: la.rejected_by,
+            rejected_note: la.rejected_note,
+          });
           // Og har kunden rukket å signere, er det de signerte linjene som
           // gjelder — ikke de vi hadde liggende i et utkast. Ellers ville PDF-en
           // og e-posten vist andre tall enn dem kunden faktisk skrev under på,
@@ -283,6 +309,24 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
 
   const isSigned = !!a.customer_signed_at || a.status === "endringsmelding";
   const docLabel = isSigned ? "Endringsmelding" : "Krav om endring";
+
+  // Byggherren har sagt nei. Statusen bærer det, men rejected_at leses også:
+  // en rad kan ha fått statusen satt for hånd, og da mangler datoen.
+  const erAvslaatt = a.status === "avslått" || !!a.rejected_at;
+
+  const erSendt = !!a.sent_at;
+  // «15.09.2026 14:32 · hst@aseral.kommune.no · 2. gang». Klokkeslettet er med
+  // fordi flere krav gjerne sendes samme dag, og da sier datoen alene ikke
+  // hvilke av dem som faktisk gikk ut.
+  const sendtTekst = (() => {
+    const d = a.sent_at ? new Date(a.sent_at) : null;
+    if (!d || Number.isNaN(d.getTime())) return "";
+    const naar = new Intl.DateTimeFormat("nb-NO", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    }).format(d).replace(",", "");
+    const antall = Number(a.sent_count ?? 0);
+    return [naar, a.sent_to, antall > 1 ? `${antall}. gang` : ""].filter(Boolean).join(" · ");
+  })();
 
   // En opplåsing som fortsatt gjelder. Leses fra basen, ikke bare fra minnet,
   // så den overlever en oppfriskning av siden — ellers ville skjemaet sett låst
@@ -680,6 +724,81 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
       },
     );
   };
+  /**
+   * Merker kravet som sendt til kunden.
+   *
+   * E-postprogrammet sier aldri fra om brukeren trykket «Send» til slutt, så
+   * dette er akkurat det vi vet: at meldingen ble klargjort herfra med kundens
+   * adresse i. Nettopp derfor må merket også kunne fjernes igjen — en avbrutt
+   * sending skal ikke bli stående som et varsel byggherren har fått.
+   */
+  const markerSendt = async (id: string, epost: string | null): Promise<boolean> => {
+    // Opptellingen skjer i basen. Regnet vi den ut her og skrev tilbake et
+    // absolutt tall, ville to faner — eller to personer — overskrevet
+    // hverandres sending, og tallet som skal gi kontroll blitt det man ikke
+    // kunne stole på.
+    const { data, error } = await supabase.rpc("merk_endring_sendt" as never, {
+      p_id: id, p_epost: epost || null,
+    } as never);
+    if (error) { toast.error(`Kunne ikke merke som sendt: ${error.message}`); return false; }
+    const svar = (data ?? {}) as { sent_at?: string; sent_to?: string | null; sent_count?: number };
+    setA((p) => ({
+      ...p,
+      sent_at: svar.sent_at ?? new Date().toISOString(),
+      sent_to: svar.sent_to ?? null,
+      sent_count: svar.sent_count ?? Number(p.sent_count ?? 0) + 1,
+    }));
+    qc.invalidateQueries({ queryKey: ["amendments"] });
+    qc.invalidateQueries({ queryKey: ["amendment", id] });
+    return true;
+  };
+
+  const markerIkkeSendt = async () => {
+    const id = currentAmendmentIdRef.current ?? amendmentId;
+    if (!id) return;
+    // Det er den siste sendingen som trekkes fra, ikke hele historikken: er
+    // kravet sendt tre ganger og den fjerde avbrutt, er det fortsatt sendt tre
+    // ganger. Telleren vises uansett bare mens datoen står der.
+    const { data, error } = await supabase.rpc("merk_endring_ikke_sendt" as never, { p_id: id } as never);
+    if (error) { toast.error(error.message); return; }
+    const svar = (data ?? {}) as { sent_count?: number };
+    setA((p) => ({ ...p, sent_at: null, sent_to: null, sent_count: svar.sent_count ?? 0 }));
+    qc.invalidateQueries({ queryKey: ["amendments"] });
+    qc.invalidateQueries({ queryKey: ["amendment", id] });
+    toast.success("Merket som ikke sendt");
+  };
+
+  /**
+   * Fjerner avslaget og setter kravet tilbake til «krav om endring».
+   *
+   * Byggherren kan snu, og avslaget kan ha kommet fra feil person. Uten en vei
+   * tilbake måtte kravet lages på nytt — og da ville både nummeret og
+   * varslingsdatoen, det som viser at endringen ble meldt i tide, blitt et annet.
+   */
+  const gjenaapne = async () => {
+    const id = currentAmendmentIdRef.current ?? amendmentId;
+    if (!id) return;
+    const { error } = await supabase
+      .from("amendments")
+      .update({ status: "krav", rejected_at: null, rejected_by: null, rejected_note: null } as never)
+      .eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    setA((p) => ({ ...p, status: "krav", rejected_at: null, rejected_by: null, rejected_note: null }));
+    qc.invalidateQueries({ queryKey: ["amendments"] });
+    qc.invalidateQueries({ queryKey: ["amendment", id] });
+    toast.success("Avslaget er fjernet — kravet står som aktivt igjen");
+  };
+
+  /** Levert på papir i et byggemøte, eller sendt fra telefonen — da settes det her. */
+  const markerSendtManuelt = async () => {
+    const id = await save();
+    if (!id) return;
+    // Ingen mottakeradresse: vi vet ikke hvordan den ble levert. Skrev vi
+    // kundens e-post her, ville raden påstått at den gikk dit — og det er
+    // nettopp det den ikke gjorde.
+    if (await markerSendt(id, null)) toast.success("Merket som sendt til kunden");
+  };
+
   const handleEmail = async () => {
     if (!requireSettings()) return;
     const id = await save(); if (!id) return;
@@ -728,6 +847,22 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
     const pmNavn = a.project_manager ?? "";
     const pmEpost = pmRef?.email || (pmNavn.includes("@") ? pmNavn : "");
     const cc = pmEpost ? `&cc=${encodeURIComponent(pmEpost)}` : "";
+
+    // Merket settes før e-postprogrammet åpnes, ikke etter. Det finnes ingen
+    // vei tilbake fra mailto-en som sier om den ble sendt, og skrev vi merket
+    // etterpå, ville det falt bort hver gang nettleseren stoppet skriptet for å
+    // åpne e-postprogrammet — altså akkurat når det trengtes.
+    //
+    // På et prosjekt med tolv endringer er det ellers umulig å se hvilke
+    // byggherren har fått, og et krav som aldri ble sendt, er et krav som ikke
+    // er varslet.
+    // Gikk ikke merkingen gjennom, sier markerSendt fra selv. E-posten skal
+    // åpnes uansett — brukeren skal ikke miste sendingen fordi et merke ikke
+    // lot seg skrive.
+    if (await markerSendt(id, a.customer_email)) {
+      toast.success("Merket som sendt — trykk «Ikke sendt likevel» om du avbryter");
+    }
+
     window.location.href = `mailto:${encodeURIComponent(a.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}${cc}`;
   };
 
@@ -780,7 +915,10 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         <div className="flex gap-2 flex-wrap lg:justify-end">
           {/* Er den alt signert, skal det ikke gå an å be om en ny signatur —
               da ville customer_signed_at blitt overskrevet. Nullstill først. */}
-          {!isSigned && (
+          {/* Er kravet avslått, skal det ikke gå ut en ny signeringslenke uten
+              at noen først har fjernet avslaget. Lenken ville latt byggherren
+              signere et krav de nettopp har sagt nei til. */}
+          {!isSigned && !erAvslaatt && (
             <Button variant="outline" onClick={handleSigningLink} title="Generer signeringslenke og kopier til utklippstavlen">
               <Link2 className="mr-2 h-4 w-4" />Signeringslenke
             </Button>
@@ -810,6 +948,77 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
           <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" />Lagre</Button>
         </div>
       </div>
+
+      {/* Byggherren har sagt nei. Det står øverst og i rødt, for det endrer
+          alt annet på siden: kravet skal ikke følges opp, ikke faktureres, og
+          ikke sendes til signering igjen uten at noen har tatt et nytt valg. */}
+      {erAvslaatt && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
+          <XCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
+          <div className="flex-1 space-y-1 text-sm">
+            <div className="font-semibold text-red-700 dark:text-red-400">
+              Avslått av kunden
+              {a.rejected_at ? ` ${fmtDate(a.rejected_at)}` : ""}
+              {a.rejected_by ? ` · ${a.rejected_by}` : ""}
+            </div>
+            {a.rejected_note && (
+              <p className="text-muted-foreground">«{a.rejected_note}»</p>
+            )}
+            <p className="text-muted-foreground">
+              Kravet blir stående som dokumentasjon på at endringen ble varslet, og hva svaret ble.
+            </p>
+          </div>
+          {isEdit && (
+            <Button size="sm" variant="ghost" className="h-7 flex-shrink-0 text-muted-foreground" onClick={gjenaapne}>
+              <RotateCcw className="mr-1 h-3.5 w-3.5" />Fjern avslaget
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Har kunden fått kravet?
+          Står det ingenting her, er svaret «vet ikke», og det er nettopp det
+          som ikke går an på et varsel med frist. Linjen står øverst, sammen med
+          signaturstatusen, fordi det er de to spørsmålene man har når man åpner
+          en gammel endring: er den sendt, og er den godkjent. */}
+      {/* Feltet vises så snart raden finnes, ikke bare når siden ble åpnet på
+          en lagret melding: «Send på e-post» lagrer og merker kravet også på et
+          nytt krav, og da må angreknappen finnes på den siden man faktisk står
+          på. Ellers ber toasten om et trykk på noe som ikke er tegnet. */}
+      {(isEdit || erSendt) && (
+        erSendt ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-emerald-600/40 bg-emerald-600/10 px-4 py-3 text-sm">
+            <MailCheck className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+            <span>
+              <span className="font-semibold text-emerald-700 dark:text-emerald-500">Sendt til kunden</span>
+              <span className="text-muted-foreground"> {sendtTekst}</span>
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto h-7 text-muted-foreground"
+              onClick={markerIkkeSendt}
+              title="Bruk denne hvis e-posten aldri gikk ut likevel"
+            >
+              <MailX className="mr-1 h-3.5 w-3.5" />Ikke sendt likevel
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+            <MailWarning className="h-4 w-4 flex-shrink-0 text-amber-600" />
+            <span className="font-semibold text-amber-700 dark:text-amber-500">Ikke sendt til kunden ennå</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto h-7 text-muted-foreground"
+              onClick={markerSendtManuelt}
+              title="Er den levert på papir, i et møte eller fra telefonen, settes merket her"
+            >
+              <MailCheck className="mr-1 h-3.5 w-3.5" />Marker som sendt
+            </Button>
+          </div>
+        )
+      )}
 
       {isSigned && (
         <div className="flex items-start gap-3 rounded-xl border border-green-600/40 bg-green-600/10 p-4">

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate, offerTotal, isOfferExpired, offerHasDeadline } from "@/lib/format";
+import { nok, fmtDate, offerTotal, isOfferExpired, offerHasDeadline, isOfferRejected } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -67,7 +67,7 @@ export const Route = createFileRoute("/tilbud/")({
 
 function OffersList() {
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "expired" | "rejected">("all");
   const [deleteTarget, setDeleteTarget] = useState<
     { id: string; title: string; endringer: number; planer: number; anbud: number } | null
   >(null);
@@ -115,6 +115,13 @@ function OffersList() {
 
   const today = new Date().toISOString().slice(0, 10);
   const rows = (data ?? []).filter((o: any) => {
+    // Et avslått tilbud er ute av spill. Kunden har sagt nei, og da er fristen
+    // uten betydning: det hører verken hjemme blant de aktive eller blant de
+    // utløpte. Det har fått sin egen fane i stedet, så det fortsatt går an å
+    // finne igjen.
+    const avslaatt = isOfferRejected(o.status);
+    if (filter === "rejected" && !avslaatt) return false;
+    if (filter !== "rejected" && filter !== "all" && avslaatt) return false;
     // Et godkjent tilbud er aktivt uansett dato — fristen gjelder bare de andre
     if (filter === "active" && isOfferExpired(o, today)) return false;
     if (filter === "expired" && !isOfferExpired(o, today)) return false;
@@ -144,13 +151,13 @@ function OffersList() {
           <Input placeholder="Søk på kunde, beskrivelse eller nr…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
         </div>
         <div className="flex rounded-md border bg-card p-1">
-          {(["all", "active", "expired"] as const).map((f) => (
+          {(["all", "active", "expired", "rejected"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={`rounded px-3 py-1 text-sm font-medium transition-colors ${filter === f ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
-              {f === "all" ? "Alle" : f === "active" ? "Aktive" : "Utløpte"}
+              {f === "all" ? "Alle" : f === "active" ? "Aktive" : f === "expired" ? "Utløpte" : "Avslåtte"}
             </button>
           ))}
         </div>
@@ -206,10 +213,15 @@ function OffersList() {
                   <td className="px-4 py-3">{o.customers?.name ?? "—"}</td>
                   <td className="px-4 py-3">{o.title}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{fmtDate(o.created_at)}</td>
-                  <td className={`px-4 py-3 text-sm ${isOfferExpired(o, today) ? "text-destructive" : "text-muted-foreground"}`}>
+                  {/* Fristen tegnes rødt bare når den fortsatt betyr noe. På et
+                      avslått tilbud er datoen historie, og en rød dato leses
+                      som «her må du gjøre noe». */}
+                  <td className={`px-4 py-3 text-sm ${isOfferExpired(o, today) && !isOfferRejected(o.status) ? "text-destructive" : "text-muted-foreground"}`}>
                     {!offerHasDeadline(o.status)
                       ? <span className="text-muted-foreground/50" title="Godkjent tilbud har ingen frist">—</span>
-                      : o.valid_until ? fmtDate(o.valid_until) : "—"}
+                      : isOfferRejected(o.status)
+                        ? <span className="text-muted-foreground/50" title="Avslått tilbud har ingen frist">—</span>
+                        : o.valid_until ? fmtDate(o.valid_until) : "—"}
                   </td>
                   <td className="px-4 py-3 text-sm">{o.our_ref ?? "—"}</td>
                   <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()} title={o.customer_signed_at ? `Signert av kunde` : "Ikke signert av kunde"}>

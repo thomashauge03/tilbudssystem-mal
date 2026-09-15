@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, FileText, FileSignature, PenLine, RotateCcw } from "lucide-react";
+import { CheckCircle2, FileText, FileSignature, PenLine, RotateCcw, XCircle } from "lucide-react";
+import { AvslagKnapp } from "@/components/avslag-knapp";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { nok, lineNet, offerTotal } from "@/lib/format";
 
@@ -146,6 +147,8 @@ function SignerPage() {
   const [accepted, setAccepted] = useState(false);
   const [done, setDone] = useState(false);
   const [signedInfo, setSignedInfo] = useState<{ offer_number: number; title: string } | null>(null);
+  const [avslaatt, setAvslaatt] = useState(false);
+  const [avslagNavn, setAvslagNavn] = useState("");
   // Linjer, tilbud og innstillinger hentes med en gang: kunden skal se beløpet før
   // hen signerer en bindende avtale, og de samme dataene brukes av begge PDF-ene.
   const [pdfData, setPdfData] = useState<any | null>(null);
@@ -273,6 +276,21 @@ function SignerPage() {
     setDone(true);
   };
 
+  /**
+   * Avslaget går samme vei som signaturen: gjennom lenken, med navn og
+   * tidspunkt. Feiler den, kastes feilen videre slik at dialogen blir stående
+   * åpen med beskjeden — et avslag som forsvant i et lukket vindu, ville
+   * kunden trodd var registrert.
+   */
+  const handleAvslag = async (navn: string, grunn: string) => {
+    const { error: avslagErr } = await supabase.rpc("avslaa_tilbud" as never, {
+      p_token: token, p_navn: navn, p_grunn: grunn || null,
+    } as never);
+    if (avslagErr) throw new Error((avslagErr as any).message);
+    setAvslagNavn(navn);
+    setAvslaatt(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -293,13 +311,42 @@ function SignerPage() {
     );
   }
 
+  // Kvitteringen etter et avslag. Egen skjerm, ikke en dialog som lukker seg:
+  // kunden skal se svart på hvitt at nei-et er registrert.
+  if (avslaatt) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="max-w-sm text-center space-y-4">
+          <XCircle className="mx-auto h-16 w-16 text-red-500" />
+          <h1 className="text-2xl font-bold text-gray-900">Tilbudet er avslått</h1>
+          <p className="text-gray-600">
+            Tilbud #{offerInfo.offer_number} – {offerInfo.title} er avslått av <strong>{avslagNavn}</strong>.
+          </p>
+          <p className="text-gray-600">Entreprenøren får beskjed og ser avslaget i systemet sitt.</p>
+          <p className="text-sm text-gray-400">Du kan lukke dette vinduet.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (offerInfo.used_at) {
+    // Lenken er brukt opp — men til hva? Sto det «allerede signert» også etter
+    // et avslag, ville kunden trodd de hadde godtatt tilbudet.
+    const erAvslaatt = offerInfo.status === "avslått";
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="max-w-sm text-center space-y-3">
-          <CheckCircle2 className="mx-auto h-14 w-14 text-green-500" />
-          <h1 className="text-xl font-semibold text-gray-900">Tilbud allerede signert</h1>
-          <p className="text-sm text-gray-500">Dette tilbudet er allerede signert. Lenken er en engangslenke og kan ikke brukes igjen.</p>
+          {erAvslaatt
+            ? <XCircle className="mx-auto h-14 w-14 text-red-500" />
+            : <CheckCircle2 className="mx-auto h-14 w-14 text-green-500" />}
+          <h1 className="text-xl font-semibold text-gray-900">
+            {erAvslaatt ? "Tilbudet er avslått" : "Tilbud allerede signert"}
+          </h1>
+          <p className="text-sm text-gray-500">
+            {erAvslaatt
+              ? "Dette tilbudet er avslått, og entreprenøren har fått beskjed. Lenken er en engangslenke og kan ikke brukes igjen."
+              : "Dette tilbudet er allerede signert. Lenken er en engangslenke og kan ikke brukes igjen."}
+          </p>
         </div>
       </div>
     );
@@ -431,8 +478,23 @@ function SignerPage() {
             {submitting ? "Signerer…" : "Godkjenn og signer tilbud"}
           </Button>
 
+          {/* Å si nei er også et svar. Uten denne veien ut måtte kunden ta
+              telefonen, og hos oss ble tilbudet liggende som om det fortsatt
+              var i spill — i «Aktive», og i «utløper snart». */}
+          <div className="border-t pt-4">
+            <p className="mb-3 text-center text-sm text-gray-500">
+              Skal dere ikke gå videre med tilbudet?
+            </p>
+            <AvslagKnapp
+              dokument={`tilbud #${offerInfo.offer_number} – ${offerInfo.title}`}
+              knappetekst="Avslå tilbudet"
+              forhandsNavn={signerName}
+              onAvslaa={handleAvslag}
+            />
+          </div>
+
           <p className="text-xs text-gray-400 text-center">
-            Denne lenken er en engangslenke og vil ikke virke etter signering.
+            Denne lenken er en engangslenke og vil ikke virke etter at du har signert eller avslått.
           </p>
         </form>
       </div>

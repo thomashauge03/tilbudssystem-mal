@@ -271,8 +271,12 @@ const PDF_STYLES = `  :root {
      uten pris: uthevet, med litt luft over, og en tynn strek som binder bolken
      under seg sammen. */
   .items tbody tr.heading-row td {
-    font-weight: 700; font-size: 9pt; letter-spacing: 0.08em; text-transform: uppercase;
-    color: var(--ink); padding: 14px 0 5px; border-bottom: 1.5px solid var(--slate-600);
+    /* Helt uthevet og helt svart. Overskriften skal lese seg som et skille i
+       dokumentet, ikke som en post med litt tyngre skrift: 800 er det tyngste
+       snittet i familien, og ren svart skiller seg fra --ink, som resten av
+       teksten står i. */
+    font-weight: 800; font-size: 9.5pt; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #000; padding: 15px 0 5px; border-bottom: 1.5px solid #000;
   }
   .items tbody tr:first-child.heading-row td { padding-top: 4px; }
 

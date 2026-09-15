@@ -62,8 +62,12 @@ function SignertMerke({ pa, tekst }: { pa: boolean; tekst: string }) {
   );
 }
 
+/** Fanenavnene. Samlet her framfor en kjede av spørsmålstegn i JSX-en. */
+const FANENAVN = { all: "Alle", active: "Aktive", done: "Fullførte" } as const;
+
 function OrdrePage() {
   const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<keyof typeof FANENAVN>("all");
   // Hvilken ordre som er utvidet, og hvilken endringsmelding som viser betalinger
   const [apen, setApen] = useState<string | null>(null);
   const [betaling, setBetaling] = useState<string | null>(null);
@@ -126,6 +130,15 @@ function OrdrePage() {
   const fakturertOf = (o: any) => Number(o.invoiced_amount ?? 0) + endringerFor(o.id).fakturert;
 
   const rows = (data ?? []).filter((o: any) => {
+    // «Ferdig» måles på det som kommer inn, ikke på en status noen har satt:
+    // en ordre er gjort opp når hele ordreverdien — tilbudet og de avtalte
+    // endringene — er fakturert. Står det noe igjen, er den fortsatt aktiv,
+    // uansett hva som er krysset av andre steder.
+    if (filter !== "all") {
+      const total = sumOf(o);
+      const gjortOpp = total > 0 && fakturertOf(o) >= total;
+      if (filter === "done" ? !gjortOpp : gjortOpp) return false;
+    }
     if (!q) return true;
     const t = q.toLowerCase();
     // Endringsnummeret er ofte det man husker («2026163-4»), så det søkes det i også
@@ -158,7 +171,7 @@ function OrdrePage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ordre</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {rows.length} godkjente tilbud
+            {rows.length} {filter === "done" ? "fullførte ordre" : filter === "active" ? "aktive ordre" : "godkjente tilbud"}
             {totals.endringerAntall > 0 && ` · ${totals.endringerAntall} endringsmelding${totals.endringerAntall === 1 ? "" : "er"}`}
           </p>
         </div>
@@ -202,9 +215,22 @@ function OrdrePage() {
         </div>
       )}
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Søk på kunde, beskrivelse eller nr…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="Søk på kunde, beskrivelse eller nr…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+        </div>
+        <div className="flex rounded-md border bg-card p-1">
+          {(["all", "active", "done"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`rounded px-3 py-1 text-sm font-medium transition-colors ${filter === f ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {FANENAVN[f]}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">

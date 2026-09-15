@@ -12,7 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { toast } from "sonner";
 import {
   Plus, Trash2, Save, FileDown, ArrowLeft, GripVertical, ArrowUp, ArrowDown, Diamond, Minus,
-  FileText, LayoutList, Copy, CalendarRange, CalendarDays, Paperclip, ChevronDown,
+  FileText, LayoutList, Copy, CalendarRange, CalendarDays, Paperclip, ChevronDown, Heading,
 } from "lucide-react";
 import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
 import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, antallUker, erHeleUker, naarTekst, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
@@ -32,6 +32,8 @@ interface Aktivitet {
   end_date: string;
   is_milestone: boolean;
   notes: string;
+  /** Overskrift: bare navn, ingen datoer, tegnes ikke i kalenderen. */
+  is_heading?: boolean;
 }
 
 /**
@@ -261,7 +263,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
     queryFn: async () => {
       const { data } = await supabase
         .from("progress_plans")
-        .select("id, title, progress_plan_activities(name, responsible, category, color, is_milestone, sort_order)")
+        .select("id, title, progress_plan_activities(name, responsible, category, color, is_milestone, is_heading, sort_order)")
         .order("created_at", { ascending: false })
         .limit(25);
       return data ?? [];
@@ -283,6 +285,8 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
       category: r.category ?? "",
       color: r.color ?? "graa",
       is_milestone: !!r.is_milestone,
+      // Overskriftene er nettopp inndelingen man kopierer etter
+      is_heading: !!r.is_heading,
     })));
     setKopierApen(false);
     toast.success(`${rader.length} aktiviteter kopiert — fyll inn datoene`);
@@ -371,6 +375,10 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
         start_date: a.start_date ?? "",
         end_date: a.end_date ?? "",
         is_milestone: !!a.is_milestone,
+        // Uten denne kom en lagret overskrift tilbake som en vanlig aktivitet,
+        // og neste lagring skrev is_heading=false over den. Da var skillet
+        // borte for godt, og raden sto igjen som en aktivitet uten datoer.
+        is_heading: !!a.is_heading,
         notes: a.notes ?? "",
       })));
       setInit(true);
@@ -404,6 +412,12 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
   const nyRad = () => {
     brukerHarEndretRef.current = true;
     setAkt((p) => [...p, tomAktivitet(p.length, { responsible: ansvarligFraTilbud() })]);
+  };
+  // En overskrift deler planen i bolker — grunnarbeid, VA, veg. Den har verken
+  // ansvarlig, fag eller farge: den skal ikke love noe den ikke har.
+  const nyOverskrift = () => {
+    brukerHarEndretRef.current = true;
+    setAkt((p) => [...p, tomAktivitet(p.length, { is_heading: true })]);
   };
   const slettRad = (i: number) => {
     brukerHarEndretRef.current = true;
@@ -496,7 +510,9 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
 
     // En aktivitet uten navn er en tom rad man har glemt å fjerne; en uten
     // startdato kan ikke tegnes. Begge slippes forbi, men ikke i stillhet.
-    const utenDato = akt.filter((a) => a.name.trim() && !a.start_date);
+    // Overskrifter har ingen startdato med vilje, og skal ikke etterlyses for
+    // noe de aldri skal ha. Samme vakt som prisoppstillingen bruker.
+    const utenDato = akt.filter((a) => !a.is_heading && a.name.trim() && !a.start_date);
     if (utenDato.length) {
       const liste = utenDato.map((a) => `• ${a.name}`).join("\n");
       if (!window.confirm(
@@ -569,9 +585,13 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
           responsible: a.responsible,
           category: a.category,
           color: a.color,
-          start_date: a.start_date || null,
-          end_date: a.end_date || a.start_date || null,
-          is_milestone: a.is_milestone,
+          // En overskrift skrives alltid uten datoer og uten milepæl, uansett
+          // hva raden måtte ha med seg i minnet. Databasen krever det samme —
+          // en overskrift med datoer ville strukket tidsaksen uten å vises.
+          start_date: a.is_heading ? null : a.start_date || null,
+          end_date: a.is_heading ? null : a.end_date || a.start_date || null,
+          is_milestone: a.is_heading ? false : a.is_milestone,
+          is_heading: !!a.is_heading,
           notes: a.notes,
         }));
       if (rader.length) {
@@ -943,6 +963,9 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                   <p className="hidden text-xs text-muted-foreground lg:block">
                     Dra i rutenettet for å legge inn · dra boksen for å flytte · dra i endene for å endre lengde
                   </p>
+                  <Button size="sm" variant="outline" onClick={nyOverskrift} title="Deler planen i bolker — bare tekst, ingen datoer">
+                    <Heading className="mr-1 h-4 w-4" />Ny overskrift
+                  </Button>
                   <Button size="sm" variant="outline" onClick={nyRad}>
                     <Plus className="mr-1 h-4 w-4" />Ny aktivitet
                   </Button>
@@ -986,6 +1009,44 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                     venstre={(i) => {
                       const a = akt[i];
                       const farge = finnFarge(a.color);
+                      // Overskriften har bare navnet. Ansvarlig, fag, farge,
+                      // periode og milepæl hører til en aktivitet — står de tomme
+                      // på et skille, ser raden ut som noe man har glemt å fylle
+                      // ut, og kalenderen ved siden av inviterer til å dra i den.
+                      if (a.is_heading) {
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              className="w-6 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                              draggable
+                              onDragStart={() => setDragIndex(i)}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={() => { if (dragIndex !== null) flyttRad(dragIndex, i); setDragIndex(null); }}
+                              title="Dra for å endre rekkefølgen"
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
+                            <Input
+                              className="h-8 min-w-0 flex-1 border-0 bg-transparent font-semibold uppercase tracking-wide shadow-none focus-visible:bg-background"
+                              value={a.name}
+                              placeholder="Overskrift, f.eks. GRUNNARBEID"
+                              onChange={(e) => settAkt(i, { name: e.target.value })}
+                            />
+                            <div className="flex shrink-0 items-center justify-end">
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => flyttRad(i, i - 1)} disabled={i === 0} title="Flytt opp">
+                                <ArrowUp className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => flyttRad(i, i + 1)} disabled={i === akt.length - 1} title="Flytt ned">
+                                <ArrowDown className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => slettRad(i)} title="Slett overskrift">
+                                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                              </Button>
+                            </div>
+                          </>
+                        );
+                      }
                       return (
                         <>
                           <button
@@ -1128,7 +1189,7 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                       );
                     }}
                     under={(i) => {
-                      if (datoRad !== i) return null;
+                      if (datoRad !== i || akt[i]?.is_heading) return null;
                       const a = akt[i];
                       return (
                         <div className="flex flex-wrap items-end gap-3 border-b bg-accent/40 px-3 py-2">
@@ -1178,6 +1239,31 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                   større skjerm eller i PDF-en. */}
               <div className="space-y-3 lg:hidden">
                 {akt.map((a, i) => {
+                  // Overskriften har bare navnet — også på telefon. Uten denne
+                  // grenen fikk den fargevelger, ansvarlig, fag, milepælbryter
+                  // og datofelter, og alt man skrev der ble kastet uten et ord
+                  // ved lagring: en overskrift lagres alltid uten datoer.
+                  if (a.is_heading) {
+                    return (
+                      <div key={i} className="flex items-center gap-2 rounded-lg border bg-muted/60 p-3">
+                        <Input
+                          className="h-9 min-w-0 flex-1 border-0 bg-transparent font-semibold uppercase tracking-wide shadow-none focus-visible:bg-background"
+                          value={a.name}
+                          placeholder="Overskrift, f.eks. GRUNNARBEID"
+                          onChange={(e) => settAkt(i, { name: e.target.value })}
+                        />
+                        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => flyttRad(i, i - 1)} disabled={i === 0} title="Flytt opp">
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => flyttRad(i, i + 1)} disabled={i === akt.length - 1} title="Flytt ned">
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => slettRad(i)} title="Slett overskrift">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    );
+                  }
                   const farge = finnFarge(a.color);
                   return (
                     <div key={i} className="rounded-lg border bg-background p-3">
@@ -1302,7 +1388,11 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
                   .map((c) => <option key={c} value={c} />)}
               </datalist>
 
-              <div className="mt-3">
+              {/* Knappene står også her nede, der man er når lista er lang */}
+              <div className="mt-3 flex gap-2">
+                <Button variant="outline" onClick={nyOverskrift} title="Deler planen i bolker — bare tekst, ingen datoer">
+                  <Heading className="mr-2 h-4 w-4" />Ny overskrift
+                </Button>
                 <Button variant="outline" onClick={nyRad}>
                   <Plus className="mr-2 h-4 w-4" />Ny aktivitet
                 </Button>

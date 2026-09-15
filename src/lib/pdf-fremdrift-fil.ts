@@ -17,6 +17,8 @@ import {
 
 export interface PlanAktivitet {
   name: string;
+  /** Overskrift: bare tekst, ingen datoer, ingen strek i kalenderen. */
+  is_heading?: boolean | null;
   responsible?: string | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -264,8 +266,15 @@ export async function lagFremdriftsplanPdf(
     }
   }
 
-  const medDato = aktiviteter.filter((a) => parseDato(a.start_date));
-  const utenDato = aktiviteter.filter((a) => !parseDato(a.start_date) && String(a.name ?? "").trim());
+  const medDato = aktiviteter.filter((a) => !a.is_heading && parseDato(a.start_date));
+  // Radene som skal tegnes, i den rekkefølgen brukeren satte dem: aktivitetene
+  // med dato, og overskriftene som deler dem i bolker.
+  const tegnbare = aktiviteter.filter((a) => a.is_heading || parseDato(a.start_date));
+  // En overskrift har ingen dato, men den er ikke «glemt» — den hører ikke
+  // hjemme i lista over det som ikke ble tegnet inn.
+  const utenDato = aktiviteter.filter(
+    (a) => !a.is_heading && !parseDato(a.start_date) && String(a.name ?? "").trim(),
+  );
   // Tidsaksen bygges av planens egen periode, ikke av ytterpunktene til
   // aktivitetene. Brukeren setter perioden først nettopp fordi det er
   // kalenderen arbeidet legges inn i, og slakken foran og bak er som regel lagt
@@ -317,9 +326,9 @@ export async function lagFremdriftsplanPdf(
 
   const sider: PlanAktivitet[][] = [];
   let i = 0;
-  while (i < medDato.length) {
+  while (i < tegnbare.length) {
     const plass = sider.length === 0 ? raderForste : raderSenere;
-    sider.push(medDato.slice(i, i + plass));
+    sider.push(tegnbare.slice(i, i + plass));
     i += plass;
   }
   if (!sider.length) sider.push([]);
@@ -596,6 +605,24 @@ export async function lagFremdriftsplanPdf(
     rader.forEach((a, idx) => {
       const radTopp = y;
       const radBunn = y - radHoyde;
+
+      // Overskriften deler planen i bolker. Den tegnes over hele bredden, uten
+      // fargemerke, uten ansvarlig og uten strek i kalenderen — en overskrift
+      // med en fargeprikk foran ville lovet et fag den ikke har.
+      if (a.is_heading) {
+        side.drawRectangle({
+          x: MARG, y: radBunn, width: BREDDE - 2 * MARG, height: radHoyde, color: GRAA_100,
+        });
+        side.drawText(klipp(String(a.name ?? "").trim().toUpperCase(), fet, 8.5, BREDDE - 2 * MARG - 16), {
+          x: MARG + 8, y: radBunn + radHoyde / 2 - 3, size: 8.5, font: fet, color: rgb(0, 0, 0),
+        });
+        side.drawLine({
+          start: { x: MARG, y: radBunn }, end: { x: BREDDE - MARG, y: radBunn },
+          thickness: 0.8, color: GRAA_600,
+        });
+        y = radBunn;
+        return;
+      }
 
       // Stripen legges bare i navnefeltet. Over hele bredden slo den ut
       // månedsbåndene annenhver rad, og kalenderen bak ble et sjakkbrett.

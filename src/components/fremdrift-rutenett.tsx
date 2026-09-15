@@ -18,6 +18,8 @@ export interface RutenettAktivitet {
   start_date: string;
   end_date: string;
   is_milestone: boolean;
+  /** Overskrift: bare tekst, ingen plass i kalenderen. */
+  is_heading?: boolean;
 }
 
 interface Props {
@@ -274,7 +276,16 @@ export function FremdriftRutenett({
           : null);
 
         return (
-          <div key={rad} className={aktivRad === rad ? "bg-primary/5" : rad % 2 ? "bg-muted/30" : ""}>
+          <div
+            key={rad}
+            className={
+              a.is_heading
+                // Overskriften skal leses som et skille, ikke som en rad med
+                // tomme felter: egen bakgrunn, og ingen stripe fra annenhver-rad
+                ? "bg-muted"
+                : aktivRad === rad ? "bg-primary/5" : rad % 2 ? "bg-muted/30" : ""
+            }
+          >
             <div className="flex items-center border-b border-border/60" style={{ minHeight: radHoyde }}>
               {/* Kleber til venstre. På en lang plan ruller tidsaksen forbi,
                   og uten dette satt man igjen med streker uten å vite hvilken
@@ -288,10 +299,13 @@ export function FremdriftRutenett({
                 {venstre(rad)}
               </div>
 
+              {/* Kalenderen på en overskriftsrad er ikke noe man kan dra i:
+                  en overskrift har ingen periode, og et uhell her ville gitt
+                  den datoer som strakk tidsaksen uten at noe var synlig. */}
               <div
                 ref={rad === 0 ? banenRef : undefined}
-                className="relative flex-1 cursor-crosshair self-stretch"
-                onPointerDown={(e) => startDrag(e, rad, "ny", null)}
+                className={`relative flex-1 self-stretch ${a.is_heading ? "" : "cursor-crosshair"}`}
+                onPointerDown={a.is_heading ? undefined : (e) => startDrag(e, rad, "ny", null)}
               >
                 <div className="absolute inset-0 flex">
                   {akse.kolonner.map((k, i) => {
@@ -309,7 +323,7 @@ export function FremdriftRutenett({
                   })}
                 </div>
 
-                {bruk && (a.is_milestone ? (
+                {!a.is_heading && bruk && (a.is_milestone ? (
                   <>
                     <div
                       className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-grab border shadow-sm active:cursor-grabbing"
@@ -373,7 +387,9 @@ export function FremdriftRutenett({
                   </div>
                 ))}
 
-                {!bruk && (
+                {/* Hintet gjelder bare rader man faktisk kan legge noe inn i.
+                    På en overskrift ba det om en handling som ikke finnes. */}
+                {!bruk && !a.is_heading && (
                   <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-[11px] text-muted-foreground/60">
                     Dra her for å legge inn
                   </span>

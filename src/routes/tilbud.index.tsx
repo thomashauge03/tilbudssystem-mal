@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate, offerTotal, isOfferExpired, offerHasDeadline, isOfferRejected } from "@/lib/format";
+import { nok, fmtDate, offerTotal, isOfferExpired, offerHasDeadline, isOfferRejected, OFFER_COMPLETED } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -61,13 +61,22 @@ function StatusBadge({ status, offerId, onUpdate }: { status: OfferStatus; offer
   );
 }
 
+/** Fanenavnene. Samlet her framfor en kjede av spørsmålstegn i JSX-en. */
+const FANENAVN = {
+  all: "Alle",
+  active: "Aktive",
+  expired: "Utløpte",
+  completed: "Fullførte",
+  rejected: "Avslåtte",
+} as const;
+
 export const Route = createFileRoute("/tilbud/")({
   component: OffersList,
 });
 
 function OffersList() {
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "expired" | "rejected">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "expired" | "rejected" | "completed">("all");
   const [deleteTarget, setDeleteTarget] = useState<
     { id: string; title: string; endringer: number; planer: number; anbud: number } | null
   >(null);
@@ -115,16 +124,23 @@ function OffersList() {
 
   const today = new Date().toISOString().slice(0, 10);
   const rows = (data ?? []).filter((o: any) => {
-    // Et avslått tilbud er ute av spill. Kunden har sagt nei, og da er fristen
-    // uten betydning: det hører verken hjemme blant de aktive eller blant de
-    // utløpte. Det har fått sin egen fane i stedet, så det fortsatt går an å
-    // finne igjen.
+    // «Aktive» skal være det som fortsatt står og venter på noe. Et avslått
+    // tilbud er ute av spill — kunden har sagt nei — og et fullført er ferdig:
+    // jobben er utført og fakturert. Begge har fått sin egen fane, så de
+    // fortsatt går an å finne igjen, men ingen av dem hører hjemme blant det
+    // man skal følge opp. Fristen er uten betydning for begge.
     const avslaatt = isOfferRejected(o.status);
-    if (filter === "rejected" && !avslaatt) return false;
-    if (filter !== "rejected" && filter !== "all" && avslaatt) return false;
-    // Et godkjent tilbud er aktivt uansett dato — fristen gjelder bare de andre
-    if (filter === "active" && isOfferExpired(o, today)) return false;
-    if (filter === "expired" && !isOfferExpired(o, today)) return false;
+    const fullfort = o.status === OFFER_COMPLETED;
+    if (filter === "rejected") {
+      if (!avslaatt) return false;
+    } else if (filter === "completed") {
+      if (!fullfort) return false;
+    } else if (filter !== "all") {
+      if (avslaatt || fullfort) return false;
+      // Et godkjent tilbud er aktivt uansett dato — fristen gjelder bare de andre
+      if (filter === "active" && isOfferExpired(o, today)) return false;
+      if (filter === "expired" && !isOfferExpired(o, today)) return false;
+    }
     if (!q) return true;
     const t = q.toLowerCase();
     const customerName = o.customers?.name ?? "";
@@ -151,13 +167,13 @@ function OffersList() {
           <Input placeholder="Søk på kunde, beskrivelse eller nr…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
         </div>
         <div className="flex rounded-md border bg-card p-1">
-          {(["all", "active", "expired", "rejected"] as const).map((f) => (
+          {(["all", "active", "expired", "completed", "rejected"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={`rounded px-3 py-1 text-sm font-medium transition-colors ${filter === f ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
-              {f === "all" ? "Alle" : f === "active" ? "Aktive" : f === "expired" ? "Utløpte" : "Avslåtte"}
+              {FANENAVN[f]}
             </button>
           ))}
         </div>

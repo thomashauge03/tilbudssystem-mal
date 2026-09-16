@@ -299,25 +299,12 @@ export async function lagFremdriftsplanPdf(
   const tidX = MARG + NAVNEBREDDE;
   const tidBredde = BREDDE - MARG - tidX;
 
-  // Fagene som faktisk er i bruk. Milepæler holdes utenfor faglista —
-  // rutersymbolet sier alt allerede — men fargene deres samles opp, for
-  // tegnforklaringen skal vise den fargen romben faktisk får i diagrammet.
-  const fag = new Map<string, string>();
-  const milepaelFarger: string[] = [];
-  for (const a of medDato) {
-    const fyll = finnFarge(a.color).fyll;
-    if (a.is_milestone) {
-      if (!milepaelFarger.includes(fyll)) milepaelFarger.push(fyll);
-      continue;
-    }
-    const navn = String(a.category ?? "").trim();
-    if (navn && !fag.has(navn)) fag.set(navn, fyll);
-  }
-
   // Hvor radene begynner regnes ut av de samme leddene som tegningen bruker,
   // ikke av et anslag. Første forsøk hadde hardkodede marger som lå 11 punkt
   // feil, og da havnet siste rad oppå tegnforklaringen.
-  const bunn = 86;
+  // Nederste grunnlinje for diagrammet. Uten tegnforklaringen trengs det bare
+  // luft ned til bunnlinjen, og radene får den plassen i stedet.
+  const bunn = 62;
   const AKSEHODE = 27;
   const raderStart = (forste: boolean) =>
     HOYDE - MARG - 16 - 22 - 26 - (forste ? 44 : 0) - AKSEHODE;
@@ -398,6 +385,19 @@ export async function lagFremdriftsplanPdf(
   // Uker og antall uker hører sammen: ukenumrene sier hvor på kalenderen det
   // ligger, tallet sier hvor lenge det varer.
   const ukerIAlt = akse ? Math.round((akse.til.getTime() - akse.fra.getTime()) / (7 * 86400000)) : 0;
+  // Ansvarlig står én gang, i hodet. På en plan er det som regel én person som
+  // har den rollen hele veien; er de flere, nevnes de to første og resten som
+  // «m.fl.» — et hode som ramser opp åtte navn forteller mindre enn ett som
+  // sier hvem man ringer.
+  const ansvarlige = [...new Set(
+    medDato.map((a) => String(a.responsible ?? "").trim()).filter(Boolean),
+  )];
+  const ansvarligTekst = ansvarlige.length === 0
+    ? "-"
+    : ansvarlige.length <= 2
+      ? ansvarlige.join(", ")
+      : ansvarlige[0] + " m.fl.";
+
   const kryssarAar = !!akse && !!sisteDagIAkse && isoUke(akse.fra).aar !== isoUke(sisteDagIAkse).aar;
   // Ukenumrene tas bare med når planen holder seg innenfor året. Krysser den
   // nyttår, sier «uke 1 - 26» over 78 uker mer forvirrende enn det opplyser —
@@ -486,6 +486,7 @@ export async function lagFremdriftsplanPdf(
         ["PERIODE", periodeTekst],
         ["VARIGHET", varighetTekst],
         ["AKTIVITETER", String(medDato.length)],
+        ["ANSVARLIG", ansvarligTekst],
         ["REVISJON", plan.revision || "-"],
         ["PLANDATO", fmtDato(plan.plan_date)],
       ];
@@ -524,12 +525,12 @@ export async function lagFremdriftsplanPdf(
     const baandH = 13;
 
     side.drawText("AKTIVITET", { x: MARG + 8, y: y - 19, size: 6, font: vanlig, color: GRAA_400 });
-    // Overskriften settes bare når ansvarlig faktisk står i sin egen kolonne
-    // ute til høyre. Er radene høye nok til at navnet står under aktiviteten,
-    // ville overskriften pekt på tom plass.
+    // Overskriften settes bare når faget faktisk står i sin egen kolonne ute
+    // til høyre. Er radene høye nok til at faget står under aktiviteten, ville
+    // overskriften pekt på tom plass.
     if (radHoyde < 22) {
-      side.drawText("ANSVARLIG", {
-        x: tidX - 8 - vanlig.widthOfTextAtSize("ANSVARLIG", 6), y: y - 19, size: 6, font: vanlig, color: GRAA_400,
+      side.drawText("FAG", {
+        x: tidX - 8 - vanlig.widthOfTextAtSize("FAG", 6), y: y - 19, size: 6, font: vanlig, color: GRAA_400,
       });
     }
 
@@ -655,7 +656,8 @@ export async function lagFremdriftsplanPdf(
       // klippet for å gi plass til et navn den ikke har noe med.
       const toLinjer = radHoyde >= 22;
       const navnStorrelse = radHoyde >= 24 ? 8.5 : 8;
-      const navnPlass = NAVNEBREDDE - 14 - (toLinjer || !a.responsible ? 0 : 78);
+      const fagTekst = String(a.category ?? "").trim();
+      const navnPlass = NAVNEBREDDE - 14 - (toLinjer || !fagTekst ? 0 : 78);
       // En rad med dato, men uten navn, er en halvferdig rad skjermen ikke
       // viser. Den tegnes likevel her, for datoen er noe brukeren faktisk har
       // lagt inn — men den skal si hva den er, ikke bare stå som en bindestrek
@@ -666,8 +668,12 @@ export async function lagFremdriftsplanPdf(
         y: toLinjer ? radBunn + radHoyde / 2 - 0.5 : radBunn + radHoyde / 2 - 3,
         size: navnStorrelse, font: fet, color: BLEKK,
       });
-      if (a.responsible) {
-        const r = klipp(a.responsible, vanlig, 7, toLinjer ? navnPlass : 74);
+      // Faget står i raden, ikke ansvarlig. Ansvarlig er som regel den samme
+      // personen hele planen igjennom — den hører hjemme i dokumenthodet, én
+      // gang — mens faget skifter fra rad til rad og er det man leser etter:
+      // hvem sin bolk er dette, rør eller veg?
+      if (fagTekst) {
+        const r = klipp(fagTekst, vanlig, 7, toLinjer ? navnPlass : 74);
         if (toLinjer) {
           side.drawText(r, { x: MARG + 9, y: radBunn + radHoyde / 2 - 9.5, size: 7, font: vanlig, color: GRAA_400 });
         } else {
@@ -792,64 +798,16 @@ export async function lagFremdriftsplanPdf(
   };
 
   const tegnBunn = (side: PDFPage, sisteSide: boolean) => {
-    const y = bunn - 22;
-
-    if (sisteSide) {
-      let x = MARG + 12;
-      // Forklaringen skal vise det planen faktisk inneholder. «Milepæl» sto her
-      // også når planen ikke hadde noen, og romben ble tegnet rød uansett — mens
-      // en milepæl brukeren selv legger inn får sin egen farge i diagrammet.
-      // Æ, ø og å ligger i WinAnsi, så norsk skrives som norsk — det er bare
-      // tegn utenfor Latin-1 som må vike.
-      //
-      // Har milepælene ulike farger, får hver farge sin egen rombe, og teksten
-      // står etter den siste av dem: forklaringen skal ikke påstå at de alle er
-      // like.
-      const oppforinger: Array<[string, string, boolean]> = [
-        ...[...fag.entries()].map(([n, f]) => [n, f, false] as [string, string, boolean]),
-        ...milepaelFarger.map((f, i) =>
-          [i === milepaelFarger.length - 1 ? "Milepæl" : "", f, true] as [string, string, boolean]),
-      ];
-      // «Aktivitet» forklarer streken. Er alt i planen milepæler, finnes det
-      // ingen strek å forklare, og oppføringen sløyfes på samme vilkår.
-      if (!fag.size && medDato.some((a) => !a.is_milestone)) {
-        oppforinger.unshift(["Aktivitet", finnFarge(null).fyll, false]);
-      }
-
-      // Forklaringen står i sitt eget felt. Som løse ruter på hvitt så den ut
-      // som noe som var blitt til overs nederst på arket. Er det ingenting å
-      // forklare — en tom plan har ingen farger — tegnes heller ikke feltet:
-      // en tom grå stripe forklarer ingenting.
-      if (oppforinger.length || akse?.type === "maaned") {
-        side.drawRectangle({
-          x: MARG, y: y - 7, width: BREDDE - 2 * MARG, height: 22,
-          color: PANEL, borderColor: GRAA_200, borderWidth: 0.5,
-        });
-      }
-
-      for (const [navn, fyll, erMilepael] of oppforinger) {
-        const tekst = trygg(navn);
-        if (erMilepael) {
-          const m = y + 3.2;
-          const s = 4;
-          const cx = x + 5;
-          const f = hex(fyll);
-          side.drawLine({ start: { x: cx, y: m + s }, end: { x: cx + s, y: m }, thickness: 2.6, color: f });
-          side.drawLine({ start: { x: cx + s, y: m }, end: { x: cx, y: m - s }, thickness: 2.6, color: f });
-          side.drawLine({ start: { x: cx, y: m - s }, end: { x: cx - s, y: m }, thickness: 2.6, color: f });
-          side.drawLine({ start: { x: cx - s, y: m }, end: { x: cx, y: m + s }, thickness: 2.6, color: f });
-        } else {
-          side.drawRectangle({ x, y: y - 0.5, width: 15, height: 7.5, color: hex(fyll) });
-        }
-        side.drawText(tekst, { x: x + 20, y, size: 7.5, font: vanlig, color: GRAA_600 });
-        x += 20 + vanlig.widthOfTextAtSize(tekst, 7.5) + 16;
-      }
-
-      if (akse?.type === "maaned") {
-        side.drawText("Tidsaksen viser måneder - planen er for lang til ukeinndeling", {
-          x, y, size: 7, font: vanlig, color: GRAA_400,
-        });
-      }
+    // Tegnforklaringen er borte. Fargene forklarer seg selv nå som faget står
+    // i sin egen kolonne på hver rad — en rekke fargeruter nederst gjentok bare
+    // det samme, og tok plass fra diagrammet.
+    //
+    // Det ene som ikke står noe annet sted, blir igjen: at aksen viser måneder.
+    // Den legges i luften mellom siste rad og bunnlinjen.
+    if (sisteSide && akse?.type === "maaned") {
+      side.drawText("Tidsaksen viser måneder - planen er for lang til ukeinndeling", {
+        x: MARG, y: bunn - 8, size: 7, font: vanlig, color: GRAA_400,
+      });
     }
 
     const linjeY = 46;

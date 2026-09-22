@@ -8,8 +8,14 @@ project_id = "rmlczuhipndlvfvkpznm"
 verify_jwt = false
 
 # Her er det en databasetrigger som ringer, og den har ingen Supabase-
-# innlogging. Uten denne linja avvises hvert varsel med 401 så snart noen ruller
-# ut funksjonen på nytt. Tilgangen styres av x-varsel-nokkel i stedet, som må
-# stemme med delt_hemmelighet i varsel_oppsett.
+# innlogging. Tilgangen styres av x-varsel-nokkel, som må stemme med
+# delt_hemmelighet i varsel_oppsett.
+#
+# NB: denne linja virker bare når supabase CLI gjør utrullingen. Funksjonen er
+# rullet ut fra dashboardet, og der står JWT-sjekken på uansett hva som står
+# her. Derfor sender triggeren i tillegg den offentlige anon-nøkkelen som
+# Authorization — se 20260922000001_varsel_gjennom_gatewayen.sql. Skulle
+# funksjonen en dag rulles ut med CLI-en, tar denne linja over, og
+# Authorization-headeren blir uskadelig overflødig.
 [functions.varsel-epost]
 verify_jwt = false

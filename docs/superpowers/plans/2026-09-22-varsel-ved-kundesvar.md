@@ -10,6 +10,13 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-varsel-ved-kundesvar-design.md`
 
+> **Status 22.09.2026: Task 1–4 er ferdig skrevet og committet.** Koden i
+> repoet er fasit — kodeblokkene under er beholdt som begrunnelse, men tre
+> feltnavn i Task 4 viste seg å ikke finnes i basen og ble rettet under
+> arbeidet. Se `supabase/functions/varsel-epost/index.ts` for det som faktisk
+> gjelder, og «Hva som ble annerledes» nederst. Det som gjenstår er utrullingen
+> i Supabase-dashboardet og Task 5.
+
 ## Global Constraints
 
 - **Språk:** all tekst, alle kommentarer og alle commit-meldinger på **bokmål**.
@@ -953,6 +960,28 @@ Sett huken tilbake etterpå.
 Slett testtilbudene og testkravet.
 
 ---
+
+## Hva som ble annerledes
+
+Steget som sa «sjekk feltnavnene mot den faktiske basen» tjente til sitt. Tre
+av navnene planen bygde på finnes ikke, og funksjonen ville feilet stille med
+tomme felter i mailen:
+
+| Planen antok | Virkeligheten |
+|---|---|
+| `offers.customer_signed_by` | Finnes ikke. Navnet på den som signerte står på engangslenken (`offer_signing_tokens.signer_name`), satt av `sign_offer`. Ved avslag står det i `rejected_by`, som finnes. |
+| `total_amount` på begge tabellene | Finnes ikke, og ingen ferdig sum ligger i basen. Summeres av linjene med `summerLinjer`. |
+| `amendments.customer_name` | Finnes ikke. Kundenavnet henger på tilbudet kravet gjelder (`offer_id` → `offers.customer_name`), med `sent_to` som reserve. |
+
+Å kjøre oppslagene mot ekte data avdekket i tillegg at endringsnumre skrives
+som «2026165-1» — med prosjektnummeret i seg. Teksten sa dermed «krav om
+endring #2026165-1 på prosjekt 2026165», og prosjektet nevnes nå bare når
+nummeret ikke alt bærer det.
+
+Summeringen er en tvilling av `offerTotal`/`amendmentTotal` i
+`src/lib/format.ts`. Det er et bevisst onde — Deno kan ikke importere fra
+`src/` — og testene låser de fire reglene som betyr noe, så et avvik blir rødt
+framfor å bli et beløp i mailen som ikke stemmer med skjermen.
 
 ## Når planen er gjennomført
 

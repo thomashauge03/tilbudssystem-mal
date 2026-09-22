@@ -1,0 +1,145 @@
+// Tester for teksten i varselmailen. Kjøres av `bun test`.
+//
+// Dette er den delen brukeren faktisk ser. Et beløp med feil antall desimaler
+// eller et klokkeslett i UTC er ikke en teknisk detalj — det er en mail som
+// sier at kunden svarte klokka 12:54 når hun svarte 14:54.
+
+import { byggVarsel, type VarselData } from "./tekst.ts";
+
+// Samme skrivemåte som i tekst.ts: skrevet som regex-literal ville
+// formateringen gjort escapene om til usynlige tegn i kildekoden.
+const HARDE_MELLOMROM = new RegExp("[\u00a0\u202f]");
+
+let feil = 0;
+let ok = 0;
+function sjekk(navn: string, faktisk: unknown, forventet: unknown) {
+  const a = JSON.stringify(faktisk);
+  const b = JSON.stringify(forventet);
+  if (a === b) ok++;
+  else {
+    feil++;
+    console.log(`  FEIL  ${navn}\n        fikk:      ${a}\n        forventet: ${b}`);
+  }
+}
+
+const grunnlag: VarselData = {
+  type: "offer",
+  hendelse: "avslaatt",
+  nummer: "1010",
+  tittel: "VA Skardheie",
+  kunde: "Åseral Kommune",
+  svartAv: "Hilde Stuestøl Berg",
+  tidspunkt: "2026-09-22T12:54:00Z", // 14:54 norsk sommertid
+  belop: 6521080,
+  begrunnelse: "Vi går for et annet tilbud på delkontrakt 2.",
+  prosjektRef: null,
+  lenke: "https://tilbudssystem-mal.vercel.app/tilbud/4c28d2c8",
+};
+
+console.log("\n--- Emnefeltet ---");
+
+sjekk("tilbud avslått", byggVarsel(grunnlag).emne, "Tilbud #1010 avslått av Åseral Kommune");
+sjekk(
+  "tilbud signert",
+  byggVarsel({ ...grunnlag, hendelse: "signert" }).emne,
+  "Tilbud #1010 signert av Åseral Kommune",
+);
+sjekk(
+  "krav avslått",
+  byggVarsel({ ...grunnlag, type: "amendment", nummer: "3" }).emne,
+  "Krav om endring #3 avslått av Åseral Kommune",
+);
+sjekk(
+  "krav signert",
+  byggVarsel({ ...grunnlag, type: "amendment", nummer: "3", hendelse: "signert" }).emne,
+  "Krav om endring #3 signert av Åseral Kommune",
+);
+
+console.log("\n--- Norsk tid, ikke UTC ---");
+
+// Serveren kjører UTC. 12:54Z er 14:54 i Norge om sommeren og 13:54 om vinteren.
+sjekk("sommertid", byggVarsel(grunnlag).tekst.includes("22.09.2026 kl. 14:54"), true);
+sjekk(
+  "vintertid",
+  byggVarsel({ ...grunnlag, tidspunkt: "2026-01-15T12:54:00Z" }).tekst.includes(
+    "15.01.2026 kl. 13:54",
+  ),
+  true,
+);
+
+console.log("\n--- Beløp i norsk format ---");
+
+sjekk("tusenskille og desimaler", byggVarsel(grunnlag).tekst.includes("6 521 080,00 kr"), true);
+sjekk(
+  "uten desimaler i tallet",
+  byggVarsel({ ...grunnlag, belop: 1000 }).tekst.includes("1 000,00 kr"),
+  true,
+);
+sjekk("ingen harde mellomrom", HARDE_MELLOMROM.test(byggVarsel(grunnlag).tekst), false);
+
+console.log("\n--- Begrunnelse ---");
+
+sjekk("med begrunnelse", byggVarsel(grunnlag).tekst.includes("Vi går for et annet tilbud"), true);
+sjekk(
+  "uten begrunnelse gir ingen tom linje",
+  byggVarsel({ ...grunnlag, begrunnelse: null }).tekst.includes("Begrunnelse"),
+  false,
+);
+sjekk(
+  "signert har aldri begrunnelse",
+  byggVarsel({ ...grunnlag, hendelse: "signert" }).tekst.includes("Begrunnelse"),
+  false,
+);
+
+console.log("\n--- Felter som kan mangle ---");
+
+sjekk(
+  "uten beløp utgår beløpslinja",
+  byggVarsel({ ...grunnlag, belop: null }).tekst.includes("Beløp"),
+  false,
+);
+sjekk(
+  "uten navn står det ikke tomt",
+  byggVarsel({ ...grunnlag, svartAv: "" }).tekst.includes("Avslått av:"),
+  false,
+);
+sjekk(
+  "krav viser prosjektreferansen",
+  byggVarsel({
+    ...grunnlag,
+    type: "amendment",
+    nummer: "3",
+    prosjektRef: "2026118",
+  }).tekst.includes("2026118"),
+  true,
+);
+
+console.log("\n--- Kolonnene skal stå under hverandre ---");
+
+// Verdiene skal begynne på samme kolonne uansett hvor langt ordet foran er.
+{
+  const linjer = byggVarsel(grunnlag)
+    .tekst.split("\n")
+    .filter((l) => /^(Signert av|Avslått av|Beløp|Begrunnelse):/.test(l));
+  sjekk("tre merkede linjer", linjer.length, 3);
+  const startkolonner = new Set(
+    linjer.map((l) => {
+      const etterKolon = l.indexOf(":") + 1;
+      return etterKolon + l.slice(etterKolon).search(/\S/);
+    }),
+  );
+  sjekk("alle starter likt", [...startkolonner], [14]);
+}
+
+console.log("\n--- Lenka skal alltid med ---");
+
+for (const h of ["signert", "avslaatt"] as const) {
+  sjekk(
+    `lenke ved ${h}`,
+    byggVarsel({ ...grunnlag, hendelse: h }).tekst.includes(grunnlag.lenke),
+    true,
+  );
+}
+
+console.log(`\n${ok} i orden, ${feil} feil`);
+process.exit(feil ? 1 : 0);

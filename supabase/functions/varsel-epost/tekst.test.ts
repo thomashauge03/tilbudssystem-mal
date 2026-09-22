@@ -4,7 +4,7 @@
 // eller et klokkeslett i UTC er ikke en teknisk detalj — det er en mail som
 // sier at kunden svarte klokka 12:54 når hun svarte 14:54.
 
-import { byggVarsel, summerLinjer, type VarselData } from "./tekst.ts";
+import { byggVarsel, splittMottakere, summerLinjer, type VarselData } from "./tekst.ts";
 
 // Samme skrivemåte som i tekst.ts: skrevet som regex-literal ville
 // formateringen gjort escapene om til usynlige tegn i kildekoden.
@@ -153,6 +153,23 @@ console.log("\n--- Kolonnene skal stå under hverandre ---");
   );
   sjekk("alle starter likt", [...startkolonner], [14]);
 }
+
+console.log("\n--- Flere mottakere i samme firma ---");
+
+sjekk("én adresse", splittMottakere("post@firma.no"), ["post@firma.no"]);
+sjekk("komma", splittMottakere("a@x.no,b@x.no"), ["a@x.no", "b@x.no"]);
+sjekk("komma og mellomrom", splittMottakere("a@x.no, b@x.no"), ["a@x.no", "b@x.no"]);
+// Outlook skiller med semikolon. Den som limer inn derfra skal ikke måtte vite det.
+sjekk("semikolon", splittMottakere("a@x.no; b@x.no"), ["a@x.no", "b@x.no"]);
+sjekk("blandet", splittMottakere("a@x.no; b@x.no, c@x.no"), ["a@x.no", "b@x.no", "c@x.no"]);
+// Et etterfølgende komma er lett å bli sittende med. Blir det en tom mottaker,
+// avviser Resend hele utsendingen — også til dem som har gyldig adresse.
+sjekk("etterfølgende komma", splittMottakere("a@x.no,"), ["a@x.no"]);
+sjekk("dobbelt komma", splittMottakere("a@x.no,,b@x.no"), ["a@x.no", "b@x.no"]);
+sjekk("bare mellomrom rundt", splittMottakere("  a@x.no  "), ["a@x.no"]);
+sjekk("tomt felt", splittMottakere(""), []);
+sjekk("bare skilletegn", splittMottakere(" , ; "), []);
+sjekk("null", splittMottakere(null), []);
 
 console.log("\n--- Summen skal regnes som i resten av systemet ---");
 

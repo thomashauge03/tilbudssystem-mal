@@ -34,6 +34,21 @@ export interface Varselmelding {
   tekst: string;
 }
 
+/**
+ * Adressene i «Varsel-e-post», som kan holde flere i samme firma.
+ *
+ * Semikolon godtas ved siden av komma: det er skilletegnet Outlook bruker, og
+ * den som limer inn en liste derfra skal ikke måtte vite forskjellen. Tomme
+ * ledd faller bort, så et etterfølgende komma ikke blir en mottaker uten
+ * adresse — Resend avviser hele utsendingen om én adresse i lista er tom.
+ */
+export function splittMottakere(felt: string | null | undefined): string[] {
+  return String(felt ?? "")
+    .split(/[,;]/)
+    .map((a) => a.trim())
+    .filter(Boolean);
+}
+
 export interface Linje {
   quantity?: number | null;
   unit_price?: number | null;

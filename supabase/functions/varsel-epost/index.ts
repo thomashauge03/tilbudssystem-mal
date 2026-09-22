@@ -12,7 +12,14 @@
 // eller hvem den går til.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { byggVarsel, summerLinjer, type DokumentType, type Hendelse, type Linje } from "./tekst.ts";
+import {
+  byggVarsel,
+  splittMottakere,
+  summerLinjer,
+  type DokumentType,
+  type Hendelse,
+  type Linje,
+} from "./tekst.ts";
 
 function svar(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -61,9 +68,13 @@ Deno.serve(async (req) => {
     .eq("tenant_id", sak.tenant_id)
     .maybeSingle();
 
-  const mottaker = (innst?.notify_email ?? "").trim();
+  // Feltet kan holde flere adresser i samme firma. Se splittMottakere.
+  const mottakere = splittMottakere(innst?.notify_email);
+
   // Tomt felt betyr at firmaet ikke har slått på varsling. Det er ikke en feil.
-  if (!mottaker) return svar(200, { ok: true, hoppet_over: "ingen varsel-e-post satt" });
+  if (!mottakere.length) {
+    return svar(200, { ok: true, hoppet_over: "ingen varsel-e-post satt" });
+  }
 
   // Firmaet velger selv hva som er verdt en e-post.
   const flagg = {
@@ -152,7 +163,7 @@ Deno.serve(async (req) => {
     },
     body: JSON.stringify({
       from: Deno.env.get("VARSEL_FRA") ?? "onboarding@resend.dev",
-      to: [mottaker],
+      to: mottakere,
       subject: emne,
       text: tekst,
     }),

@@ -508,15 +508,20 @@ function SettingsPage() {
         <div className="space-y-5">
           <div className="space-y-2">
             <Label>Varsel-e-post</Label>
+            {/* multiple gjør at nettleseren godtar flere adresser skilt med
+                komma. Uten det markerer den hele feltet som ugyldig så snart
+                du skriver adresse nummer to. */}
             <Input
               type="email"
+              multiple
               value={notifyEmail}
               onChange={(e) => setNotifyEmail(e.target.value)}
-              placeholder="post@firma.no"
-              className="max-w-sm"
+              placeholder="post@firma.no, tommy@firma.no"
+              className="max-w-lg"
             />
             <p className="text-xs text-muted-foreground">
-              La feltet stå tomt for å slå av varslingen helt.
+              Flere adresser skilles med komma. Alle får den samme mailen og ser
+              hverandre. La feltet stå tomt for å slå av varslingen helt.
             </p>
           </div>
 

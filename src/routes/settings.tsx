@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TelefonInput } from "@/components/telefon-input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, Save, GripVertical, Upload, X, Building2, FileText, Calculator, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -258,6 +259,15 @@ function SettingsPage() {
   const [emailSubject, setEmailSubject] = useState(DEFAULT_SETTINGS.email_subject_template);
   const [vatPct, setVatPct] = useState(DEFAULT_SETTINGS.vat_pct);
   const [closingPageOffsetMm, setClosingPageOffsetMm] = useState(DEFAULT_SETTINGS.closing_page_offset_mm);
+  const [notifyEmail, setNotifyEmail] = useState(DEFAULT_SETTINGS.notify_email);
+  // Ett flagg per hendelse, samlet i ett objekt: da står avkrysningene i én
+  // løkke og ikke som fire nesten like blokker som skal holdes i takt for hånd.
+  const [varsler, setVarsler] = useState({
+    notify_offer_signed: DEFAULT_SETTINGS.notify_offer_signed,
+    notify_offer_rejected: DEFAULT_SETTINGS.notify_offer_rejected,
+    notify_amendment_signed: DEFAULT_SETTINGS.notify_amendment_signed,
+    notify_amendment_rejected: DEFAULT_SETTINGS.notify_amendment_rejected,
+  });
   const { theme, setTheme } = useTheme();
 
   useEffect(() => {
@@ -274,6 +284,15 @@ function SettingsPage() {
     setEmailSubject(saved.email_subject_template);
     setVatPct(saved.vat_pct);
     setClosingPageOffsetMm(saved.closing_page_offset_mm);
+    setNotifyEmail(saved.notify_email ?? "");
+    setVarsler({
+      // ?? og ikke ||: et uttrykkelig false er et valg brukeren har tatt, og
+      // skal ikke falle tilbake til standarden.
+      notify_offer_signed: saved.notify_offer_signed ?? true,
+      notify_offer_rejected: saved.notify_offer_rejected ?? true,
+      notify_amendment_signed: saved.notify_amendment_signed ?? true,
+      notify_amendment_rejected: saved.notify_amendment_rejected ?? true,
+    });
   }, [saved]);
 
   const patch = {
@@ -289,6 +308,8 @@ function SettingsPage() {
     email_subject_template: emailSubject,
     vat_pct: vatPct,
     closing_page_offset_mm: closingPageOffsetMm,
+    notify_email: notifyEmail,
+    ...varsler,
   };
 
   // Med fanene er endringer lett å glemme igjen på en fane du ikke ser
@@ -476,6 +497,54 @@ function SettingsPage() {
             <code className="rounded bg-muted px-1">{"{tittel}"}</code> = tittel,{" "}
             <code className="rounded bg-muted px-1">{"{kunde}"}</code> = kundenavn
           </p>
+        </div>
+      </SectionCard>
+
+      {/* Varsler */}
+      <SectionCard
+        title="Varsler"
+        description="Få beskjed på e-post når en kunde svarer på et tilbud eller et krav om endring"
+      >
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label>Varsel-e-post</Label>
+            <Input
+              type="email"
+              value={notifyEmail}
+              onChange={(e) => setNotifyEmail(e.target.value)}
+              placeholder="post@firma.no"
+              className="max-w-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              La feltet stå tomt for å slå av varslingen helt.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Varsle meg når</Label>
+            {(
+              [
+                ["notify_offer_signed", "kunden signerer et tilbud"],
+                ["notify_offer_rejected", "kunden avslår et tilbud"],
+                ["notify_amendment_signed", "kunden signerer et krav om endring"],
+                ["notify_amendment_rejected", "kunden avslår et krav om endring"],
+              ] as const
+            ).map(([noekkel, tekst]) => (
+              <label key={noekkel} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={varsler[noekkel]}
+                  disabled={!notifyEmail.trim()}
+                  onCheckedChange={(v) => setVarsler((s) => ({ ...s, [noekkel]: !!v }))}
+                />
+                <span className={notifyEmail.trim() ? "" : "text-muted-foreground"}>{tekst}</span>
+              </label>
+            ))}
+            {!notifyEmail.trim() && (
+              <p className="text-xs text-muted-foreground">
+                Skriv inn en e-postadresse over for å velge hva du vil varsles om.
+              </p>
+            )}
+          </div>
         </div>
       </SectionCard>
       </TabsContent>

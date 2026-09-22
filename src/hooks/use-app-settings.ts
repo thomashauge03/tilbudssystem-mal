@@ -40,6 +40,12 @@ export interface AppSettings {
   company_org_nr: string;
   /** Nøkkel som identifiserer firmaet når mobilen videresender SMS */
   sms_token?: string;
+  /** Hvor varsler om kundesvar skal. Tom betyr at varsling er av. */
+  notify_email: string;
+  notify_offer_signed: boolean;
+  notify_offer_rejected: boolean;
+  notify_amendment_signed: boolean;
+  notify_amendment_rejected: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -57,6 +63,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vat_pct: 25,
   closing_page_offset_mm: 90,
   company_org_nr: "",
+  notify_email: "",
+  notify_offer_signed: true,
+  notify_offer_rejected: true,
+  notify_amendment_signed: true,
+  notify_amendment_rejected: true,
 };
 
 function parseOurRefs(v: unknown): OurRef[] {

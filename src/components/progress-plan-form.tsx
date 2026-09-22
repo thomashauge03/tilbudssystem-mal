@@ -18,6 +18,7 @@ import { toISODate, fmtDate, OFFER_WON_STATUSES } from "@/lib/format";
 import { lagTidsakse, planPeriode, ukeTekst, ukeSpenn, antallUker, erHeleUker, naarTekst, varighetDager, FARGER, finnFarge, parseDato, tilDato, mandagI, isoUke } from "@/lib/fremdrift";
 import { FremdriftRutenett } from "@/components/fremdrift-rutenett";
 import { lagFremdriftsplanPdf, fremdriftsplanFilnavn } from "@/lib/pdf-fremdrift-fil";
+import { trygtFilnavn } from "@/lib/lagringsnokkel";
 import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -683,7 +684,10 @@ export function ProgressPlanForm({ planId, initialOfferId }: { planId?: string; 
       const { dok, rader, innst } = pdfData();
       const bytes = await lagFremdriftsplanPdf(dok, rader, innst);
       const filnavn = fremdriftsplanFilnavn(dok);
-      const sti = `${plan.offer_id}/${Date.now()}_${filnavn}`;
+      // Planen heter gjerne noe med Åseral eller Søgne i seg, og lagringen tar
+      // ikke imot æ, ø og å i en nøkkel. Nedlastingen på knappen over bruker
+      // `filnavn` uendret — det er bare stien som må klare seg med ASCII.
+      const sti = `${plan.offer_id}/${Date.now()}_${trygtFilnavn(filnavn)}`;
 
       const { error: oppFeil } = await supabase.storage
         .from("offer-attachments")

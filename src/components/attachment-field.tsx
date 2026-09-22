@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { trygtFilnavn } from "@/lib/lagringsnokkel";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Paperclip, X, ExternalLink, Download } from "lucide-react";
@@ -64,7 +65,10 @@ export function AttachmentField({
       const lagtTil: Attachment[] = [];
       for (const file of pdfs) {
         if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} er for stor (maks 20 MB)`); continue; }
-        const path = `${pathPrefix}/${Date.now()}_${file.name}`;
+        // Navnet i stien saniteres, men `file.name` under beholdes som det er:
+        // lagringen godtar bare ASCII i nøkler, mens lista og nedlastingen skal
+        // vise filen slik kunden faktisk kalte den.
+        const path = `${pathPrefix}/${Date.now()}_${trygtFilnavn(file.name)}`;
         const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
         if (error) { toast.error(error.message); continue; }
         const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);

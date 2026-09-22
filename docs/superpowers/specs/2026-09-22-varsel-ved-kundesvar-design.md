@@ -64,6 +64,28 @@ Adressen varslene går til, per firma.
 ingen får uventet e-post den dagen migrasjonen kjøres. Edge functionen
 returnerer uten å sende når feltet er tomt.
 
+### Hvilke hendelser firmaet vil vite om
+
+Hvert firma velger selv hva som er verdt en e-post. En entreprenør som får
+mange små krav om endring vil kanskje bare vite om avslagene; et annet firma
+vil ha alt.
+
+| Kolonne | Standard | Hendelse |
+|---|---|---|
+| `notify_offer_signed` | `true` | Kunden signerte et tilbud |
+| `notify_offer_rejected` | `true` | Kunden avslo et tilbud |
+| `notify_amendment_signed` | `true` | Kunden signerte et krav om endring |
+| `notify_amendment_rejected` | `true` | Kunden avslo et krav om endring |
+
+Alle står på som standard, men `notify_email` er tom — så et firma som fyller
+ut adressen får alt, og skrur av det de ikke vil ha. Det er den riktige veien:
+den som nettopp slo på varsling vet ennå ikke hva som blir støy for dem.
+
+Fire boolske kolonner framfor én `jsonb`-liste: edge functionen slår opp
+flagget direkte, og du ser i en `select` hva et firma faktisk har skrudd på.
+Kommer det en femte hendelse en gang, er det en kolonne til — den prisen er
+lavere enn å parse en liste hver gang.
+
 ### `varsel_oppsett` (ny tabell, én rad)
 
 Triggeren trenger å vite hvor edge functionen bor og hvordan den skal
@@ -119,9 +141,15 @@ Supabase-innlogging.
    ikke kan brukes til å gjette nøkler — samme resonnement som i `sms-inn`.
 2. Slår opp saken med service-role og henter tenant, nummer, tittel, kunde,
    beløp og eventuell begrunnelse.
-3. Henter `notify_email` for den tenanten. Tom → 200 og ingen utsending.
+3. Henter `notify_email` og de fire avkrysningene for den tenanten.
+   Tom adresse → 200 og ingen utsending. Avkrysningen for nettopp denne
+   kombinasjonen av type og hendelse er av → 200 og ingen utsending.
 4. Sender via `POST https://api.resend.com/emails` med
    `Authorization: Bearer ${RESEND_API_KEY}`.
+
+Valget filtreres i edge functionen, ikke i triggeren. Triggeren vet ingenting
+om innstillingene til firmaet, og skal ikke måtte gjøre et ekstra oppslag i
+`app_settings` midt i en signeringstransaksjon.
 
 Hemmeligheter: `RESEND_API_KEY`, `VARSEL_NOKKEL`, `VARSEL_FRA` (avsender) og
 `APP_URL` (til lenken i mailen). Alle settes i Supabase, ingen i repoet.

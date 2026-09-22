@@ -34,6 +34,39 @@ export interface Varselmelding {
   tekst: string;
 }
 
+export interface Linje {
+  quantity?: number | null;
+  unit_price?: number | null;
+  discount_pct?: number | null;
+  included?: boolean | null;
+  is_heading?: boolean | null;
+}
+
+/**
+ * Hva tilbudet eller kravet er verdt, eks. mva.
+ *
+ * Dette er en tvilling av `offerTotal`/`amendmentTotal` i `src/lib/format.ts`,
+ * og det er et bevisst onde: edge functionen kjører i Deno og kan ikke
+ * importere fra `src/`, og det ligger ingen ferdig sum i basen å lese.
+ *
+ * Kommentaren over originalen forteller hvorfor det er verdt å passe på —
+ * beløpet ble en gang regnet ulikt seks steder, og samme tilbud kunne vise tre
+ * forskjellige tall i appen og et fjerde i PDF-en kunden hadde signert. Endrer
+ * noen reglene der, må de endres her. Testene under låser de fire som betyr
+ * noe: overskrifter teller ikke, linjer som ikke er inkludert teller ikke,
+ * rabatt trekkes fra, og adm.påslaget legges til på tilbud (aldri på krav).
+ */
+export function summerLinjer(linjer: Linje[], adminPct?: number | null): number {
+  const base = (linjer ?? [])
+    .filter((l) => l.included !== false)
+    .reduce((s, l) => {
+      if (l.is_heading) return s;
+      const brutto = Number(l.quantity ?? 0) * Number(l.unit_price ?? 0);
+      return s + brutto * (1 - Number(l.discount_pct ?? 0) / 100);
+    }, 0);
+  return base + base * (Number(adminPct ?? 0) / 100);
+}
+
 // Intl setter harde mellomrom som tusenskille (U+00A0 og U+202F). De ser like
 // ut i en e-postklient helt til de ikke gjør det — noen viser dem som «Â». Vi
 // bytter dem til vanlige mellomrom, som også gjør testene til å stole på.
@@ -79,10 +112,16 @@ export function byggVarsel(d: VarselData): Varselmelding {
   const emne = `${hva} ${gjort} av ${d.kunde}`;
 
   const verb = d.hendelse === "signert" ? "signerte" : "avslo";
+
+  // Endringsnumre er tekst og skrives i praksis som «2026165-1» — altså med
+  // prosjektnummeret i seg. Da blir «krav om endring #2026165-1 på prosjekt
+  // 2026165» bare en gjentakelse, og prosjektet nevnes kun når nummeret ikke
+  // alt sier det.
+  const visProsjekt = !!d.prosjektRef && !d.nummer.startsWith(d.prosjektRef);
   const apning =
     d.type === "offer"
       ? `${d.kunde} ${verb} tilbud #${d.nummer} «${d.tittel}»`
-      : `${d.kunde} ${verb} krav om endring #${d.nummer}${d.prosjektRef ? ` på prosjekt ${d.prosjektRef}` : ""}`;
+      : `${d.kunde} ${verb} krav om endring #${d.nummer}${visProsjekt ? ` på prosjekt ${d.prosjektRef}` : ""}`;
 
   // Etikettene settes i samme bredde, så verdiene står under hverandre. Uten
   // det siger kolonnen fram og tilbake etter hvor langt ordet foran er, og en

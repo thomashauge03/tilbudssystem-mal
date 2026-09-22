@@ -4,7 +4,7 @@
 // eller et klokkeslett i UTC er ikke en teknisk detalj — det er en mail som
 // sier at kunden svarte klokka 12:54 når hun svarte 14:54.
 
-import { byggVarsel, type VarselData } from "./tekst.ts";
+import { byggVarsel, summerLinjer, type VarselData } from "./tekst.ts";
 
 // Samme skrivemåte som i tekst.ts: skrevet som regex-literal ville
 // formateringen gjort escapene om til usynlige tegn i kildekoden.
@@ -110,7 +110,30 @@ sjekk(
     type: "amendment",
     nummer: "3",
     prosjektRef: "2026118",
-  }).tekst.includes("2026118"),
+  }).tekst.includes("på prosjekt 2026118"),
+  true,
+);
+
+// Endringsnumre skrives i praksis som «2026165-1». Da står prosjektnummeret
+// alt i nummeret, og skal ikke gjentas rett etterpå.
+sjekk(
+  "nummeret bærer alt prosjektet",
+  byggVarsel({
+    ...grunnlag,
+    type: "amendment",
+    nummer: "2026165-1",
+    prosjektRef: "2026165",
+  }).tekst.includes("på prosjekt"),
+  false,
+);
+sjekk(
+  "men nummeret står der fortsatt",
+  byggVarsel({
+    ...grunnlag,
+    type: "amendment",
+    nummer: "2026165-1",
+    prosjektRef: "2026165",
+  }).tekst.includes("krav om endring #2026165-1"),
   true,
 );
 
@@ -130,6 +153,37 @@ console.log("\n--- Kolonnene skal stå under hverandre ---");
   );
   sjekk("alle starter likt", [...startkolonner], [14]);
 }
+
+console.log("\n--- Summen skal regnes som i resten av systemet ---");
+
+// Samme regler som offerTotal/amendmentTotal i src/lib/format.ts. Blir disse
+// røde, viser mailen et annet beløp enn skjermen — og det var nettopp det
+// format.ts ble skrevet for å få slutt på.
+sjekk("antall x pris", summerLinjer([{ quantity: 3, unit_price: 100 }]), 300);
+sjekk("rabatt trekkes fra", summerLinjer([{ quantity: 1, unit_price: 100, discount_pct: 25 }]), 75);
+sjekk(
+  "overskrift teller ikke",
+  summerLinjer([
+    { is_heading: true, quantity: 5, unit_price: 100 },
+    { quantity: 1, unit_price: 50 },
+  ]),
+  50,
+);
+sjekk(
+  "ikke-inkludert teller ikke",
+  summerLinjer([
+    { included: false, quantity: 5, unit_price: 100 },
+    { quantity: 1, unit_price: 50 },
+  ]),
+  50,
+);
+sjekk("adm.påslag legges til", summerLinjer([{ quantity: 1, unit_price: 1000 }], 10), 1100);
+sjekk("krav har ingen adm.påslag", summerLinjer([{ quantity: 1, unit_price: 1000 }]), 1000);
+sjekk("tomme linjer gir null", summerLinjer([]), 0);
+sjekk("manglende felter gir null", summerLinjer([{}]), 0);
+// amendment_lines har ingen included-kolonne. Da er feltet undefined, og
+// linja skal telle — ikke falle ut fordi den ikke sa uttrykkelig ja.
+sjekk("uten included-felt teller linja", summerLinjer([{ quantity: 2, unit_price: 10 }]), 20);
 
 console.log("\n--- Lenka skal alltid med ---");
 

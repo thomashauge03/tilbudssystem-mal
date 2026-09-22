@@ -6,3 +6,10 @@ project_id = "rmlczuhipndlvfvkpznm"
 # --no-verify-jwt. Tilgangen styres i stedet av sms_token, som er unik per firma.
 [functions.sms-inn]
 verify_jwt = false
+
+# Her er det en databasetrigger som ringer, og den har ingen Supabase-
+# innlogging. Uten denne linja avvises hvert varsel med 401 så snart noen ruller
+# ut funksjonen på nytt. Tilgangen styres av x-varsel-nokkel i stedet, som må
+# stemme med delt_hemmelighet i varsel_oppsett.
+[functions.varsel-epost]
+verify_jwt = false

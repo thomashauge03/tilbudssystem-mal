@@ -472,6 +472,8 @@ function pdfStyles(closingPageOffsetMm?: number) {
  * Dokumentet må inneholde: .page-elementer med .masthead eller .cont-header,
  * en section.body, table.items med tr[data-sum], .carry-in/.carry-out,
  * .flex-fill/.bottom-push på siste side og <template id="cont-page-tpl">.
+ * Lange tekster merkes .brytbar: ren tekst i én blokk, som kan deles over flere
+ * ark. Alt annet flyttes helt.
  */
 const PDF_REFLOW_SCRIPT = `(function() {
   var PX_MM = 96 / 25.4;
@@ -535,8 +537,149 @@ const PDF_REFLOW_SCRIPT = `(function() {
   // Her fyller vi hver side til den er full, og lager nye sider etter behov.
   // Sider uten tabell (tekstsider) ble aldri brutt om: en lang beskrivelse
   // vokste forbi 297 mm, og siden ble enten klippet av overflow:hidden på skjerm
-  // eller brukket vilkårlig av skriveren. Her flyttes hele blokker — avsnitt,
+  // eller brukket vilkårlig av skriveren. Her flyttes blokker — avsnitt,
   // overskrifter, merkerader — videre til en ny side til innholdet får plass.
+  //
+  // En tekstblokk merket .brytbar deles i tillegg ved siste ord som får plass.
+  // Uten det var hele tilbudsteksten én udelelig blokk: ble den høyere enn arket,
+  // flyttet skriptet den bort fra side 1 og ga opp. Skriveren brakk den så selv,
+  // uten topptekst og med et tomt ark foran, fordi .project har
+  // break-inside: avoid. Tilbud 1036 ble seks ark, der fire var nok.
+
+  // Ved utskrift får .page 10 mm luft i bunnen (se @media print). Tillegget er
+  // margin for at skriveren ikke bryter linjene helt likt med skjermen.
+  var PRINT_BOTTOM_MM = 10;
+  var TEXT_SAFETY_MM = 8;
+
+  function contentKids(parent) {
+    return Array.from(parent.children).filter(function(el) {
+      return !el.classList.contains('flex-fill') && !el.classList.contains('bottom-push');
+    });
+  }
+
+  // Hvor langt ned på arket innholdet rekker, marger medregnet. bodyContentMm
+  // summerer bare høydene og bommer med margene mellom blokkene — det går an med
+  // god luft igjen, men ikke når en side skal fylles helt ned.
+  function contentBottomMm(page) {
+    var top = page.getBoundingClientRect().top;
+    return contentKids(page.querySelector('.body')).reduce(function(max, el) {
+      var r = el.getBoundingClientRect();
+      if (!r.height) return max;
+      var mb = parseFloat(getComputedStyle(el).marginBottom) || 0;
+      return Math.max(max, (r.bottom + mb - top) / PX_MM);
+    }, 0);
+  }
+
+  function overflows(page) {
+    return contentBottomMm(page) > PAGE_MM - PRINT_BOTTOM_MM - TEXT_SAFETY_MM
+      - mm(page.querySelector('footer'))
+      - mm(page.querySelector('.bottom-push'));
+  }
+
+  // Blokker i vanlig flyt kan deles mellom barna sine. Rutenett, flex-rader og
+  // tabeller er én enhet: der står barna side om side. Et avsnitt med tekst og
+  // <strong> om hverandre er også én enhet — barna der er ord, ikke blokker.
+  function isFlowContainer(el) {
+    var d = getComputedStyle(el).display;
+    if ((d !== 'block' && d !== 'flow-root') || !el.children.length) return false;
+    for (var n = el.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === 3 && n.nodeValue.trim()) return false;
+      if (n.nodeType === 1 && getComputedStyle(n).display.indexOf('inline') === 0) return false;
+    }
+    return true;
+  }
+
+  function isHeading(el) {
+    return /^H[1-6]$/.test(el.tagName)
+      || el.classList.contains('label')
+      || el.classList.contains('forbehold-label');
+  }
+
+  // Deler en .brytbar tekstblokk ved siste ordgrense som får plass på arket.
+  // Blokken beholder begynnelsen, og resten kommer tilbake som en ny blokk med
+  // samme klasser. null betyr at ikke ett ord får plass: blokken flyttes hel.
+  function splitText(page, el) {
+    var text = el.textContent;
+    var cuts = [];
+    for (var i = 1; i < text.length; i++) {
+      var c = text.charAt(i - 1);
+      if (c === ' ' || c === '\\n') cuts.push(i);
+    }
+    var lo = 0, hi = cuts.length - 1, cut = 0;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      el.textContent = text.slice(0, cuts[mid]);
+      if (overflows(page)) hi = mid - 1; else { cut = cuts[mid]; lo = mid + 1; }
+    }
+    // Første linje i et avsnitt skal ikke stå alene nederst mens resten av
+    // avsnittet fortsetter på neste ark: «Veier.» uten punktene sine under.
+    if (cut && text.charAt(cut - 1) === '\\n' && cut < text.length && text.charAt(cut) !== '\\n') {
+      var start = text.lastIndexOf('\\n', cut - 2) + 1;
+      var firstInParagraph = start <= 1 || text.charAt(start - 2) === '\\n';
+      if (firstInParagraph && start < cut - 1) cut = start;
+    }
+    var head = text.slice(0, cut).replace(/\\s+$/, '');
+    var rest = text.slice(cut).replace(/^\\n+/, '');
+    if (!head.trim() || !rest.trim()) { el.textContent = text; return null; }
+    el.textContent = head;
+    var tail = el.cloneNode(false);
+    tail.textContent = rest;
+    return tail;
+  }
+
+  // Deler el slik at det som får plass blir stående. Returnerer en grunn kopi av
+  // el med resten — samme beholder, så avsnittene arver samme stil på den nye
+  // siden — eller null om el må flyttes hel.
+  function splitEl(page, el) {
+    if (el.classList.contains('brytbar')) return splitText(page, el);
+    if (!isFlowContainer(el)) return null;
+    var moved = fitChildren(page, el, 0);
+    var left = Array.from(el.children);
+    // Står bare overskriften igjen, flyttes blokken hel: en tittel nederst på
+    // arket med teksten sin på neste er verre enn litt luft.
+    if (!left.length || left.every(isHeading)) {
+      moved.forEach(function(m) { el.appendChild(m); });
+      return null;
+    }
+    if (!moved.length) return null;
+    var tail = el.cloneNode(false);
+    moved.forEach(function(m) { tail.appendChild(m); });
+    return tail;
+  }
+
+  // Tar blokker bakfra ut av parent til arket får plass, og drar så tilbake så
+  // mye av den første utflyttede blokken som får plass likevel. keep er hvor
+  // mange blokker som blir stående uansett: 1 i selve .body, så et ark aldri
+  // blir tomt, og 0 inne i en blokk (.doc-intro, .project, .sec), som da heller
+  // flyttes hel. Returnerer det som skal videre til neste side, i rekkefølge.
+  function fitChildren(page, parent, keep) {
+    var kids = contentKids(parent);
+    var anchor = Array.from(parent.children).filter(function(el) {
+      return el.classList.contains('flex-fill') || el.classList.contains('bottom-push');
+    })[0] || null;
+    var moved = [];
+    while (kids.length > keep && overflows(page)) {
+      var last = kids.pop();
+      last.remove();
+      moved.unshift(last);
+    }
+    var tail;
+    if (overflows(page)) {
+      // Blokken som står igjen, er alene for høy for arket: del den der den står
+      if (kids.length) {
+        tail = splitEl(page, kids[kids.length - 1]);
+        if (tail) moved.unshift(tail);
+      }
+    } else if (moved.length) {
+      var first = moved[0];
+      parent.insertBefore(first, anchor);
+      tail = splitEl(page, first);
+      if (tail) moved[0] = tail;
+      else first.remove();
+    }
+    return moved;
+  }
+
   function reflowTextPages() {
     var tpl = document.getElementById('cont-page-tpl');
     if (!tpl) return;
@@ -549,33 +692,9 @@ const PDF_REFLOW_SCRIPT = `(function() {
         if (page.querySelector('table.items')) continue;
         if (page.classList.contains('page-closing')) continue;
         var body = page.querySelector('.body');
-        if (!body) continue;
+        if (!body || !overflows(page)) continue;
 
-        var container = body;
-        var kids = Array.from(body.children).filter(function(el) {
-          return !el.classList.contains('flex-fill') && !el.classList.contains('bottom-push');
-        });
-        // Tekstsiden har som regel én beholder (.doc-intro) med avsnittene inni.
-        // Uten dette steget fant vi bare ett element å flytte, og ingenting skjedde.
-        if (kids.length === 1 && kids[0].children.length > 1) {
-          container = kids[0];
-          kids = Array.from(container.children);
-        }
-        if (kids.length < 2) continue;
-
-        var avail = PAGE_MM
-          - mm(page.querySelector('.masthead, .cont-header'))
-          - mm(page.querySelector('footer'))
-          - mm(page.querySelector('.bottom-push'))
-          - SPLIT_BUFFER_MM;
-        if (bodyContentMm(page) <= avail) continue;
-
-        var moved = [];
-        while (kids.length > 1 && bodyContentMm(page) > avail) {
-          var last = kids.pop();
-          last.remove();
-          moved.unshift(last);
-        }
+        var moved = fitChildren(page, body, 1);
         if (!moved.length) continue;
 
         var np = tpl.content.firstElementChild.cloneNode(true);
@@ -590,14 +709,7 @@ const PDF_REFLOW_SCRIPT = `(function() {
         // aldri brytes en gang til, og rant forbi arkkanten.
         np.classList.remove('page-closing');
         var sec = np.querySelector('.body');
-        if (container !== body) {
-          // Behold beholderen så avsnittene arver samme stil på den nye siden
-          var wrapper = container.cloneNode(false);
-          moved.forEach(function(el) { wrapper.appendChild(el); });
-          sec.appendChild(wrapper);
-        } else {
-          moved.forEach(function(el) { sec.appendChild(el); });
-        }
+        moved.forEach(function(el) { sec.appendChild(el); });
         page.parentNode.insertBefore(np, page.nextSibling);
         delte = true;
         break;
@@ -766,6 +878,10 @@ export function openOfferPdf(
   // Begge: egen dedikert avslutningsside (ingen tabell) → alltid plass
   const textLen = (offer.offer_text ?? "").length;
   const forbeholdCount = (settings.forbehold ?? []).length;
+  // Kjøreskriptet deler teksten over flere ark (.brytbar). Blanke linjer på slutten
+  // ville gjort blokken en linje høyere enn teksten, og kunne alene dyttet den
+  // over arkkanten.
+  const offerText = (offer.offer_text ?? "").trimEnd();
 
   // Tell faktiske linjeskift + tegn-wrap for bedre estimat
   const offerTextLines = (offer.offer_text ?? "").split("\n");
@@ -984,7 +1100,7 @@ export function openOfferPdf(
       </div>
       <div class="project">
         <h2>${escapeHtml(offer.title) || "—"}</h2>
-        ${offer.offer_text ? `<p class="desc">${escapeHtml(offer.offer_text)}</p>` : ""}
+        ${offerText ? `<p class="desc brytbar">${escapeHtml(offerText)}</p>` : ""}
       </div>` : "";
 
     // Carry-radene ligger alltid i DOM-en, men kan være skjult. Kjøreskriptet slår
@@ -1265,9 +1381,8 @@ const CONTRACT_STYLES = `
  * får så mange de trenger — uten at en paragraf blir delt på tvers av arkene.
  *
  * En paragraf som er høyere enn arket flyttes videre blokk for blokk (overskrift,
- * avsnitt). Er ett enkelt avsnitt alene høyere enn arket — §3 limer inn hele
- * tilbudsteksten som én <p> — finnes det ingen mindre bit å flytte, og den siden
- * renner fortsatt over.
+ * avsnitt). §3 limer inn hele tilbudsteksten som ett avsnitt, ofte lengre enn et
+ * ark; det er merket .brytbar og deles ved siste ord som får plass.
  */
 export function openContractPdf(d: ContractData, targetWin?: Window | null) {
   // Se kommentaren i openOfferPdf — ingen fallback til Techauge-logoen
@@ -1340,7 +1455,7 @@ export function openContractPdf(d: ContractData, targetWin?: Window | null) {
     `<div class="sec">
       <h3>3. Arbeidets omfang</h3>
       <p>Entreprenøren skal utføre arbeidene som er beskrevet nedenfor. Arbeidene utføres etter god fagmessig standard.</p>
-      <p class="scope">${escapeHtml(scopeText)}</p>
+      <p class="scope brytbar">${escapeHtml(scopeText)}</p>
     </div>`,
 
     `<div class="sec">
@@ -1642,12 +1757,13 @@ export function openAmendmentPdf(
         .join("")}</div>`
     : "";
 
-  // Tomme avsnitt hoppes over helt
+  // Tomme avsnitt hoppes over helt. Teksten er .brytbar, så kjøreskriptet kan dele
+  // en lang beskrivelse over flere ark — se kommentaren ved offerText i openOfferPdf.
   const textBlock = (label: string, text: string) =>
     (text ?? "").trim()
       ? `<div class="doc-block">
           <p class="label">${escapeHtml(label)}</p>
-          <p class="body-text">${escapeHtml(text)}</p>
+          <p class="body-text brytbar">${escapeHtml(text.trimEnd())}</p>
          </div>`
       : "";
 

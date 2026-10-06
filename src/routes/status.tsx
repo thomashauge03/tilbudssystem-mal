@@ -20,6 +20,24 @@ type Filter = "all" | "active" | "partial" | "fullført";
 // H3/M7: derive today at call time so it doesn't go stale if the app is open across midnight
 const getToday = () => new Date().toISOString().slice(0, 10);
 
+// Feltene et tilbud kan søkes fram på. En endringsmelding søkes også i
+// feltene på tilbudet den hører til: kunden står bare på tilbudet, så et søk
+// på kunden ga før tilbudet alene og ingen av endringsmeldingene på det.
+const offerSearchFields = (o: any) =>
+  o ? [o.title, o.customer_name, String(o.offer_number), o.project_number] : [];
+
+// Om tilbudet er med under filteret, uten hensyn til søket
+function offerInFilter(o: any, filter: Filter) {
+  const total = offerTotal(o.offer_lines, o.admin_cost_pct);
+  const inv = Number(o.invoiced_amount ?? 0);
+  // Alle tilbudene her er godkjente, og da gjelder ikke fristen lenger.
+  // "Aktive" betyr derfor: ikke ferdig betalt.
+  if (filter === "active" && total > 0 && inv >= total) return false;
+  if (filter === "partial" && (inv === 0 || inv >= total)) return false;
+  if (filter === "fullført" && o.status !== OFFER_COMPLETED) return false;
+  return true;
+}
+
 function progressColor(pct: number) {
   if (pct >= 100) return "bg-green-500";
   if (pct >= 50) return "bg-amber-500";
@@ -81,7 +99,7 @@ function StatusPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("amendments")
-        .select("id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)")
+        .select("id, offer_id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct), offers(offer_number, title, customer_name, project_number)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       // Sorteres på klienten: databasen kan bare sortere teksten alfabetisk, og
@@ -99,18 +117,16 @@ function StatusPage() {
   };
 
   const filteredOffers = useMemo(
-    () =>
-      (offers ?? []).filter((o: any) => {
-        const total = offerTotal(o.offer_lines, o.admin_cost_pct);
-        const inv = Number(o.invoiced_amount ?? 0);
-        // Alle tilbudene her er godkjente, og da gjelder ikke fristen lenger.
-        // "Aktive" betyr derfor: ikke ferdig betalt.
-        if (filter === "active" && total > 0 && inv >= total) return false;
-        if (filter === "partial" && (inv === 0 || inv >= total)) return false;
-        if (filter === "fullført" && o.status !== OFFER_COMPLETED) return false;
-        return matchesSearch([o.title, o.customer_name, String(o.offer_number), o.project_number]);
-      }),
+    () => (offers ?? []).filter((o: any) => offerInFilter(o, filter) && matchesSearch(offerSearchFields(o))),
     [offers, filter, q, today],
+  );
+
+  // Under «Aktive tilbud» og «Fullført» følger endringsmeldingene tilbudet de
+  // hører til. Det er filteret de arver, ikke søket: en endring som selv
+  // treffer søket, vises selv om tilbudet ikke gjør det.
+  const offerIdsInFilter = useMemo(
+    () => new Set((offers ?? []).filter((o: any) => offerInFilter(o, filter)).map((o: any) => o.id)),
+    [offers, filter],
   );
 
   const filteredAmendments = useMemo(
@@ -118,11 +134,11 @@ function StatusPage() {
       (amendments ?? []).filter((a: any) => {
         const total = amendmentTotal(a.amendment_lines);
         const inv = Number(a.invoiced_amount ?? 0);
-        if (filter === "active" || filter === "fullført") return false;
+        if ((filter === "active" || filter === "fullført") && !offerIdsInFilter.has(a.offer_id)) return false;
         if (filter === "partial" && (inv === 0 || inv >= total)) return false;
-        return matchesSearch([a.amendment_number, a.project_ref, a.internal_description]);
+        return matchesSearch([a.amendment_number, a.project_ref, a.internal_description, ...offerSearchFields(a.offers)]);
       }),
-    [amendments, filter, q],
+    [amendments, filter, q, offerIdsInFilter],
   );
 
   // Summene regnes av det som faktisk vises, ikke av hele basen — ellers ville
@@ -296,93 +312,91 @@ function StatusPage() {
       </section>
 
       {/* Endringsmeldinger */}
-      {filter !== "active" && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold">Endringsmeldinger</h2>
-          <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold">Endringsmeldinger</h2>
+        <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3">Nr.</th>
+                <th className="px-4 py-3">Prosjekt</th>
+                <th className="px-4 py-3">Beskrivelse</th>
+                <th className="px-4 py-3">Dato varslet</th>
+                <th className="px-4 py-3 text-right">Prisoverslag</th>
+                <th className="px-4 py-3 text-right">Betalt</th>
+                <th className="px-4 py-3 text-right">Gjenstår</th>
+                <th className="w-36 px-4 py-3">Andel</th>
+                <th className="w-10 px-2 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadA ? (
                 <tr>
-                  <th className="px-4 py-3">Nr.</th>
-                  <th className="px-4 py-3">Prosjekt</th>
-                  <th className="px-4 py-3">Beskrivelse</th>
-                  <th className="px-4 py-3">Dato varslet</th>
-                  <th className="px-4 py-3 text-right">Prisoverslag</th>
-                  <th className="px-4 py-3 text-right">Betalt</th>
-                  <th className="px-4 py-3 text-right">Gjenstår</th>
-                  <th className="w-36 px-4 py-3">Andel</th>
-                  <th className="w-10 px-2 py-3"></th>
+                  <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Laster…</td>
                 </tr>
-              </thead>
-              <tbody>
-                {loadA ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Laster…</td>
-                  </tr>
-                ) : filteredAmendments.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Ingen endringsmeldinger.</td>
-                  </tr>
-                ) : (
-                  filteredAmendments.map((a: any, i: number) => {
-                    const total = amendmentTotal(a.amendment_lines);
-                    const inv = Number(a.invoiced_amount ?? 0);
-                    const rem = total - inv;
-                    const pct = total > 0 ? (inv / total) * 100 : 0;
-                    const isExpanded = expanded.has(a.id);
-                    return (
-                      <Fragment key={a.id}>
-                        <tr className={`border-b ${i % 2 === 1 ? "bg-muted/20" : ""} ${isExpanded ? "bg-primary/5" : ""}`}>
-                          <td className="px-4 py-3 tabular-nums">
-                            <Link to="/endringsmeldinger/$id" params={{ id: a.id }} className="text-primary hover:underline">
-                              {a.amendment_number}
-                            </Link>
-                          </td>
-                          <td className="px-4 py-3">{a.project_ref ?? "—"}</td>
-                          <td className="px-4 py-3">{a.internal_description ?? "—"}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{fmtDate(a.notified_date)}</td>
-                          <td className="px-4 py-3 text-right font-medium">{nok(total)}</td>
-                          <td className="px-4 py-3 text-right font-medium">
-                            <span className={inv > 0 ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}>
-                              {nok(inv)}
-                            </span>
-                          </td>
-                          <td className={`px-4 py-3 text-right font-medium ${rem < 0 ? "text-destructive" : rem === 0 ? "text-green-600" : ""}`}>
-                            {nok(rem)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="space-y-1">
-                              <ProgressBar pct={pct} />
-                              <div className="text-right text-xs text-muted-foreground">{Math.round(pct)} %</div>
-                            </div>
-                          </td>
-                          <td className="px-2 py-3">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground"
-                              onClick={() => toggleExpanded(a.id)}
-                            >
-                              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                            </Button>
+              ) : filteredAmendments.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Ingen endringsmeldinger.</td>
+                </tr>
+              ) : (
+                filteredAmendments.map((a: any, i: number) => {
+                  const total = amendmentTotal(a.amendment_lines);
+                  const inv = Number(a.invoiced_amount ?? 0);
+                  const rem = total - inv;
+                  const pct = total > 0 ? (inv / total) * 100 : 0;
+                  const isExpanded = expanded.has(a.id);
+                  return (
+                    <Fragment key={a.id}>
+                      <tr className={`border-b ${i % 2 === 1 ? "bg-muted/20" : ""} ${isExpanded ? "bg-primary/5" : ""}`}>
+                        <td className="px-4 py-3 tabular-nums">
+                          <Link to="/endringsmeldinger/$id" params={{ id: a.id }} className="text-primary hover:underline">
+                            {a.amendment_number}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">{a.project_ref ?? "—"}</td>
+                        <td className="px-4 py-3">{a.internal_description ?? "—"}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{fmtDate(a.notified_date)}</td>
+                        <td className="px-4 py-3 text-right font-medium">{nok(total)}</td>
+                        <td className="px-4 py-3 text-right font-medium">
+                          <span className={inv > 0 ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}>
+                            {nok(inv)}
+                          </span>
+                        </td>
+                        <td className={`px-4 py-3 text-right font-medium ${rem < 0 ? "text-destructive" : rem === 0 ? "text-green-600" : ""}`}>
+                          {nok(rem)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="space-y-1">
+                            <ProgressBar pct={pct} />
+                            <div className="text-right text-xs text-muted-foreground">{Math.round(pct)} %</div>
+                          </div>
+                        </td>
+                        <td className="px-2 py-3">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            onClick={() => toggleExpanded(a.id)}
+                          >
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </Button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={9} className="p-0">
+                            <PaymentsPanel parentId={a.id} parentType="amendments" onSaved={invalidate} />
                           </td>
                         </tr>
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={9} className="p-0">
-                              <PaymentsPanel parentId={a.id} parentType="amendments" onSaved={invalidate} />
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+                      )}
+                    </Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

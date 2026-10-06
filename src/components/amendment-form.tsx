@@ -38,11 +38,14 @@ interface AState {
   sent_at?: string | null;
   sent_to?: string | null;
   sent_count?: number | null;
-  // Sa byggherren nei via signeringslenken. Et avslått krav er ikke et slettet
-  // krav: det er dokumentasjonen på at endringen ble varslet, og hva svaret ble.
+  // Sa byggherren nei, via signeringslenken eller til oss. Et avslått krav er
+  // ikke et slettet krav: det er dokumentasjonen på at endringen ble varslet,
+  // og hva svaret ble.
   rejected_at?: string | null;
   rejected_by?: string | null;
   rejected_note?: string | null;
+  // digital = avslått via lenken; papir/muntlig/epost = registrert av oss
+  rejection_method?: string;
 }
 
 /** Hvordan kunden godkjente, skrevet ut for dokumentet og skjermen. */
@@ -50,6 +53,13 @@ const MAATE_TEKST: Record<string, string> = {
   papir: "signert på papir",
   muntlig: "muntlig godkjent",
   epost: "bekreftet på e-post",
+};
+
+/** Hvordan kunden sa nei, når vi registrerte avslaget selv. */
+const AVSLAG_MAATE_TEKST: Record<string, string> = {
+  papir: "på papir",
+  muntlig: "muntlig",
+  epost: "på e-post",
 };
 
 function empty(): AState {
@@ -255,6 +265,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
             rejected_at: la.rejected_at,
             rejected_by: la.rejected_by,
             rejected_note: la.rejected_note,
+            rejection_method: la.rejection_method,
           });
           // Og har kunden rukket å signere, er det de signerte linjene som
           // gjelder — ikke de vi hadde liggende i et utkast. Ellers ville PDF-en
@@ -355,6 +366,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
   const laast = isSigned && !laastOpp;
 
   const [godkjennApen, setGodkjennApen] = useState(false);
+  const [avslaaApen, setAvslaaApen] = useState(false);
   const [lasOppApen, setLasOppApen] = useState(false);
 
   const lasOpp = async (grunn: string) => {
@@ -388,14 +400,66 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         customer_signed_at: new Date().toISOString(),
         signature_method: maate,
         manual_approved_note: grunn,
-      })
+        // Har byggherren snudd etter et avslag, er det godkjenningen som
+        // gjelder. Ble avslaget stående, sa meldingen både ja og nei.
+        rejected_at: null,
+        rejected_by: null,
+        rejected_note: null,
+      } as never)
       .eq("id", id);
     if (error) { toast.error(error.message); throw error; }
     // Trigger i basen setter status til 'endringsmelding' og stempler hvem det var
-    setA((p) => ({ ...p, customer_signed_at: new Date().toISOString(), status: "endringsmelding",
-      signature_method: maate, manual_approved_note: grunn } as any));
+    setA((p) => ({
+      ...p,
+      customer_signed_at: new Date().toISOString(),
+      status: "endringsmelding",
+      signature_method: maate,
+      manual_approved_note: grunn,
+      rejected_at: null,
+      rejected_by: null,
+      rejected_note: null,
+      rejection_method: "digital",
+    }));
     qc.invalidateQueries({ queryKey: ["amendment", amendmentId] });
+    qc.invalidateQueries({ queryKey: ["amendments"] });
     toast.success("Registrert som godkjent av kunden");
+  };
+
+  const avslaaManuelt = async (maate: string, grunn: string) => {
+    // Lagre først, som ved godkjenning: det som står ulagret i skjemaet, skal
+    // ikke gå tapt fordi svaret fra byggherren ble registrert.
+    const id = await save();
+    if (!id) return;
+
+    const naa = new Date().toISOString();
+    const { error } = await supabase
+      .from("amendments")
+      .update({
+        status: "avslått",
+        rejected_at: naa,
+        // Feltet er navnet byggherren skriver inn på lenken. Her har ingen
+        // skrevet noe, og vårt eget navn hører ikke hjemme i et felt som sier
+        // hvem som avslo — det stempler basen i manual_rejected_by.
+        rejected_by: null,
+        rejected_note: grunn,
+        rejection_method: maate,
+      } as never)
+      .eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      throw error;
+    }
+    setA((p) => ({
+      ...p,
+      status: "avslått",
+      rejected_at: naa,
+      rejected_by: null,
+      rejected_note: grunn,
+      rejection_method: maate,
+    }));
+    qc.invalidateQueries({ queryKey: ["amendment", id] });
+    qc.invalidateQueries({ queryKey: ["amendments"] });
+    toast.success("Registrert som avslått av kunden");
   };
 
   const pickProject = (id: string) => {
@@ -728,6 +792,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         is_price_increase: a.is_price_increase,
         status: a.status,
         customer_signed_at: a.customer_signed_at,
+        signature_method: a.signature_method,
         customer_signature: kundesignatur,
       },
       lines.map((l) => ({
@@ -812,7 +877,14 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
       .update({ status: "krav", rejected_at: null, rejected_by: null, rejected_note: null } as never)
       .eq("id", id);
     if (error) { toast.error(error.message); return; }
-    setA((p) => ({ ...p, status: "krav", rejected_at: null, rejected_by: null, rejected_note: null }));
+    setA((p) => ({
+      ...p,
+      status: "krav",
+      rejected_at: null,
+      rejected_by: null,
+      rejected_note: null,
+      rejection_method: "digital",
+    }));
     qc.invalidateQueries({ queryKey: ["amendments"] });
     qc.invalidateQueries({ queryKey: ["amendment", id] });
     toast.success("Avslaget er fjernet — kravet står som aktivt igjen");
@@ -964,6 +1036,19 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
               <ShieldCheck className="mr-2 h-4 w-4" />Godkjenn manuelt
             </Button>
           )}
+          {/* Og sier byggherren nei uten å bruke lenken, må også det kunne
+              registreres. Ellers ble kravet stående og vente på et svar som
+              alt var gitt. */}
+          {isEdit && !isSigned && !erAvslaatt && (
+            <Button
+              variant="outline"
+              onClick={() => setAvslaaApen(true)}
+              title="Registrer at kunden har avslått uten å svare via lenken"
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              Avslå manuelt
+            </Button>
+          )}
           {isEdit && isSigned && !laastOpp && (
             <Button variant="outline" onClick={() => setLasOppApen(true)} title="Lås opp for å endre linjer og priser">
               <Unlock className="mr-2 h-4 w-4" />Lås opp for endring
@@ -993,6 +1078,9 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
             <div className="font-semibold text-red-700 dark:text-red-400">
               Avslått av kunden
               {a.rejected_at ? ` ${fmtDate(a.rejected_at)}` : ""}
+              {a.rejection_method && a.rejection_method !== "digital"
+                ? ` — ${AVSLAG_MAATE_TEKST[a.rejection_method] ?? a.rejection_method}`
+                : ""}
               {a.rejected_by ? ` · ${a.rejected_by}` : ""}
             </div>
             {a.rejected_note && (
@@ -1403,7 +1491,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         open={godkjennApen}
         onOpenChange={setGodkjennApen}
         tittel="Godkjenn uten digital signatur"
-        forklaring={`Kravet blir en endringsmelding, som om kunden hadde signert i appen. Det blir stående hvem hos oss som registrerte det, og hvorfor.`}
+        forklaring={`Kravet blir en endringsmelding, som om kunden hadde signert i appen.${erAvslaatt ? " Avslaget blir fjernet." : ""} Det blir stående hvem hos oss som registrerte det, og hvorfor.`}
         knapp="Registrer godkjenning"
         valg={{
           etikett: "Hvordan godkjente kunden?",
@@ -1417,6 +1505,30 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         grunnEtikett="Begrunnelse"
         grunnHjelp="Skriv hvor dokumentasjonen finnes. Er det papir eller e-post, legg den ved som vedlegg."
         onBekreftet={(grunn, maate) => godkjennManuelt(maate, grunn)}
+      />
+
+      <Passordbekreftelse
+        open={avslaaApen}
+        onOpenChange={setAvslaaApen}
+        tittel="Avslå uten svar via lenken"
+        forklaring="Kravet blir stående som avslått, slik som når byggherren avslår via lenken, og tas ut av Status. Det blir stående hvem hos oss som registrerte det, og hvorfor."
+        knapp="Registrer avslag"
+        valg={{
+          etikett: "Hvordan sa kunden nei?",
+          alternativer: [
+            { verdi: "papir", tekst: "Svarte nei på papir" },
+            { verdi: "muntlig", tekst: "Muntlig — møte eller telefon" },
+            { verdi: "epost", tekst: "Svarte nei på e-post" },
+          ],
+        }}
+        // Påkrevd, som når byggherren avslår via lenken: et avslag på et krav
+        // er et svar i en pågående sak, og «avslått» alene sier ikke om
+        // uenigheten gjelder prisen, omfanget eller selve behovet.
+        krevGrunn
+        grunnEtikett="Begrunnelse"
+        grunnPlassholder="Byggherren mener arbeidet inngår i kontrakten, sa det i byggemøtet 06.10"
+        grunnHjelp="Gjelder uenigheten prisen, omfanget eller selve behovet for endringen? Er svaret på papir eller e-post, legg det ved som vedlegg."
+        onBekreftet={(grunn, maate) => avslaaManuelt(maate, grunn)}
       />
 
       <Passordbekreftelse

@@ -33,7 +33,16 @@ const STATUS_LABEL: Record<OfferStatus, string> = {
 
 function StatusBadge({ status, offerId, onUpdate }: { status: OfferStatus; offerId: string; onUpdate: () => void }) {
   const update = async (next: OfferStatus) => {
-    const { error } = await supabase.from("offers").update({ status: next }).eq("id", offerId);
+    // Flyttes statusen bort fra «avslått», skal avslaget vekk med den, slik
+    // skjemaet gjør. Ellers ble dato og grunn stående, og tilbudet viste seg
+    // fortsatt som avslått når det ble åpnet.
+    const avslag = isOfferRejected(next)
+      ? {}
+      : { rejected_at: null, rejected_by: null, rejected_note: null };
+    const { error } = await supabase
+      .from("offers")
+      .update({ status: next, ...avslag } as never)
+      .eq("id", offerId);
     // Uten dette gikk merkelappen tilbake til gammel status ved neste henting,
     // uten noe tegn til at lagringen feilet
     if (error) { toast.error(error.message); return; }

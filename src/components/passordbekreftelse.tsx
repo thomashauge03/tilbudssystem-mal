@@ -32,8 +32,11 @@ interface Props {
   knapp: string;
   /** Be om en begrunnelse som blir stående på dokumentet */
   krevGrunn?: boolean;
+  /** Vis feltet for begrunnelse, men slipp gjennom uten */
+  grunnValgfri?: boolean;
   grunnEtikett?: string;
   grunnHjelp?: string;
+  grunnPlassholder?: string;
   /** Valgfritt nedtrekk, f.eks. hvordan kunden godkjente */
   valg?: { etikett: string; alternativer: Array<{ verdi: string; tekst: string }> };
   /** Kalles først når passordet er bekreftet */
@@ -41,8 +44,18 @@ interface Props {
 }
 
 export function Passordbekreftelse({
-  open, onOpenChange, tittel, forklaring, knapp,
-  krevGrunn, grunnEtikett, grunnHjelp, valg, onBekreftet,
+  open,
+  onOpenChange,
+  tittel,
+  forklaring,
+  knapp,
+  krevGrunn,
+  grunnValgfri,
+  grunnEtikett,
+  grunnHjelp,
+  grunnPlassholder,
+  valg,
+  onBekreftet,
 }: Props) {
   const { user } = useAuth();
   const [passord, setPassord] = useState("");
@@ -110,15 +123,20 @@ export function Passordbekreftelse({
             </div>
           )}
 
-          {krevGrunn && (
+          {(krevGrunn || grunnValgfri) && (
             <div className="space-y-1.5">
-              <Label htmlFor="pb-grunn">{grunnEtikett ?? "Begrunnelse"}</Label>
+              <Label htmlFor="pb-grunn">
+                {grunnEtikett ?? "Begrunnelse"}
+                {!krevGrunn && (
+                  <span className="font-normal text-muted-foreground"> (valgfritt)</span>
+                )}
+              </Label>
               <Textarea
                 id="pb-grunn"
                 value={grunn}
                 onChange={(e) => setGrunn(e.target.value)}
                 rows={2}
-                placeholder="Kunden signerte på papir 19.08, kopi lagt ved"
+                placeholder={grunnPlassholder ?? "Kunden signerte på papir 19.08, kopi lagt ved"}
               />
               {grunnHjelp && <p className="text-xs text-muted-foreground">{grunnHjelp}</p>}
             </div>

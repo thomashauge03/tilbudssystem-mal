@@ -105,6 +105,14 @@ export const OFFER_REJECTED = "avslått";
 export const isOfferRejected = (status?: string | null) => (status ?? "") === OFFER_REJECTED;
 
 /**
+ * Er kravet om endring avslått? Statusen bærer det, men rejected_at leses
+ * også, slik skjemaet gjør: en rad kan ha fått bare den ene av dem.
+ */
+export const isAmendmentRejected = (
+  a: { status?: string | null; rejected_at?: string | null } | null | undefined,
+) => a?.status === "avslått" || !!a?.rejected_at;
+
+/**
  * Tilbud som ikke lenger venter på svar: vunnet, fullført eller avslått.
  *
  * Et avslått tilbud er ute av spill. Det skal ikke telles som aktivt, ikke

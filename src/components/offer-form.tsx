@@ -62,6 +62,13 @@ const MAATE_TEKST: Record<string, string> = {
   epost: "bekreftet på e-post",
 };
 
+/** Hvordan kunden sa nei, når vi registrerte avslaget selv. */
+const AVSLAG_MAATE_TEKST: Record<string, string> = {
+  papir: "på papir",
+  muntlig: "muntlig",
+  epost: "på e-post",
+};
+
 function emptyOffer(adminPct: number, validityDays: number, defaultRef: string, defaultText = ""): OfferState {
   const today = new Date();
   return {
@@ -461,6 +468,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const laast = isSigned && !laastOpp;
 
   const [godkjennApen, setGodkjennApen] = useState(false);
+  const [avslaaApen, setAvslaaApen] = useState(false);
   const [lasOppApen, setLasOppApen] = useState(false);
 
   const lasOpp = async (grunn: string) => {
@@ -492,6 +500,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         customer_signed_at: new Date().toISOString(),
         signature_method: maate,
         manual_approved_note: grunn,
+        // Har kunden snudd etter et avslag, er det godkjenningen som gjelder.
+        // Ble avslaget stående, sa tilbudet både ja og nei.
+        rejected_at: null,
+        rejected_by: null,
+        rejected_note: null,
       } as any)
       .eq("id", id);
     if (error) { toast.error(error.message); throw error; }
@@ -499,6 +512,65 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     setOffer((p) => ({ ...p, status: "godkjent" }));
     qc.invalidateQueries({ queryKey: ["offer", offerId] });
     toast.success("Registrert som godkjent av kunden");
+  };
+
+  const avslaaManuelt = async (maate: string, grunn: string) => {
+    // Lagre først, som ved godkjenning: det som står ulagret i skjemaet, skal
+    // ikke gå tapt fordi svaret fra kunden ble registrert.
+    const id = await save();
+    if (!id) return;
+
+    const { error } = await supabase
+      .from("offers")
+      .update({
+        status: OFFER_REJECTED,
+        rejected_at: new Date().toISOString(),
+        // Feltet er navnet kunden skriver inn på lenken. Her har ingen skrevet
+        // noe, og vårt eget navn hører ikke hjemme i et felt som sier hvem som
+        // avslo — det stempler basen i manual_rejected_by.
+        rejected_by: null,
+        rejected_note: grunn || null,
+        rejection_method: maate,
+      } as never)
+      .eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      throw error;
+    }
+    setOffer((p) => ({ ...p, status: OFFER_REJECTED }));
+    qc.invalidateQueries({ queryKey: ["offer", offerId] });
+    qc.invalidateQueries({ queryKey: ["offers"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    toast.success("Registrert som avslått av kunden");
+  };
+
+  /**
+   * Fjerner avslaget og setter tilbudet tilbake til «Sendt».
+   *
+   * Kunden kan snu, og et avslag kan være registrert på feil tilbud. Før måtte
+   * statusen settes tilbake for hånd i feltet under, og da ble dato og
+   * begrunnelse liggende igjen til neste lagring.
+   */
+  const fjernAvslag = async () => {
+    if (!offerId) return;
+    const { error } = await supabase
+      .from("offers")
+      .update({
+        status: "sendt",
+        rejected_at: null,
+        rejected_by: null,
+        rejected_note: null,
+      } as never)
+      .eq("id", offerId);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setOffer((p) => ({ ...p, status: "sendt" }));
+    qc.invalidateQueries({ queryKey: ["offer", offerId] });
+    qc.invalidateQueries({ queryKey: ["offers"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    toast.success("Avslaget er fjernet — tilbudet står som sendt igjen");
   };
 
   // Hvert klikk lagde tidligere et nytt token. Et ubrukt token gjenbrukes, slik
@@ -740,6 +812,19 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               <ShieldCheck className="mr-2 h-4 w-4" />Godkjenn manuelt
             </Button>
           )}
+          {/* Og sier kunden nei uten å bruke lenken, må også det kunne
+              registreres — med dato og grunn, ikke bare en status. */}
+          {isEdit && !isSigned && !erAvslaatt && (
+            <Button
+              variant="outline"
+              onClick={() => setAvslaaApen(true)}
+              disabled={saving}
+              title="Registrer at kunden har avslått uten å svare via lenken"
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              Avslå manuelt
+            </Button>
+          )}
           {isEdit && isSigned && !laastOpp && (
             <Button variant="outline" onClick={() => setLasOppApen(true)} disabled={saving} title="Lås opp for å endre linjer og priser">
               <Unlock className="mr-2 h-4 w-4" />Lås opp for endring
@@ -756,25 +841,39 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         </div>
       </div>
 
-      {/* Kunden har sagt nei via signeringslenken. Det står øverst og i rødt:
-          tilbudet skal ikke følges opp, og begrunnelsen er det eneste som sier
-          hva som skulle til — den er verdt mer enn statusen alene. */}
+      {/* Kunden har sagt nei, via lenken eller til oss. Det står øverst og i
+          rødt: tilbudet skal ikke følges opp, og begrunnelsen er det eneste som
+          sier hva som skulle til — den er verdt mer enn statusen alene. */}
       {erAvslaatt && (
         <div className="flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
           <XCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
-          <div className="text-sm">
+          <div className="flex-1 text-sm">
             <div className="font-semibold text-red-700 dark:text-red-400">
               Avslått av kunden
               {avslagInfo.rejected_at ? ` ${fmtDate(avslagInfo.rejected_at)}` : ""}
+              {avslagInfo.rejection_method && avslagInfo.rejection_method !== "digital"
+                ? ` — ${AVSLAG_MAATE_TEKST[avslagInfo.rejection_method] ?? avslagInfo.rejection_method}`
+                : ""}
               {avslagInfo.rejected_by ? ` · ${avslagInfo.rejected_by}` : ""}
             </div>
             {avslagInfo.rejected_note && (
               <div className="text-muted-foreground">«{avslagInfo.rejected_note}»</div>
             )}
             <div className="text-muted-foreground">
-              Vil dere likevel gå videre, sett statusen tilbake til «Sendt» i feltet under.
+              Vil dere likevel gå videre, fjern avslaget. Tilbudet står da som sendt igjen.
             </div>
           </div>
+          {isEdit && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 flex-shrink-0 text-muted-foreground"
+              onClick={fjernAvslag}
+            >
+              <RotateCcw className="mr-1 h-3.5 w-3.5" />
+              Fjern avslaget
+            </Button>
+          )}
         </div>
       )}
 
@@ -1397,7 +1496,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         open={godkjennApen}
         onOpenChange={setGodkjennApen}
         tittel="Godkjenn uten digital signatur"
-        forklaring="Tilbudet blir godkjent, som om kunden hadde signert i appen. Det blir stående hvem hos oss som registrerte det, og hvorfor."
+        forklaring={`Tilbudet blir godkjent, som om kunden hadde signert i appen.${erAvslaatt ? " Avslaget blir fjernet." : ""} Det blir stående hvem hos oss som registrerte det, og hvorfor.`}
         knapp="Registrer godkjenning"
         valg={{
           etikett: "Hvordan godkjente kunden?",
@@ -1411,6 +1510,30 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         grunnEtikett="Begrunnelse"
         grunnHjelp="Skriv hvor dokumentasjonen finnes. Er det papir eller e-post, legg den ved som vedlegg."
         onBekreftet={(grunn, maate) => godkjennManuelt(maate, grunn)}
+      />
+
+      <Passordbekreftelse
+        open={avslaaApen}
+        onOpenChange={setAvslaaApen}
+        tittel="Avslå uten svar via lenken"
+        forklaring="Tilbudet blir stående som avslått, slik som når kunden avslår via lenken. Det blir stående hvem hos oss som registrerte det."
+        knapp="Registrer avslag"
+        valg={{
+          etikett: "Hvordan sa kunden nei?",
+          alternativer: [
+            { verdi: "papir", tekst: "Svarte nei på papir" },
+            { verdi: "muntlig", tekst: "Muntlig — møte eller telefon" },
+            { verdi: "epost", tekst: "Svarte nei på e-post" },
+          ],
+        }}
+        // Valgfri, som når kunden avslår via lenken: man vet ikke alltid
+        // hvorfor. Men vet man det, er det den man leser neste gang man priser
+        // noe for denne kunden.
+        grunnValgfri
+        grunnEtikett="Begrunnelse"
+        grunnPlassholder="For dyrt — valgte en annen entreprenør"
+        grunnHjelp="Hva sa kunden? Er svaret på papir eller e-post, legg det ved som vedlegg."
+        onBekreftet={(grunn, maate) => avslaaManuelt(maate, grunn)}
       />
 
       <Passordbekreftelse

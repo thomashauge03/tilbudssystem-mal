@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   nok, fmtDate, compareAmendmentNumber, OFFER_WON_STATUSES, OFFER_COMPLETED,
-  offerTotal, amendmentTotal, type LineLike,
+  offerTotal, amendmentTotal, isAmendmentRejected, type LineLike,
 } from "@/lib/format";
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { PaymentsPanel, syncInvoicedAmount } from "@/components/payments-panel";
@@ -114,14 +114,18 @@ function StatusPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("amendments")
-        .select("id, offer_id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct), offers(offer_number, title, customer_name, project_number)")
+        .select("id, offer_id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, status, rejected_at, amendment_lines(quantity, unit_price, discount_pct), offers(offer_number, title, customer_name, project_number)")
         .order("created_at", { ascending: false });
       if (error) throw error;
+      // Et avslått krav er ute av spill: kunden har sagt nei, og det skal
+      // verken telle i summene eller følges opp her. Avslåtte tilbud er alt
+      // ute, siden bare vunne tilbud hentes.
+      //
       // Sorteres på klienten: databasen kan bare sortere teksten alfabetisk, og
       // ville lagt "1001-10" foran "1001-2". Nyeste nummer først.
-      return (data ?? []).sort((x: any, y: any) =>
-        compareAmendmentNumber(y.amendment_number, x.amendment_number)
-      );
+      return (data ?? [])
+        .filter((a: any) => !isAmendmentRejected(a))
+        .sort((x: any, y: any) => compareAmendmentNumber(y.amendment_number, x.amendment_number));
     },
   });
 

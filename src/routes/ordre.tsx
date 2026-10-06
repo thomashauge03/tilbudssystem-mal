@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState, Fragment } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate, offerTotal, amendmentTotal, compareAmendmentNumber, OFFER_WON_STATUSES } from "@/lib/format";
+import { nok, fmtDate, offerTotal, amendmentTotal, compareAmendmentNumber, isAmendmentRejected, OFFER_WON_STATUSES } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Search, CheckCircle2, Circle, ChevronDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -100,7 +100,7 @@ function OrdrePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("amendments")
-        .select("id, offer_id, amendment_number, internal_description, notified_date, status, customer_signed_at, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)")
+        .select("id, offer_id, amendment_number, internal_description, notified_date, status, customer_signed_at, rejected_at, invoiced_amount, amendment_lines(quantity, unit_price, discount_pct)")
         .not("offer_id", "is", null);
       if (error) throw error;
       return data ?? [];
@@ -113,7 +113,9 @@ function OrdrePage() {
     const erSignert = (e: any) => !!e.customer_signed_at || e.status === "endringsmelding";
     const signert = mine.filter(erSignert).sort((x: any, y: any) =>
       compareAmendmentNumber(x.amendment_number, y.amendment_number));
-    const krav = mine.filter((e: any) => !erSignert(e)).sort((x: any, y: any) =>
+    // Et avslått krav venter ikke på noe: kunden har sagt nei. Det hører
+    // verken hjemme blant kravene som venter på signatur eller i summen deres.
+    const krav = mine.filter((e: any) => !erSignert(e) && !isAmendmentRejected(e)).sort((x: any, y: any) =>
       compareAmendmentNumber(x.amendment_number, y.amendment_number));
     return {
       signert,

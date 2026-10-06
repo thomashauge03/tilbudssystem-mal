@@ -1627,8 +1627,27 @@ interface AmendmentPdfData {
   is_price_increase: boolean;
   status?: string;
   customer_signed_at?: string | null;
+  /** digital = signert via lenken; papir/muntlig/epost = godkjent manuelt av oss */
+  signature_method?: string | null;
   /** Kundens signaturbilde som base64 dataURL — se safeImageSrc */
   customer_signature?: string | null;
+}
+
+/** Hvordan kunden godkjente uten å signere digitalt, slik det står i stempelet. */
+const MANUELL_GODKJENNING_TEKST: Record<string, string> = {
+  papir: "signert på papir",
+  muntlig: "muntlig",
+  epost: "bekreftet på e-post",
+};
+
+/**
+ * Stempelteksten for kundens godkjenning. Godkjent manuelt er like bindende,
+ * men dokumentet skal ikke påstå en digital signatur kunden aldri satte.
+ */
+function kundegodkjenningTekst(signertAt: string, signaturMaate?: string | null) {
+  const maate = signaturMaate ?? "digital";
+  if (maate === "digital") return `Signert digitalt av kunden ${fmtDate(signertAt)}`;
+  return `Godkjent av kunden ${fmtDate(signertAt)} — ${MANUELL_GODKJENNING_TEKST[maate] ?? maate}`;
 }
 
 interface AmendmentLine {
@@ -1813,7 +1832,7 @@ export function openAmendmentPdf(
           ? `${customerSignatureSrc
               ? `<img src="${customerSignatureSrc}" alt="Kundens signatur" class="sig-img" />`
               : ""}
-             <div class="signed">Signert digitalt av kunden ${fmtDate(amendment.customer_signed_at)}</div>`
+             <div class="signed">${escapeHtml(kundegodkjenningTekst(amendment.customer_signed_at, amendment.signature_method))}</div>`
           : `<div class="line">Signatur / dato</div>`}
       </div>
     </div>`;

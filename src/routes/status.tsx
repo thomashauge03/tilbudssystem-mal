@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   nok, fmtDate, compareAmendmentNumber, OFFER_WON_STATUSES, OFFER_COMPLETED,
-  offerTotal, amendmentTotal,
+  offerTotal, amendmentTotal, type LineLike,
 } from "@/lib/format";
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { PaymentsPanel, syncInvoicedAmount } from "@/components/payments-panel";
@@ -20,15 +20,30 @@ type Filter = "all" | "active" | "partial" | "fullført";
 // H3/M7: derive today at call time so it doesn't go stale if the app is open across midnight
 const getToday = () => new Date().toISOString().slice(0, 10);
 
+// Det søket og filtrene ser på i et tilbud. Tilbudet som hentes med en
+// endringsmelding, har bare søkefeltene, derfor er resten valgfritt.
+type OfferFields = {
+  title: string | null;
+  customer_name: string | null;
+  offer_number: number;
+  project_number: string | null;
+  status?: string | null;
+  admin_cost_pct?: number | null;
+  invoiced_amount?: number | null;
+  // unknown fordi types.ts er utdatert: den kjenner ikke discount_pct på
+  // offer_lines og gir linjene en feiltype i stedet for LineLike
+  offer_lines?: unknown;
+};
+
 // Feltene et tilbud kan søkes fram på. En endringsmelding søkes også i
 // feltene på tilbudet den hører til: kunden står bare på tilbudet, så et søk
 // på kunden ga før tilbudet alene og ingen av endringsmeldingene på det.
-const offerSearchFields = (o: any) =>
+const offerSearchFields = (o: OfferFields | null | undefined) =>
   o ? [o.title, o.customer_name, String(o.offer_number), o.project_number] : [];
 
 // Om tilbudet er med under filteret, uten hensyn til søket
-function offerInFilter(o: any, filter: Filter) {
-  const total = offerTotal(o.offer_lines, o.admin_cost_pct);
+function offerInFilter(o: OfferFields, filter: Filter) {
+  const total = offerTotal(o.offer_lines as LineLike[] | null, o.admin_cost_pct);
   const inv = Number(o.invoiced_amount ?? 0);
   // Alle tilbudene her er godkjente, og da gjelder ikke fristen lenger.
   // "Aktive" betyr derfor: ikke ferdig betalt.
@@ -117,7 +132,8 @@ function StatusPage() {
   };
 
   const filteredOffers = useMemo(
-    () => (offers ?? []).filter((o: any) => offerInFilter(o, filter) && matchesSearch(offerSearchFields(o))),
+    () =>
+      (offers ?? []).filter((o) => offerInFilter(o, filter) && matchesSearch(offerSearchFields(o))),
     [offers, filter, q, today],
   );
 
@@ -125,7 +141,7 @@ function StatusPage() {
   // hører til. Det er filteret de arver, ikke søket: en endring som selv
   // treffer søket, vises selv om tilbudet ikke gjør det.
   const offerIdsInFilter = useMemo(
-    () => new Set((offers ?? []).filter((o: any) => offerInFilter(o, filter)).map((o: any) => o.id)),
+    () => new Set((offers ?? []).filter((o) => offerInFilter(o, filter)).map((o) => o.id)),
     [offers, filter],
   );
 
@@ -134,9 +150,16 @@ function StatusPage() {
       (amendments ?? []).filter((a: any) => {
         const total = amendmentTotal(a.amendment_lines);
         const inv = Number(a.invoiced_amount ?? 0);
-        if ((filter === "active" || filter === "fullført") && !offerIdsInFilter.has(a.offer_id)) return false;
+        if ((filter === "active" || filter === "fullført") && !offerIdsInFilter.has(a.offer_id)) {
+          return false;
+        }
         if (filter === "partial" && (inv === 0 || inv >= total)) return false;
-        return matchesSearch([a.amendment_number, a.project_ref, a.internal_description, ...offerSearchFields(a.offers)]);
+        return matchesSearch([
+          a.amendment_number,
+          a.project_ref,
+          a.internal_description,
+          ...offerSearchFields(a.offers),
+        ]);
       }),
     [amendments, filter, q, offerIdsInFilter],
   );

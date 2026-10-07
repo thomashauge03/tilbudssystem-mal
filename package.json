@@ -10,8 +10,9 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "node --experimental-strip-types src/lib/anbud.test.ts && node --experimental-strip-types src/lib/anbud-duell.test.ts && node --experimental-strip-types src/lib/telefon.test.ts && node --experimental-strip-types src/lib/fremdrift.test.ts && node --experimental-strip-types src/lib/lagringsnokkel.test.ts && node --experimental-strip-types supabase/functions/varsel-epost/tekst.test.ts",
-    "backup": "node scripts/sikkerhetskopi.mjs"
+    "test": "node --experimental-strip-types src/lib/anbud.test.ts && node --experimental-strip-types src/lib/anbud-duell.test.ts && node --experimental-strip-types src/lib/telefon.test.ts && node --experimental-strip-types src/lib/fremdrift.test.ts && node --experimental-strip-types src/lib/lagringsnokkel.test.ts && node --experimental-strip-types supabase/functions/varsel-epost/tekst.test.ts && node scripts/sikkerhetskopi.test.mjs",
+    "backup": "node scripts/sikkerhetskopi.mjs",
+    "gjenopprett": "node scripts/gjenopprett-sikkerhetskopi.mjs"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",

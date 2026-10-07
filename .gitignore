@@ -39,5 +39,6 @@ dist-ssr
 # Supabase CLI-temp
 supabase/.temp/
 
-# Sikkerhetskopier av produksjonsdata skal aldri i git
+# Sikkerhetskopier av produksjonsdata skal aldri i git, heller ikke krypterte
 tilbudssystem-backup/
+*.kryptert

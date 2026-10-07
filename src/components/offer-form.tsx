@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, XCircle, Heading } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, lineNet, amendmentTotal, OFFER_REJECTED, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, isOfferWon, lineNet, amendmentTotal, OFFER_REJECTED, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
 import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
@@ -442,6 +442,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const avslagInfo = (loaded?.offer ?? {}) as any;
   const erAvslaatt = offer.status === OFFER_REJECTED || !!avslagInfo.rejected_at;
 
+  // Godkjent eller fullført for hånd betyr at kunden alt har svart. Da trekker
+  // basen tilbake lenkene og nekter å lage nye, så verken knappen eller e-posten
+  // skal love kunden en lenke.
+  const lenkeKanSendes = !isSigned && !erAvslaatt && !isOfferWon(offer.status);
+
   // Prisene kunden har signert på skal ikke kunne endres ved et uhell. De kan
   // endres — men da som en bevisst handling som blir stående i loggen.
   const { data: apenOpplasing } = useQuery({
@@ -573,27 +578,57 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     toast.success("Avslaget er fjernet — tilbudet står som sendt igjen");
   };
 
+  /**
+   * En signeringslenke virker bare mens tilbudet står som «sendt». Lages den fra
+   * et utkast, er tilbudet på vei til kunden, og da settes statusen her. Ellers
+   * fikk kunden en lenke som sa at tilbudet ikke var sendt ut ennå. Gir false
+   * hvis statusen ikke lot seg lagre; da skal ingen lenke gis ut.
+   */
+  const settSendt = async (id: string): Promise<boolean> => {
+    if ((offer.status ?? "utkast") !== "utkast") return true;
+    const { error } = await supabase
+      .from("offers")
+      .update({ status: "sendt" } as never)
+      .eq("id", id);
+    if (error) { toast.error(error.message); return false; }
+    setOffer((p) => ({ ...p, status: "sendt" }));
+    qc.invalidateQueries({ queryKey: ["offer", id] });
+    qc.invalidateQueries({ queryKey: ["offers"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    toast.info("Tilbudet står nå som «Sendt», slik at kunden kan signere.");
+    return true;
+  };
+
   // Hvert klikk lagde tidligere et nytt token. Et ubrukt token gjenbrukes, slik
   // at lenker man alt har sendt ut fortsatt peker på det samme tilbudet.
+  //
+  // En lenke som er trukket tilbake (revoked_at), deles aldri ut igjen. Den
+  // sluttet å virke da tilbudet ble avsluttet, og virker ikke om tilbudet åpnes
+  // på nytt. Filteret står her og ikke i spørringen fordi kolonnen kom med
+  // migrasjonen 20261007000002: mot en base uten den er feltet bare fraværende,
+  // og da virker dette som før, mens et filter i spørringen ville feilet.
   const getSigningToken = async (id: string): Promise<string | null> => {
     if (!tenantId) { toast.error("Ingen tenant"); return null; }
     const { data: unused, error: lookupError } = await supabase
       .from("offer_signing_tokens" as never)
-      .select("token")
+      .select("*")
       .eq("offer_id" as never, id as never)
-      .is("used_at" as never, null as never)
-      .limit(1);
+      .is("used_at" as never, null as never);
     if (lookupError) { toast.error(lookupError.message); return null; }
-    const existing = (unused as any[])?.[0]?.token;
-    if (existing) return String(existing);
+    let token: string | undefined = (unused as any[] | null)?.find((t) => !t.revoked_at)?.token;
 
-    const { data, error } = await supabase
-      .from("offer_signing_tokens" as never)
-      .insert({ offer_id: id, tenant_id: tenantId } as never)
-      .select("token")
-      .single();
-    if (error || !data) { toast.error(error?.message ?? "Kunne ikke opprette signeringslenke"); return null; }
-    return String((data as any).token);
+    if (!token) {
+      const { data, error } = await supabase
+        .from("offer_signing_tokens" as never)
+        .insert({ offer_id: id, tenant_id: tenantId } as never)
+        .select("token")
+        .single();
+      if (error || !data) { toast.error(error?.message ?? "Kunne ikke opprette signeringslenke"); return null; }
+      token = (data as any).token;
+    }
+
+    if (!(await settSendt(id))) return null;
+    return String(token);
   };
 
   // Uten innstillingene blir firmanavn/logo tomme i PDF-en. Bedre å vente enn
@@ -661,9 +696,10 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     //
     // Er tilbudet avslått, følger det ingen lenke med: uten denne vakten kunne
     // kunden signere et tilbud de nettopp hadde sagt nei til, og tilbudet ville
-    // stått som både avslått og godkjent på én gang.
+    // stått som både avslått og godkjent på én gang. Det samme gjelder et
+    // tilbud som er godkjent eller fullført for hånd.
     let signingLink = "";
-    if (!isSigned && !erAvslaatt) {
+    if (lenkeKanSendes) {
       const token = await getSigningToken(id);
       if (token) signingLink = `\n\nSigner tilbudet digitalt her:\n${window.location.origin}/signer/${token}`;
     }
@@ -800,7 +836,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               <FileSignature className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Kontrakt PDF"}
             </Button>
           )}
-          {!isSigned && !erAvslaatt && (
+          {lenkeKanSendes && (
             <Button variant="outline" onClick={handleSigningLink} disabled={saving} title="Generer signeringslenke og kopier til utklippstavle">
               <Link2 className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Signeringslenke"}
             </Button>

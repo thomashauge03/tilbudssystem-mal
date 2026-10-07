@@ -299,12 +299,15 @@ function SignerPage() {
     );
   }
 
+  // Basen sier selv hvorfor lenken ikke kan brukes: ukjent, trukket tilbake,
+  // eller et tilbud som alt er godkjent eller ikke er sendt ut. Overskriften må
+  // passe alle, også de der lenken var helt i orden da den ble sendt.
   if (error || !offerInfo) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="max-w-sm text-center space-y-3">
           <div className="text-4xl">🔒</div>
-          <h1 className="text-xl font-semibold text-gray-900">Ugyldig lenke</h1>
+          <h1 className="text-xl font-semibold text-gray-900">Lenken kan ikke brukes</h1>
           <p className="text-sm text-gray-500">{error ?? "Denne signeringslenken er ikke gyldig eller er allerede brukt."}</p>
         </div>
       </div>

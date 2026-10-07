@@ -233,9 +233,9 @@ function SignerPage() {
       title: offer.title,
       offer_date: offer.offer_date,
       customer_name: offer.customer_name,
-      // Kundens adresse og telefon brukes tre steder i kontrakten, men manglet helt.
-      // Tom streng når RPC-en ikke returnerer dem — get_offer_pdf_by_token bør
-      // utvides med kundeopplysningene så kontrakten blir komplett.
+      // Kundens adresse og telefon står på forsiden og i §1. get_offer_pdf_by_token
+      // henter dem fra kunderegisteret fra og med 20261007000003. Tom streng når
+      // tilbudet ikke er koblet til en kunde, eller basen mangler migrasjonen.
       customer_address: offer.customer_address ?? "",
       customer_phone: offer.customer_phone ?? "",
       project_number: offer.project_number,
@@ -254,8 +254,8 @@ function SignerPage() {
       ref_position: refObj.position,
       ref_phone: refObj.phone,
       ref_signature: refObj.signature,
-      // Faller tilbake på firmaets standardforbehold så lenge RPC-en ikke
-      // returnerer offers.forbehold — den bør utvides med feltet.
+      // Tilbudets egne forbehold, alltid som liste fra 20261007000003. Firmaets liste er
+      // bare en reserve for en base uten den migrasjonen, og kan fjernes når den er kjørt.
       forbehold: forbeholdOf(offer, settings),
     }, win);
   };

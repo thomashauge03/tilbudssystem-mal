@@ -1,0 +1,9 @@
+{
+  "name": "migrasjonstest",
+  "private": true,
+  "type": "module",
+  "description": "Bygger migrasjonskjeden i PGlite og sammenligner den med produksjonen",
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.8"
+  }
+}

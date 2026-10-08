@@ -90,6 +90,7 @@ export function amendmentTotal(lines: LineLike[] | null | undefined) {
   return (lines ?? []).reduce((s, l) => s + lineNet(l), 0);
 }
 
+export const OFFER_SENT = "sendt";
 export const OFFER_APPROVED = "godkjent";
 export const OFFER_COMPLETED = "fullført";
 

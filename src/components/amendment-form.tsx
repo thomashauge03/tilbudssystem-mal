@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, FilePlus2, MailCheck, MailX, MailWarning, XCircle, Heading } from "lucide-react";
-import { nok, fmtDate, toISODate, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { nok, fmtDate, toISODate, OFFER_SENT, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openAmendmentPdf } from "@/lib/pdf";
 import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
@@ -114,7 +114,10 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
     },
   });
 
-  const { data: offers } = useQuery({
+  // Sendte tilbud er med: arbeidet er ofte i gang før kunden har svart, og
+  // endringene kommer da før tilbudet er godkjent. Med bare de vunne ble alle
+  // tilbud som ventet på svar borte fra lista.
+  const { data: offerList } = useQuery({
     queryKey: ["offers-for-amendment", tenantId],
     enabled: !!tenantId,
     queryFn: async () => {
@@ -122,7 +125,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         .from("offers")
         .select("id, offer_number, title, customer_name, project_number, status")
         .eq("tenant_id", tenantId!)
-        .in("status", OFFER_WON_STATUSES)
+        .in("status", [OFFER_SENT, ...OFFER_WON_STATUSES])
         .order("offer_number", { ascending: false })
         .limit(200);
       return data ?? [];
@@ -130,6 +133,24 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
   });
 
   const [a, setA] = useState<AState>(() => empty());
+
+  // Det koblede tilbudet hentes for seg når det ikke er i lista — et avslått
+  // tilbud, eller et som står som utkast. Ellers viste feltet blankt selv om
+  // koblingen var lagret, og kundenavnet manglet.
+  const linkedOfferMissing = !!a.offer_id && !!offerList && !offerList.some((o: any) => o.id === a.offer_id);
+  const { data: linkedOffer } = useQuery({
+    queryKey: ["linked-offer-for-amendment", a.offer_id],
+    enabled: linkedOfferMissing,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("offers")
+        .select("id, offer_number, title, customer_name, project_number, status")
+        .eq("id", a.offer_id!)
+        .maybeSingle();
+      return data;
+    },
+  });
+  const offers = linkedOfferMissing && linkedOffer ? [linkedOffer, ...(offerList ?? [])] : offerList;
   const [lines, setLines] = useState<ALine[]>([]);
   const [init, setInit] = useState(false);
   // Knappene lagrer før de gjør noe annet. Uten denne referansen ville en ny

@@ -51,7 +51,8 @@ function Kodebank() {
   };
 
   const leggTil = async () => {
-    const code = ny.code.trim();
+    // Samme form som kodene i startpakken, så « fd2.13 » ikke blir en egen kode.
+    const code = ny.code.trim().toUpperCase().replace(/\s+/g, "");
     if (!ny.part.trim() || !code || !ny.title.trim()) { toast.error("Del, kode og tittel må fylles inn"); return; }
     const { error } = await db.from("ns_codes").insert({
       tenant_id: tenantId,

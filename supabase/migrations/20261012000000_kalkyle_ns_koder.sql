@@ -67,7 +67,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['ns_codes', 'calculations', 'calculation_lines'] loop
+  foreach t in array array['ns_codes', 'calculations'] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('drop policy if exists "%s_tenant_isolation" on public.%I;', t, t);
     execute format(
@@ -78,6 +78,27 @@ begin
     );
   end loop;
 end$$;
+
+alter table public.calculation_lines enable row level security;
+
+-- Linjene arver tilgangen fra kalkylen. tenant_id ligger også på raden, men
+-- den alene ville latt en rad peke på en kalkyle i et annet firma.
+drop policy if exists "calculation_lines_tenant_isolation" on public.calculation_lines;
+create policy "calculation_lines_tenant_isolation" on public.calculation_lines
+  using (
+    tenant_id = current_tenant_id()
+    and exists (
+      select 1 from public.calculations c
+       where c.id = calculation_id and c.tenant_id = current_tenant_id()
+    )
+  )
+  with check (
+    tenant_id = current_tenant_id()
+    and exists (
+      select 1 from public.calculations c
+       where c.id = calculation_id and c.tenant_id = current_tenant_id()
+    )
+  );
 
 alter table public.offer_lines add column if not exists ns_code text;
 comment on column public.offer_lines.ns_code is

@@ -129,19 +129,42 @@ function KodeRad({ kode }: { kode: NsKode }) {
   const [k, setK] = useState(kode);
   const endret = JSON.stringify(k) !== JSON.stringify(kode);
 
-  const lagre = async (patch?: Partial<NsKode>) => {
-    const neste = { ...k, ...patch };
-    const { error } = await db.from("ns_codes").update({
-      title: neste.title.trim(),
-      unit: neste.unit.trim(),
-      unit_price: neste.unit_price === null || (neste.unit_price as unknown) === "" ? null : Number(neste.unit_price),
-      edition: neste.edition?.trim() || null,
-      note: neste.note?.trim() || null,
-      active: neste.active,
-      maa_kontrolleres: neste.maa_kontrolleres,
-    }).eq("id", kode.id);
-    if (error) { toast.error(error.message); return; }
+  // Det lagrede legges rett i lista før den hentes på nytt, så raden og lista
+  // er like med en gang og Lagre-knappen blir inaktiv.
+  const oppdaterLista = (lagret: Partial<NsKode>) => {
+    qc.setQueryData<NsKode[]>(["ns-codes"], (liste) =>
+      liste?.map((x) => (x.id === kode.id ? { ...x, ...lagret } : x)));
     qc.invalidateQueries({ queryKey: ["ns-codes"] });
+  };
+
+  const lagre = async () => {
+    if (!k.title.trim()) { toast.error("Tittelen kan ikke være tom"); return; }
+    const lagret = {
+      title: k.title.trim(),
+      unit: k.unit.trim(),
+      unit_price: k.unit_price === null || (k.unit_price as unknown) === "" ? null : Number(k.unit_price),
+      edition: k.edition?.trim() || null,
+      note: k.note?.trim() || null,
+      active: k.active,
+      maa_kontrolleres: k.maa_kontrolleres,
+    };
+    const { error } = await db.from("ns_codes").update(lagret).eq("id", kode.id);
+    if (error) { toast.error(error.message); return; }
+    setK({ ...k, ...lagret });
+    oppdaterLista(lagret);
+  };
+
+  // Skjoldet lagrer bare kontrollmerket. Andre ulagrede endringer i raden blir
+  // stående til brukeren trykker Lagre.
+  const merkKontrollert = async () => {
+    setK((f) => ({ ...f, maa_kontrolleres: false }));
+    const { error } = await db.from("ns_codes").update({ maa_kontrolleres: false }).eq("id", kode.id);
+    if (error) {
+      setK((f) => ({ ...f, maa_kontrolleres: true }));
+      toast.error(error.message);
+      return;
+    }
+    oppdaterLista({ maa_kontrolleres: false });
   };
 
   return (
@@ -149,7 +172,7 @@ function KodeRad({ kode }: { kode: NsKode }) {
       <div className="flex items-center gap-1 font-mono text-sm">
         {k.code}
         {k.maa_kontrolleres && (
-          <button type="button" title="Finnes bare hos én byggherre. Trykk når koden er kontrollert mot standarden." onClick={() => { setK({ ...k, maa_kontrolleres: false }); lagre({ maa_kontrolleres: false }); }}>
+          <button type="button" title="Finnes bare hos én byggherre. Trykk når koden er kontrollert mot standarden." onClick={merkKontrollert}>
             <ShieldAlert className="h-4 w-4 text-amber-600" />
           </button>
         )}

@@ -1,9 +1,12 @@
-import { offerHasDeadline, escapeHtml } from "@/lib/format";
+import { offerHasDeadline, escapeHtml, lineNet } from "@/lib/format";
+import { beregnKalkyle, grupperKalkyle, type KalkyleLinje } from "@/lib/kalkyle";
 
 export { escapeHtml };
 
-export function openPrintPdf(title: string, bodyHtml: string) {
-  const win = window.open("", "_blank", "width=900,height=1100");
+export function openPrintPdf(title: string, bodyHtml: string, targetWin?: Window | null) {
+  // Et vindu åpnet etter en await regnes ikke som brukerutløst og blir blokkert.
+  // Den som kaller etter en await, åpner derfor vinduet i klikket og sender det inn.
+  const win = targetWin ?? window.open("", "_blank", "width=900,height=1100");
   if (!win) return;
   win.document.write(`<!doctype html><html lang="nb"><head><meta charset="utf-8"/>
     <title>${escapeHtml(title)}</title>
@@ -30,6 +33,72 @@ export function openPrintPdf(title: string, bodyHtml: string) {
     <script>window.onload = () => { setTimeout(() => window.print(), 200); };</script>
     </body></html>`);
   win.document.close();
+}
+
+export interface CalculationPdfData {
+  name: string;
+  customer_text: string;
+  markup_pct: number;
+  lines: KalkyleLinje[];
+}
+
+export interface CalculationPdfSettings {
+  company_name: string;
+  company_org_nr?: string;
+  logo_url?: string;
+  vat_pct: number;
+}
+
+/** Kalkylen som PDF: poster gruppert på overskrift med delsum, påslag som egen linje. */
+export function openCalculationPdf(d: CalculationPdfData, settings: CalculationPdfSettings, targetWin?: Window | null) {
+  const s = beregnKalkyle(d.lines, d.markup_pct, settings.vat_pct);
+  const dato = new Intl.DateTimeFormat("nb-NO").format(new Date());
+  const logo = settings.logo_url
+    ? `<img src="${escapeHtml(settings.logo_url)}" alt="" style="max-height:48px;max-width:200px"/>`
+    : `<h1>${escapeHtml(settings.company_name)}</h1>`;
+  const rad = (l: KalkyleLinje) => `<tr>
+      <td style="font-family:monospace;white-space:nowrap">${escapeHtml(l.ns_code ?? "")}</td>
+      <td>${escapeHtml(l.description)}</td>
+      <td class="num">${fmtNum(Number(l.quantity || 0))}</td>
+      <td>${escapeHtml(l.unit)}</td>
+      <td class="num">${fmtNok(Number(l.unit_price || 0))}</td>
+      <td class="num">${fmtNok(lineNet(l))}</td>
+    </tr>`;
+  const grupper = grupperKalkyle(d.lines).map((g) => {
+    const tittel = g.overskrift !== null
+      ? `<tr><td colspan="6" style="padding-top:14px;font-weight:700;text-transform:uppercase;border-bottom:2px solid #1e3a8a">${escapeHtml(g.overskrift)}</td></tr>`
+      : "";
+    const delsum = g.overskrift !== null && g.linjer.length
+      ? `<tr><td colspan="5" class="num" style="font-weight:600">Sum ${escapeHtml(g.overskrift)}</td><td class="num" style="font-weight:600">${fmtNok(g.sum)}</td></tr>`
+      : "";
+    return tittel + g.linjer.map(rad).join("") + delsum;
+  }).join("");
+  const sumRad = (k: string, v: number, stil = "") =>
+    `<tr${stil ? ` class="${stil}"` : ""}><td colspan="5" class="num">${k}</td><td class="num">${fmtNok(v)}</td></tr>`;
+
+  const body = `
+    <div class="header">
+      <div>${logo}${settings.company_org_nr ? `<div class="meta" style="text-align:left">Org.nr. ${escapeHtml(settings.company_org_nr)}</div>` : ""}</div>
+      <div class="meta">
+        <div><strong>Kalkyle</strong></div>
+        <div>${escapeHtml(d.name)}</div>
+        ${d.customer_text ? `<div>${escapeHtml(d.customer_text)}</div>` : ""}
+        <div>${dato}</div>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Kode</th><th>Beskrivelse</th><th class="num">Mengde</th><th>Enhet</th><th class="num">Enhetspris</th><th class="num">Sum</th></tr></thead>
+      <tbody>${grupper || `<tr><td colspan="6" style="text-align:center;color:#555">Ingen poster</td></tr>`}</tbody>
+      <tfoot>
+        ${sumRad("Sum poster", s.sum)}
+        ${s.paaslag ? sumRad(`Påslag (${fmtNum(d.markup_pct)}&nbsp;%)`, s.paaslag) : ""}
+        ${sumRad("Sum eks. mva", s.eksMva)}
+        ${sumRad(`Mva (${fmtNum(settings.vat_pct)}&nbsp;%)`, s.mva)}
+        ${sumRad("Total inkl. mva", s.total, "total-row")}
+      </tfoot>
+    </table>
+    <div class="footer">NS-kodene følger NS 3420. Beskrivelsene er forkortet og erstatter ikke standardens tekst.</div>`;
+  openPrintPdf(`Kalkyle – ${d.name}`, body, targetWin);
 }
 
 

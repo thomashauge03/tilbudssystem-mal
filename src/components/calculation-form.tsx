@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowDown, ArrowUp, Heading, Plus, Save, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowDown, ArrowUp, FileDown, Heading, Plus, Save, Search, Trash2 } from "lucide-react";
 import { db } from "@/lib/kalkyle-db";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -10,6 +10,7 @@ import {
   type KalkyleLinje, type NsKode,
 } from "@/lib/kalkyle";
 import { lineNet, nok, UNITS as FALLBACK_UNITS } from "@/lib/format";
+import { openCalculationPdf } from "@/lib/pdf";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -302,7 +303,21 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap justify-end gap-2">
-          {/* PDF-KNAPP */}
+          <Button
+            variant="outline"
+            onClick={() => {
+              // Vinduet åpnes i selve klikket. Ellers blokkerer nettleseren det.
+              const win = window.open("", "_blank", "width=900,height=1100");
+              if (!win) { toast.error("Nettleseren blokkerte PDF-vinduet. Tillat popup-vinduer for denne siden og prøv igjen."); return; }
+              openCalculationPdf(
+                { name: hode.name || "Kalkyle", customer_text: hode.customer_text, markup_pct: hode.markup_pct, lines: linjer },
+                { company_name: appSettings?.company_name ?? "", company_org_nr: appSettings?.company_org_nr ?? "", logo_url: appSettings?.logo_url ?? "", vat_pct: vatPct },
+                win,
+              );
+            }}
+          >
+            <FileDown className="mr-1 h-4 w-4" />PDF
+          </Button>
           {/* TILBUD-KNAPP */}
           <Button onClick={() => lagre()} disabled={lagrer || !tenantId}><Save className="mr-1 h-4 w-4" />Lagre</Button>
         </div>

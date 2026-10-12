@@ -1,0 +1,8 @@
+node_modules
+out
+.remotion
+
+# Musikken er lisensiert fra Pixabay og skal ikke spres videre som egen fil.
+# Kilde og nedlastingsdato står i public/musikk/KILDE.md.
+public/musikk/*.mp3
+public/musikk/*.wav

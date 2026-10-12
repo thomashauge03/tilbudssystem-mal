@@ -1,0 +1,27 @@
+{
+  "name": "techauge-promo",
+  "private": true,
+  "description": "Promofilmen for Techauge – Tilbud og prosjekt, laget med Remotion",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.527",
+    "@remotion/google-fonts": "4.0.527",
+    "@remotion/layout-utils": "4.0.527",
+    "@remotion/media": "4.0.527",
+    "@remotion/noise": "4.0.527",
+    "@remotion/paths": "4.0.527",
+    "@remotion/transitions": "4.0.527",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.527"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.8.3"
+  }
+}

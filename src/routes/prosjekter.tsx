@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Search, Pencil, FolderOpen } from "lucide-react";
+import { Plus, Search, Pencil, FolderOpen, Info } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { fmtDate, nok } from "@/lib/format";
+import { prosjekterFraSmartDok, sorterProsjekter } from "@/lib/prosjekter";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/prosjekter")({
@@ -51,9 +52,15 @@ function emptyProject(): Project {
 
 function ProsjekterPage() {
   const { tenantId } = useAuth();
+  // Navn, nummer, kunde og status eies av SmartDok for denne tenanten. Endres de
+  // her, skriver synken over dem igjen innen et kvarter, og et prosjekt laget her
+  // blir satt til fullført fordi det ikke står i SmartDok-lista.
+  const fraSmartDok = prosjekterFraSmartDok(tenantId);
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | Status>("all");
+  // Synken fører med seg hele historikken, over 700 prosjekter, så lista åpner
+  // på de aktive for at de som er i gang ikke skal drukne.
+  const [filterStatus, setFilterStatus] = useState<"all" | Status>(fraSmartDok ? "aktiv" : "all");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Project | null>(null);
   const [saving, setSaving] = useState(false);
@@ -86,7 +93,9 @@ function ProsjekterPage() {
 
       return (p.data ?? []).map((x: any) => ({
         ...x,
-        customer_display: customerMap.get(x.customer_id) ?? x.customer_name ?? "—",
+        // Fra SmartDok er kundenavnet fasit. En gammel kobling til kunderegisteret
+        // kan peke på en kunde som ikke lenger stemmer med prosjektet.
+        customer_display: (fraSmartDok ? x.customer_name || customerMap.get(x.customer_id) : customerMap.get(x.customer_id) ?? x.customer_name) ?? "—",
         stats: statsByProject.get(x.id) ?? { offers: 0, amendments: 0, invoiced: 0 },
       }));
     },
@@ -101,16 +110,20 @@ function ProsjekterPage() {
     },
   });
 
-  const rows = (data ?? []).filter((p: any) => {
+  const filtrert = (data ?? []).filter((p: any) => {
     const matchQ = !q || [p.name, p.project_number, p.customer_display].some(
       (s) => (s ?? "").toLowerCase().includes(q.toLowerCase())
     );
     const matchStatus = filterStatus === "all" || p.status === filterStatus;
     return matchQ && matchStatus;
   });
+  const rows = fraSmartDok ? sorterProsjekter(filtrert) : filtrert;
 
   const save = async (p: Project) => {
     if (!p.name.trim()) { toast.error("Prosjektnavn er påkrevd"); return; }
+    // Knappen for nytt prosjekt er skjult, men et prosjekt laget her ville uansett
+    // blitt satt til fullført av synken, så det stoppes også her.
+    if (fraSmartDok && !p.id) return;
     setSaving(true);
     const payload = {
       name: p.name,
@@ -121,8 +134,13 @@ function ProsjekterPage() {
       description: p.description || null,
       start_date: p.start_date || null,
     };
+    // Bare feltene SmartDok ikke har, sendes for SmartDok-prosjekter. Da kan ikke
+    // en lagring her rulle tilbake noe synken nettopp har skrevet.
+    const endring = fraSmartDok
+      ? { description: payload.description, start_date: payload.start_date }
+      : payload;
     const { error } = p.id
-      ? await supabase.from("projects").update(payload).eq("id", p.id)
+      ? await supabase.from("projects").update(endring).eq("id", p.id)
       : await supabase.from("projects").insert({ ...payload, tenant_id: tenantId });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -130,6 +148,8 @@ function ProsjekterPage() {
     setOpen(false);
     setEdit(null);
     qc.invalidateQueries({ queryKey: ["projects"] });
+    // Prosjektvelgeren i tilbud og endringsmeldinger har sin egen kopi av lista.
+    qc.invalidateQueries({ queryKey: ["projects-simple"] });
   };
 
   const openNew = () => { setEdit(emptyProject()); setOpen(true); };
@@ -156,10 +176,22 @@ function ProsjekterPage() {
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Prosjekter</h1>
           <p className="mt-1 text-sm text-muted-foreground">{rows.length} prosjekter</p>
         </div>
-        <Button onClick={openNew}>
-          <Plus className="mr-2 h-4 w-4" />Nytt prosjekt
-        </Button>
+        {!fraSmartDok && (
+          <Button onClick={openNew}>
+            <Plus className="mr-2 h-4 w-4" />Nytt prosjekt
+          </Button>
+        )}
       </div>
+
+      {fraSmartDok && (
+        <div className="flex gap-3 rounded-lg border bg-muted/40 p-4 text-sm">
+          <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <p>
+            Prosjektene hentes fra SmartDok gjennom adminbordet. Nye prosjekter opprettes i SmartDok
+            eller under Prosjekter i adminbordet, og dukker opp her innen et kvarter.
+          </p>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
@@ -168,7 +200,8 @@ function ProsjekterPage() {
           <Input placeholder="Søk på navn, nummer, kunde…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
         </div>
         <div className="flex gap-1 rounded-lg border bg-muted/40 p-1">
-          {(["all", "aktiv", "fullført", "pause"] as const).map((s) => (
+          {/* Synken bruker bare aktiv og fullført, så «På vent» ville alltid stått tom. */}
+          {(fraSmartDok ? (["aktiv", "fullført", "all"] as const) : (["all", "aktiv", "fullført", "pause"] as const)).map((s) => (
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
@@ -254,14 +287,19 @@ function ProsjekterPage() {
           </DialogHeader>
           {edit && (
             <div className="space-y-4">
+              {fraSmartDok && (
+                <p className="text-sm text-muted-foreground">
+                  Navn, nummer, kunde og status hentes fra SmartDok og endres der.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2 space-y-1">
                   <Label>Prosjektnavn *</Label>
-                  <Input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="F.eks. Veiarbeid Fv44" />
+                  <Input value={edit.name} disabled={fraSmartDok} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="F.eks. Veiarbeid Fv44" />
                 </div>
                 <div className="space-y-1">
                   <Label>Prosjektnummer</Label>
-                  <Input value={edit.project_number} onChange={(e) => setEdit({ ...edit, project_number: e.target.value })} placeholder="F.eks. 2026-001" />
+                  <Input value={edit.project_number} disabled={fraSmartDok} onChange={(e) => setEdit({ ...edit, project_number: e.target.value })} placeholder="F.eks. 2026-001" />
                 </div>
                 <div className="space-y-1">
                   <Label>Startdato</Label>
@@ -269,29 +307,38 @@ function ProsjekterPage() {
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <Label>Kunde</Label>
-                <Select value={edit.customer_id ?? "__none"} onValueChange={pickCustomer}>
-                  <SelectTrigger><SelectValue placeholder="Velg kunde…" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">— Ingen / manuell —</SelectItem>
-                    {(customers ?? []).map((c: any) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {!edit.customer_id && (
+              {fraSmartDok ? (
                 <div className="space-y-1">
-                  <Label>Kundenavn (manuelt)</Label>
-                  <Input value={edit.customer_name} onChange={(e) => setEdit({ ...edit, customer_name: e.target.value })} placeholder="Navn på kunde…" />
+                  <Label>Kunde</Label>
+                  <Input value={edit.customer_name} disabled />
                 </div>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <Label>Kunde</Label>
+                    <Select value={edit.customer_id ?? "__none"} onValueChange={pickCustomer}>
+                      <SelectTrigger><SelectValue placeholder="Velg kunde…" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">— Ingen / manuell —</SelectItem>
+                        {(customers ?? []).map((c: any) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {!edit.customer_id && (
+                    <div className="space-y-1">
+                      <Label>Kundenavn (manuelt)</Label>
+                      <Input value={edit.customer_name} onChange={(e) => setEdit({ ...edit, customer_name: e.target.value })} placeholder="Navn på kunde…" />
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="space-y-1">
                 <Label>Status</Label>
-                <Select value={edit.status} onValueChange={(v) => setEdit({ ...edit, status: v as Status })}>
+                <Select value={edit.status} disabled={fraSmartDok} onValueChange={(v) => setEdit({ ...edit, status: v as Status })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="aktiv">Aktiv</SelectItem>

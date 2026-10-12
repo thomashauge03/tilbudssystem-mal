@@ -553,7 +553,6 @@ const PDF_REFLOW_SCRIPT = `(function() {
   var PX_MM = 96 / 25.4;
   var PAGE_MM = 297;
   var BUFFER_MM = 44; // sikkerhetsmarginen (skjerm-px vs utskrift-mm er ikke eksakt)
-  var SPLIT_BUFFER_MM = 16; // luft i bunnen før vi flytter rader til ny side
 
   function mm(el) { return el ? el.getBoundingClientRect().height / PX_MM : 0; }
 
@@ -808,24 +807,34 @@ const PDF_REFLOW_SCRIPT = `(function() {
 
     linePages.forEach(function(p) { p.querySelector('tbody').innerHTML = ''; });
 
-    // bodyContentMm teller ikke med summer-blokken, så den må trekkes fra plassen
-    function availFor(page) {
-      return PAGE_MM
-        - mm(page.querySelector('.masthead, .cont-header'))
-        - mm(page.querySelector('footer'))
-        - mm(page.querySelector('.bottom-push'))
-        - SPLIT_BUFFER_MM;
-    }
-
+    // Plassen måles med overflows(), som tekstsidene. Før ble høydene til barna i
+    // .body summert (bodyContentMm) mot en fast buffer på 16 mm, men summen tar
+    // ikke med margene: 8 mm under tabellen, 4 px rundt overføringsradene, 4 mm
+    // øverst i .body og 10 mm i bunnen ved utskrift. Det er rundt 24 mm, så en full
+    // side rant opptil 8 mm forbi arket, og «Overføres til neste side» havnet alene
+    // på et eget ark — ett ark mer enn sidetallet i toppteksten sa.
     var tpl = document.getElementById('cont-page-tpl');
     var current = linePages[0];
     var used = [current];
 
-    allRows.forEach(function(row) {
+    // Siden som får den siste raden, er den siste linjesiden, og der skjuler
+    // recalcCarries «Overføres til neste side». Den siste raden måles derfor uten
+    // den raden, ellers kan den alene havne på et eget ark.
+    function rennerOver(page, sisteRad) {
+      var cout = sisteRad && page.querySelector('.carry-out');
+      if (!cout) return overflows(page);
+      var display = cout.style.display;
+      cout.style.display = 'none';
+      var renner = overflows(page);
+      cout.style.display = display;
+      return renner;
+    }
+
+    allRows.forEach(function(row, i) {
       var tb = current.querySelector('tbody');
       tb.appendChild(row);
       // Passer den ikke, åpne ny side — men aldri legg igjen en tom side
-      if (bodyContentMm(current) > availFor(current) && tb.querySelectorAll('tr[data-sum]').length > 1) {
+      if (rennerOver(current, i === allRows.length - 1) && tb.querySelectorAll('tr[data-sum]').length > 1) {
         tb.removeChild(row);
         // En overskrift skal ikke bli stående alene nederst mens bolken sin
         // flytter videre. Da ville siden sluttet med «GRUNNARBEID» og ingenting
@@ -856,7 +865,7 @@ const PDF_REFLOW_SCRIPT = `(function() {
       placeBottom(lastPage);
       // Summene tar plass — skyv rader videre om siden nå renner over
       var tb = lastPage.querySelector('tbody');
-      while (tb.querySelectorAll('tr[data-sum]').length > 1 && bodyContentMm(lastPage) > availFor(lastPage)) {
+      while (tb.querySelectorAll('tr[data-sum]').length > 1 && overflows(lastPage)) {
         var rows = tb.querySelectorAll('tr[data-sum]');
         var np = tpl.content.firstElementChild.cloneNode(true);
         np.querySelector('tbody').innerHTML = '';

@@ -201,7 +201,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
       }
       qc.invalidateQueries({ queryKey: ["calculations"] });
       qc.invalidateQueries({ queryKey: ["calculation", id] });
-      toast.success("Kalkylen er lagret");
+      toast.success("Kalkylen er lagret", { id: "kalkyle-lagret" });
       if (!calculationId) navigate({ to: "/kalkyle/$id", params: { id: id! }, replace: true });
       return id!;
     } catch (e) {
@@ -211,6 +211,18 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
       lagrerRef.current = false;
       setLagrer(false);
     }
+  };
+
+  // «Legg til i tilbud» lagrer kalkylen først, så den ikke går tapt. En ny
+  // kalkyle navigerer til /kalkyle/$id når den er lagret, og dette skjemaet
+  // forsvinner. Da åpnes ikke dialogen her, brukeren trykker en gang til.
+  const lagreForTilbud = async () => {
+    if (!(await lagre())) return false;
+    if (!calculationId) {
+      toast.success("Kalkylen er lagret – trykk Legg til i tilbud igjen", { id: "kalkyle-lagret" });
+      return false;
+    }
+    return true;
   };
 
   if (lastFeil && !klar) return <p className="text-destructive">Kunne ikke hente kalkylen: {(lastFeil as Error).message}</p>;
@@ -319,7 +331,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
           >
             <FileDown className="mr-1 h-4 w-4" />PDF
           </Button>
-          <KalkyleTilTilbud data={{ navn: hode.name.trim() || "Kalkyle", markup_pct: Number(hode.markup_pct || 0), linjer }} />
+          <KalkyleTilTilbud data={{ navn: hode.name.trim() || "Kalkyle", markup_pct: Number(hode.markup_pct || 0), linjer }} forOpen={lagreForTilbud} />
           <Button onClick={() => lagre()} disabled={lagrer || !tenantId}><Save className="mr-1 h-4 w-4" />Lagre</Button>
         </div>
       </div>

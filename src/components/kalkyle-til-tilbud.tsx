@@ -22,9 +22,14 @@ interface TilbudRad {
  * (se offer-form.tsx). Et ulagret utkast for samme tilbud ville ellers slettet
  * dem ved neste lagring, og et nytt tilbud trenger kunde fra kunderegisteret.
  */
-export function KalkyleTilTilbud({ data }: { data: KalkyleImport }) {
+export function KalkyleTilTilbud({ data, forOpen }: {
+  data: KalkyleImport;
+  /** Kalles når knappen trykkes. Dialogen åpnes bare når den gir true. */
+  forOpen?: () => Promise<boolean>;
+}) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [aapner, setAapner] = useState(false);
   const [sok, setSok] = useState("");
 
   const { data: tilbud, isLoading } = useQuery({
@@ -57,9 +62,21 @@ export function KalkyleTilTilbud({ data }: { data: KalkyleImport }) {
     else navigate({ to: "/tilbud/ny" });
   };
 
+  const aapne = async () => {
+    if (forOpen) {
+      setAapner(true);
+      try {
+        if (!(await forOpen())) return;
+      } finally {
+        setAapner(false);
+      }
+    }
+    setOpen(true);
+  };
+
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)} disabled={!data.linjer.length}>
+      <Button variant="outline" onClick={aapne} disabled={!data.linjer.length || aapner}>
         <Send className="mr-1 h-4 w-4" />Legg til i tilbud
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>

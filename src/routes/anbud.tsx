@@ -16,6 +16,7 @@ import { lagInnsikt } from "@/lib/anbud-innsikt";
 import { lagDuell, konkurrentliste } from "@/lib/anbud-duell";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
+import { ProsjektVelger } from "@/components/prosjekt-velger";
 
 export const Route = createFileRoute("/anbud")({ component: AnbudPage });
 
@@ -41,17 +42,6 @@ function AnbudPage() {
   const [q, setQ] = useState("");
   /** Hvilken konkurrent én-mot-én-grafen viser. Tomt = den mest møtte. */
   const [valgtKonkurrent, setValgtKonkurrent] = useState("");
-
-  const { data: projects } = useQuery({
-    queryKey: ["projects-simple", tenantId],
-    enabled: !!tenantId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("projects").select("id, name, project_number, status").eq("status", "aktiv").order("name");
-      if (error) throw error;
-      return data ?? [];
-    },
-  });
 
   const { data: tilbud } = useQuery({
     queryKey: ["offers-for-tender", tenantId],
@@ -1083,17 +1073,10 @@ function AnbudPage() {
               </div>
               <div className="space-y-2">
                 <Label>Prosjekt</Label>
-                <Select value={projectId} onValueChange={setProjectId}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">— Ikke knyttet —</SelectItem>
-                    {(projects ?? []).map((p: any) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}{p.project_number ? ` (#${p.project_number})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ProsjektVelger
+                  value={projectId === "__none" ? null : projectId}
+                  onChange={(p) => setProjectId(p?.id ?? "__none")}
+                />
               </div>
             </div>
 
@@ -1233,17 +1216,10 @@ function AnbudPage() {
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Prosjekt</Label>
-                      <Select value={redProsjekt} onValueChange={setRedProsjekt}>
-                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none">— Ikke knyttet —</SelectItem>
-                          {(projects ?? []).map((p: any) => (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.name}{p.project_number ? ` (#${p.project_number})` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <ProsjektVelger
+                        value={redProsjekt === "__none" ? null : redProsjekt}
+                        onChange={(p) => setRedProsjekt(p?.id ?? "__none")}
+                      />
                     </div>
                   </div>
 

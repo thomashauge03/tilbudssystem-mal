@@ -16,6 +16,8 @@ import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { Passordbekreftelse } from "@/components/passordbekreftelse";
+import { ProsjektVelger } from "@/components/prosjekt-velger";
+import type { Prosjektvalg } from "@/lib/prosjekter";
 
 interface ALine { id?: string; sort_order: number; description: string; quantity: number; unit: string; unit_price: number; is_heading?: boolean; }
 interface AState {
@@ -99,18 +101,6 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
       ]);
       if (a.error) throw a.error;
       return { amendment: a.data, lines: (l.data ?? []) as ALine[] };
-    },
-  });
-
-  const { data: projects } = useQuery({
-    queryKey: ["projects-simple"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("projects")
-        .select("id, name, project_number, status")
-        .eq("status", "aktiv")
-        .order("name");
-      return data ?? [];
     },
   });
 
@@ -483,15 +473,13 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
     toast.success("Registrert som avslått av kunden");
   };
 
-  const pickProject = (id: string) => {
+  const pickProject = (proj: Prosjektvalg | null) => {
     userEditedRef.current = true;
-    if (id === "__none") { setA((p) => ({ ...p, project_id: null, project_ref: "" })); return; }
-    const proj = (projects ?? []).find((x: any) => x.id === id);
-    if (!proj) return;
+    if (!proj) { setA((p) => ({ ...p, project_id: null, project_ref: "" })); return; }
     setA((p) => ({
       ...p,
       project_id: proj.id,
-      project_ref: proj.project_number ?? proj.name ?? "",
+      project_ref: proj.project_number || proj.name || "",
       customer_email: p.customer_email || "",
     }));
   };
@@ -1220,17 +1208,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
           </div>
           <div className="space-y-2">
             <Label>Knytt til prosjekt</Label>
-            <Select value={a.project_id ?? "__none"} onValueChange={pickProject}>
-              <SelectTrigger><SelectValue placeholder="Velg prosjekt…" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">— Ikke knyttet til prosjekt —</SelectItem>
-                {(projects ?? []).map((p: any) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}{p.project_number ? ` (#${p.project_number})` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ProsjektVelger value={a.project_id} onChange={pickProject} />
           </div>
           <div className="space-y-2">
             <Label>Prosjektreferanse *</Label>

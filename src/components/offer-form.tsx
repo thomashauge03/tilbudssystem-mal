@@ -21,6 +21,8 @@ import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { Passordbekreftelse } from "@/components/passordbekreftelse";
 import { kalkyleImportNokkel, kalkyleTilTilbudslinjer, type KalkyleImport } from "@/lib/kalkyle";
+import { ProsjektVelger } from "@/components/prosjekt-velger";
+import type { Prosjektvalg } from "@/lib/prosjekter";
 
 interface Line {
   id?: string;
@@ -123,18 +125,6 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     },
   });
 
-  const { data: projects } = useQuery({
-    queryKey: ["projects-simple"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("projects")
-        .select("id, name, project_number, customer_id, status")
-        .eq("status", "aktiv")
-        .order("name");
-      return data ?? [];
-    },
-  });
-
   const { data: loaded } = useQuery({
     queryKey: ["offer", offerId],
     enabled: isEdit,
@@ -182,7 +172,6 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const [lines, setLines] = useState<Line[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [forbeholdOpen, setForbeholdOpen] = useState(false);
-  const [projectOpen, setProjectOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
   const currentOfferIdRef = useRef<string | undefined>(offerId);
   const DRAFT_KEY = `offer-draft-${offerId ?? "new"}`;
@@ -309,20 +298,25 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (c) { set("customer_id", c.id); set("customer_name", c.name); set("customer_email", c.email ?? ""); }
   };
 
-  const pickProject = (id: string) => {
-    if (id === "__none") {
+  const pickProject = (proj: Prosjektvalg | null) => {
+    if (!proj) {
       setOffer((p) => ({ ...p, project_id: null, project_number: "" }));
       return;
     }
-    const proj = (projects ?? []).find((x: any) => x.id === id);
-    if (!proj) return;
     setOffer((p) => {
       const next = { ...p, project_id: proj.id, project_number: proj.project_number ?? "" };
-      if (!p.customer_id && proj.customer_id) {
-        const c = (customers ?? []).find((x) => x.id === proj.customer_id);
-        next.customer_id = proj.customer_id;
-        next.customer_name = c?.name ?? proj.customer_name ?? "";
-        next.customer_email = c?.email ?? "";
+      if (!p.customer_id) {
+        // Prosjektene fra SmartDok har bare kundenavnet, ikke en kobling til
+        // kunderegisteret, så kunden finnes ved å slå opp navnet der.
+        const navn = (proj.customer_name ?? "").trim().toLowerCase();
+        const c = proj.customer_id
+          ? (customers ?? []).find((x) => x.id === proj.customer_id)
+          : navn ? (customers ?? []).find((x) => x.name.trim().toLowerCase() === navn) : undefined;
+        if (c) {
+          next.customer_id = c.id;
+          next.customer_name = c.name;
+          next.customer_email = c.email ?? "";
+        }
       }
       return next;
     });
@@ -997,44 +991,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           </div>
           <div className="space-y-2">
             <Label>Prosjekt</Label>
-            <Popover open={projectOpen} onOpenChange={setProjectOpen}>
-              <PopoverTrigger asChild>
-                <button type="button" className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent/30 transition-colors">
-                  {(() => {
-                    const p = offer.project_id ? (projects ?? []).find((x: any) => x.id === offer.project_id) : null;
-                    return p ? (
-                      <span className="flex flex-1 items-center justify-between mr-2 min-w-0">
-                        <span className="truncate">{p.name}</span>
-                        {p.project_number && <span className="ml-3 flex-shrink-0 text-xs text-muted-foreground tabular-nums">#{p.project_number}</span>}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">— Ikke knyttet til prosjekt —</span>
-                    );
-                  })()}
-                  <ChevronsUpDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[320px] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Søk prosjekt…" />
-                  <CommandList>
-                    <CommandEmpty>Ingen prosjekter funnet.</CommandEmpty>
-                    <CommandGroup>
-                      <CommandItem value="__none" onSelect={() => { pickProject("__none"); setProjectOpen(false); }}>
-                        <span className="text-muted-foreground">— Ikke knyttet til prosjekt —</span>
-                      </CommandItem>
-                      {(projects ?? []).map((p: any) => (
-                        <CommandItem key={p.id} value={`${p.name} ${p.project_number ?? ""}`} onSelect={() => { pickProject(p.id); setProjectOpen(false); }}>
-                          <Check className={`mr-2 h-4 w-4 ${offer.project_id === p.id ? "opacity-100" : "opacity-0"}`} />
-                          <span className="flex-1">{p.name}</span>
-                          {p.project_number && <span className="ml-3 text-xs text-muted-foreground tabular-nums">#{p.project_number}</span>}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+            <ProsjektVelger value={offer.project_id} onChange={pickProject} />
           </div>
           <div className="space-y-2">
             <Label>Kunde</Label>

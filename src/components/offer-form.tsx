@@ -484,8 +484,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // Kode-kolonnen vises bare når minst én linje har kode, altså når linjer er
   // hentet fra en kalkyle. Tilbud uten koder ser ut som før.
   // Bevisst ikke `harKode` (PDF-en bruker den, og lagringen har samme regel om
-  // at tom kode ikke er kode): her teller også en
-  // tom streng, så kolonnen blir stående mens brukeren tømmer et kodefelt.
+  // at tom kode ikke er kode): her teller også en tom streng, så kolonnen blir
+  // stående mens brukeren tømmer et kodefelt.
   const visKode = lines.some((l) => !l.is_heading && l.ns_code != null);
 
   // Linjer fra en kalkyle (se kalkyle-til-tilbud.tsx). De legges inn her, etter

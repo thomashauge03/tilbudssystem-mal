@@ -20,6 +20,7 @@ import { planPeriode, ukeTekst } from "@/lib/fremdrift";
 import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { Passordbekreftelse } from "@/components/passordbekreftelse";
+import { kalkyleImportNokkel, kalkyleTilTilbudslinjer, type KalkyleImport } from "@/lib/kalkyle";
 
 interface Line {
   id?: string;
@@ -477,6 +478,33 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   // Kode-kolonnen vises bare når minst én linje har kode, altså når linjer er
   // hentet fra en kalkyle. Tilbud uten koder ser ut som før.
   const visKode = lines.some((l) => !l.is_heading && l.ns_code != null);
+
+  // Linjer fra en kalkyle (se kalkyle-til-tilbud.tsx). De legges inn her, etter
+  // at skjemaet og et eventuelt utkast er lastet, og ikke rett i basen: et
+  // ulagret utkast for samme tilbud ville ellers slettet dem ved neste lagring.
+  // Nøkkelen fjernes før noe annet, så linjene ikke legges inn to ganger når
+  // effekten kjøres på nytt.
+  useEffect(() => {
+    if (!initialized) return;
+    const key = kalkyleImportNokkel(offerId);
+    const raa = sessionStorage.getItem(key);
+    if (!raa) return;
+    sessionStorage.removeItem(key);
+    if (laast) {
+      toast.error("Tilbudet er signert. Linjene fra kalkylen ble ikke lagt inn.");
+      return;
+    }
+    let imp: KalkyleImport;
+    try { imp = JSON.parse(raa); } catch { return; }
+    const nye = kalkyleTilTilbudslinjer(imp.navn, imp.linjer, 0);
+    userEditedRef.current = true;
+    setLines((p) => [...p, ...nye.map((l, i) => ({ ...l, sort_order: p.length + i }))]);
+    if (!isEdit) {
+      setOffer((o) => ({ ...o, title: o.title.trim() ? o.title : imp.navn, admin_cost_pct: Number(imp.markup_pct || 0) }));
+    }
+    toast.success(`${nye.length} linjer lagt til fra kalkylen – trykk Lagre`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialized]);
 
   const [godkjennApen, setGodkjennApen] = useState(false);
   const [avslaaApen, setAvslaaApen] = useState(false);

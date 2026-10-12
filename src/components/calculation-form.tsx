@@ -13,6 +13,7 @@ import { lineNet, nok, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openCalculationPdf } from "@/lib/pdf";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
+import { KalkyleTilTilbud } from "@/components/kalkyle-til-tilbud";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -318,7 +319,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
           >
             <FileDown className="mr-1 h-4 w-4" />PDF
           </Button>
-          {/* TILBUD-KNAPP */}
+          <KalkyleTilTilbud data={{ navn: hode.name.trim() || "Kalkyle", markup_pct: Number(hode.markup_pct || 0), linjer }} />
           <Button onClick={() => lagre()} disabled={lagrer || !tenantId}><Save className="mr-1 h-4 w-4" />Lagre</Button>
         </div>
       </div>

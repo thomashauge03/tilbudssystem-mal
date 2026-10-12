@@ -27,14 +27,14 @@ interface KalkyleHode {
 /**
  * Tallfelt som holder teksten lokalt mens det har fokus, slik at «0» og «0,»
  * underveis i innskrivingen ikke blir blanket ut. Utenfor fokus vises verdien
- * (tom streng når den er 0).
+ * (tom streng når den er 0, eller «0» med `visNull`).
  */
 function TallFelt({
-  verdi, onEndre, ...inputProps
-}: { verdi: number; onEndre: (n: number) => void } & Omit<ComponentProps<typeof Input>, "value" | "onChange" | "type">) {
+  verdi, onEndre, visNull = false, ...inputProps
+}: { verdi: number; onEndre: (n: number) => void; visNull?: boolean } & Omit<ComponentProps<typeof Input>, "value" | "onChange" | "type">) {
   const [tekst, setTekst] = useState("");
   const [harFokus, setHarFokus] = useState(false);
-  const visning = verdi ? String(verdi) : "";
+  const visning = verdi || visNull ? String(verdi) : "";
   return (
     <Input
       {...inputProps}
@@ -226,7 +226,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
       <div className="grid gap-3 md:grid-cols-[2fr_2fr_1fr]">
         <div className="space-y-1.5"><Label>Navn</Label><Input value={hode.name} onChange={(e) => setHode({ ...hode, name: e.target.value })} placeholder="F.eks. VA Storgata" /></div>
         <div className="space-y-1.5"><Label>Kunde / prosjekt</Label><Input value={hode.customer_text} onChange={(e) => setHode({ ...hode, customer_text: e.target.value })} /></div>
-        <div className="space-y-1.5"><Label>Påslag %</Label><Input type="number" step="0.1" className="no-spinner text-right" value={hode.markup_pct} onChange={(e) => setHode({ ...hode, markup_pct: Number(e.target.value) })} onFocus={(e) => e.target.select()} /></div>
+        <div className="space-y-1.5"><Label>Påslag %</Label><TallFelt visNull verdi={hode.markup_pct} onEndre={(n) => setHode((h) => ({ ...h, markup_pct: n }))} /></div>
       </div>
 
       <div className="relative max-w-xl">

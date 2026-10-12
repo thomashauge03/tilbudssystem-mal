@@ -104,7 +104,7 @@ Ruter (filbaserte, `src/routes/`):
 ### Regnearket
 - Øverst: navn, kunde/prosjekt og påslag i %.
 - Kodesøket er et felt som søker i kode og tittel blant aktive koder. Treff vises gruppert på del. Et klikk eller Enter legger til en linje med kode, tittel, enhet og enhetspris, og flytter fokus til mengdefeltet.
-- Tabellen har kolonnene Kode, Beskrivelse, Mengde, Enhet, Enhetspris og Sum. Alt kan redigeres. Linjer kan dras for å endre rekkefølge og slettes. «Legg til overskrift» og «Legg til fritekstlinje» finnes som knapper.
+- Tabellen har kolonnene Kode, Beskrivelse, Mengde, Enhet, Enhetspris og Sum. Alt kan redigeres. Linjer flyttes med pil opp/ned og kan slettes. «Legg til overskrift» og «Legg til fritekstlinje» finnes som knapper.
 - Mobil: kort per linje, som i tilbudsskjemaet.
 - Bunnen viser sum, påslag, sum eks. mva, mva (`app_settings.vat_pct`) og total inkl. mva.
 - Knapper: Lagre, PDF og «Legg til i tilbud».
@@ -138,22 +138,28 @@ Overføringen (ren funksjon `kalkyleTilTilbudslinjer` i `src/lib/kalkyle.ts`, te
 - Først legges det inn én overskriftslinje med kalkylens navn. Deretter følger kalkylelinjene i samme rekkefølge, sist i tilbudet.
 - Feltene kopieres: `ns_code`, `description`, `unit`, `quantity`, `unit_price`, `is_heading`. `discount_pct` = 0 og `included` = true.
 - Prisene overføres **uten** kalkylepåslaget. Tilbudet bruker sin egen adm.kost (`admin_cost_pct`), så påslaget blir ikke regnet to ganger.
-- Nytt tilbud: tilbudet opprettes med `admin_cost_pct` = kalkylens `markup_pct` og `customer_name` = kalkylens kunde/prosjekt. Deretter åpnes `/tilbud/$id`.
-- Eksisterende tilbud: linjene settes inn med `sort_order` etter den høyeste som finnes. Deretter åpnes `/tilbud/$id`, og en toast viser hvor mange linjer som ble lagt til.
-- Hvis tilbudet blir signert mellom dialogen og lagringen, sjekkes `customer_signed_at` på nytt rett før innsettingen. Er tilbudet signert, avbrytes overføringen med en feilmelding.
+Overføringen går gjennom tilbudsskjemaet og skriver ikke rett i `offer_lines`. Det er to grunner til det:
+- Skjemaet holder ulagrede endringer som utkast i `sessionStorage` (`offer-draft-<id>`). Linjer som ble skrevet rett i basen, ville blitt slettet ved neste lagring av et slikt utkast.
+- Et nytt tilbud krever kunde fra kunderegisteret, og det skal velges i skjemaet.
+
+Slik virker det:
+- Kalkylen legger linjene i `sessionStorage` under `kalkyle-import-<tilbud-id | "new">` og åpner `/tilbud/$id` eller `/tilbud/ny`.
+- Når skjemaet er ferdig lastet (eventuelt med gjenopprettet utkast), leser det nøkkelen, sletter den og legger linjene sist. Skjemaet merkes som endret, og en toast sier «N linjer lagt til fra kalkylen – trykk Lagre».
+- Nytt tilbud: overskriften (`title`) settes til kalkylens navn hvis den er tom, og `admin_cost_pct` settes til kalkylens `markup_pct`. Kunde velges som vanlig.
+- Er tilbudet signert (`laast`) når skjemaet åpnes, legges ingenting inn, og det vises en feilmelding.
 
 Ingen kobling lagres mellom kalkyle og tilbud. Kalkylen kan overføres flere ganger.
 
 ## NS-kode i tilbudet
 
-- `offer-form.tsx`: `Line` får `ns_code`. Tabellen på skrivebord får en smal «Kode»-kolonne foran Beskrivelse. Den kan redigeres og vises bare når minst én linje har kode eller brukeren slår den på. Mobilkortene viser koden foran beskrivelsen.
+- `offer-form.tsx`: `Line` får `ns_code`. Tabellen på skrivebord får en smal «Kode»-kolonne foran Beskrivelse. Den kan redigeres og vises bare når minst én linje har kode. Mobilkortene viser kodefeltet når linjen har kode.
 - Lagring av tilbudet tar med `ns_code`.
-- `src/lib/pdf.ts`: `OfferLine` får `ns_code`. Tilbuds- og kontrakts-PDF-en får kolonnen «Kode» bare når minst én linje har kode.
+- `src/lib/pdf.ts`: `OfferLine` får `ns_code`. Tilbuds-PDF-en får kolonnen «Kode» bare når minst én linje har kode. Kontrakts-PDF-en viser ikke linjer og berøres ikke.
 - RPC `get_offer_pdf_by_token` (siste definisjon i `20261007000003_kundens_pdf_som_i_appen.sql`) gjenopprettes i den nye migrasjonen med `ns_code` i linjelisten. Da ser kunden det samme på signeringssiden. Endringsmeldingene berøres ikke.
 
 ## PDF av kalkylen
 
-`openCalculationPdf` i `src/lib/pdf.ts`, med samme mønster som `openOfferPdf`: HTML i et popup-vindu og `window.print()`. Popupen åpnes inne i klikkhandleren.
+`openCalculationPdf` i `src/lib/pdf.ts` bygger HTML og skriver den ut med `openPrintPdf`. Den får en valgfri `targetWin`, slik at popupen kan åpnes inne i klikkhandleren.
 - Toppen har logo og firmainfo fra innstillingene, kalkylens navn, kunde/prosjekt og dato.
 - Tabellen har kolonnene Kode, Beskrivelse, Mengde, Enhet, Enhetspris og Sum. Overskrifter vises som gruppetitler med delsum.
 - Bunnen viser sum, påslag, sum eks. mva, mva og total inkl. mva.
@@ -170,5 +176,5 @@ Ingen kobling lagres mellom kalkyle og tilbud. Kalkylen kan overføres flere gan
 - Nye tester i `src/lib/kalkyle.test.ts` (samme stil som `anbud.test.ts`, legges til i `bun run test`):
   - beregning med og uten overskrifter, påslag og mva
   - `kalkyleTilTilbudslinjer`: overskrift først, rekkefølge, ingen påslag i prisene og `sort_order` etter eksisterende linjer
-- Migrasjonen kjøres mot basen. Etterpå sjekkes det via PostgREST med service-role-nøkkelen at startpakken er lagt inn for hver tenant, og at `get_offer_pdf_by_token` returnerer `ns_code`.
+- Migrasjonen limes inn i SQL Editor av brukeren, fordi management-tokenet er utløpt. Etterpå sjekkes det via PostgREST med service-role-nøkkelen at startpakken er lagt inn for hver tenant, og at `get_offer_pdf_by_token` returnerer `ns_code`.
 - Sidene sjekkes i forhåndsvisningen: `?tsr-split=component` og bygging uten feil (`bun run build`), siden panelet er utlogget lokalt.

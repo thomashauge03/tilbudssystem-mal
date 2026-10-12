@@ -509,6 +509,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       setOffer((o) => ({ ...o, title: o.title.trim() ? o.title : imp.navn, admin_cost_pct: Number(imp.markup_pct || 0) }));
     }
     toast.success(`${nye.length} linjer lagt til fra kalkylen – trykk Lagre`);
+  // Effekten skal kjøre bare én gang, når skjemaet er ferdig lastet.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialized]);
 

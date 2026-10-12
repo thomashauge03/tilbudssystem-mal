@@ -11,6 +11,7 @@ import {
   linjeFraKode,
   kalkyleTilTilbudslinjer,
   kalkyleImportNokkel,
+  harKode,
   type KalkyleLinje,
   type NsKode,
 } from "./kalkyle.ts";
@@ -110,6 +111,13 @@ console.log("\n--- 6. Importnøkkel ---");
 
 sjekk("nøkkel for nytt tilbud", kalkyleImportNokkel(), "kalkyle-import-new");
 sjekk("nøkkel for eksisterende", kalkyleImportNokkel("abc"), "kalkyle-import-abc");
+
+console.log("\n--- 7. harKode ---");
+
+sjekk("overskrift med kode har ikke kode", harKode({ is_heading: true, ns_code: "FD2.13" }), false);
+sjekk("bare mellomrom er ingen kode", harKode({ ns_code: "  " }), false);
+sjekk("vanlig kode", harKode({ ns_code: "FD2.13" }), true);
+sjekk("null er ingen kode", harKode({ ns_code: null }), false);
 
 console.log(`\n${ok} ok, ${feil} feil`);
 if (feil) process.exit(1);

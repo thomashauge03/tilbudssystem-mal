@@ -112,6 +112,10 @@ export const tomLinje = (enhet: string): KalkyleLinje =>
 export const tomOverskrift = (): KalkyleLinje =>
   ({ ns_code: null, description: "", unit: "", quantity: 0, unit_price: 0, is_heading: true });
 
+/** Har linjen en kode som skal vises? Overskrifter og tomme koder teller ikke. */
+export const harKode = (l: { is_heading?: boolean | null; ns_code?: string | null }) =>
+  !l.is_heading && !!l.ns_code?.trim();
+
 /** Samme form som `Line` i offer-form.tsx, pluss ns_code. */
 export interface TilbudslinjeFraKalkyle {
   sort_order: number;

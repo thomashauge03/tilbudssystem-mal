@@ -1,5 +1,5 @@
 import { offerHasDeadline, escapeHtml, lineNet } from "@/lib/format";
-import { beregnKalkyle, grupperKalkyle, type KalkyleLinje } from "@/lib/kalkyle";
+import { beregnKalkyle, grupperKalkyle, harKode, type KalkyleLinje } from "@/lib/kalkyle";
 
 export { escapeHtml };
 
@@ -940,7 +940,7 @@ export function openOfferPdf(
   const included = lines.filter((l) => l.included);
   // Kode-kolonnen kommer bare med når tilbudet har NS-koder, så tilbud uten
   // koder ser ut akkurat som før.
-  const visKode = included.some((l) => !l.is_heading && !!l.ns_code);
+  const visKode = included.some(harKode);
   const kolonner = visKode ? 7 : 6;
   const vat = totals.total * (settings.vat_pct / 100);
   const totalInclVat = totals.total + vat;

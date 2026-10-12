@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -22,6 +22,36 @@ interface KalkyleHode {
   markup_pct: number;
 }
 
+/**
+ * Tallfelt som holder teksten lokalt mens det har fokus, slik at «0» og «0,»
+ * underveis i innskrivingen ikke blir blanket ut. Utenfor fokus vises verdien
+ * (tom streng når den er 0).
+ */
+function TallFelt({
+  verdi, onEndre, ...inputProps
+}: { verdi: number; onEndre: (n: number) => void } & Omit<ComponentProps<typeof Input>, "value" | "onChange" | "type">) {
+  const [tekst, setTekst] = useState("");
+  const [harFokus, setHarFokus] = useState(false);
+  const visning = verdi ? String(verdi) : "";
+  return (
+    <Input
+      {...inputProps}
+      type="number"
+      step="any"
+      className="no-spinner text-right"
+      value={harFokus ? tekst : visning}
+      onFocus={(e) => { setTekst(visning); setHarFokus(true); e.target.select(); }}
+      onBlur={() => setHarFokus(false)}
+      onChange={(e) => {
+        setTekst(e.target.value);
+        // Ufullstendig innskriving (f.eks. «-» eller «1e») gir badInput: vent til tallet er gyldig
+        if (e.target.validity.badInput) return;
+        onEndre(Number(e.target.value) || 0);
+      }}
+    />
+  );
+}
+
 export function CalculationForm({ calculationId }: { calculationId?: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -35,6 +65,8 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
   const [klar, setKlar] = useState(false);
   const [lagrer, setLagrer] = useState(false);
   const lagrerRef = useRef(false);
+  // Id til en ny kalkyle som er opprettet, men der lagringen av postene feilet
+  const opprettetIdRef = useRef<string | null>(null);
   const [sok, setSok] = useState("");
   const [fokus, setFokus] = useState<number | null>(null);
 
@@ -134,7 +166,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
         markup_pct: Number(hode.markup_pct || 0),
         updated_at: new Date().toISOString(),
       };
-      let id = calculationId;
+      let id = calculationId ?? opprettetIdRef.current ?? undefined;
       if (id) {
         const { error } = await db.from("calculations").update(payload).eq("id", id);
         if (error) { toast.error(error.message); return null; }
@@ -146,6 +178,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
         const { data, error } = await db.from("calculations").insert({ ...payload, tenant_id: tenantId }).select("id").single();
         if (error) { toast.error(error.message); return null; }
         id = data.id as string;
+        opprettetIdRef.current = id;
       }
       if (linjer.length) {
         const { error } = await db.from("calculation_lines").insert(linjer.map((l, idx) => ({
@@ -159,20 +192,26 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
           unit_price: l.is_heading ? 0 : Number(l.unit_price || 0),
           is_heading: !!l.is_heading,
         })));
-        if (error) { toast.error(error.message); return null; }
+        if (error) {
+          toast.error(calculationId ? error.message : `Kalkylen er opprettet uten poster (${error.message}). Trykk Lagre for å prøve igjen.`);
+          return null;
+        }
       }
       qc.invalidateQueries({ queryKey: ["calculations"] });
       qc.invalidateQueries({ queryKey: ["calculation", id] });
       toast.success("Kalkylen er lagret");
       if (!calculationId) navigate({ to: "/kalkyle/$id", params: { id: id! }, replace: true });
       return id!;
+    } catch (e) {
+      toast.error((e as Error).message);
+      return null;
     } finally {
       lagrerRef.current = false;
       setLagrer(false);
     }
   };
 
-  if (lastFeil) return <p className="text-destructive">Kunne ikke hente kalkylen: {(lastFeil as Error).message}</p>;
+  if (lastFeil && !klar) return <p className="text-destructive">Kunne ikke hente kalkylen: {(lastFeil as Error).message}</p>;
   if (!klar) return <div className="text-muted-foreground">Laster…</div>;
 
   return (
@@ -239,9 +278,9 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
             <div key={i} className={`grid grid-cols-2 items-center gap-2 rounded border px-2 py-1.5 md:grid-cols-[7rem_1fr_6rem_5rem_8rem_8rem_6rem] ${null0 ? "border-amber-400" : ""}`}>
               <Input className="font-mono" value={l.ns_code ?? ""} onChange={(e) => oppdater(i, { ns_code: e.target.value })} placeholder="Kode" />
               <Input className="col-span-2 md:col-span-1" value={l.description} onChange={(e) => oppdater(i, { description: e.target.value })} placeholder="Beskrivelse" />
-              <Input data-mengde={i} type="number" step="any" className="no-spinner text-right" value={l.quantity || ""} placeholder="Mengde" onChange={(e) => oppdater(i, { quantity: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+              <TallFelt data-mengde={i} verdi={l.quantity} onEndre={(n) => oppdater(i, { quantity: n })} placeholder="Mengde" />
               <Input list="kalkyle-enheter" value={l.unit} onChange={(e) => oppdater(i, { unit: e.target.value })} placeholder="Enhet" />
-              <Input type="number" step="any" className="no-spinner text-right" value={l.unit_price || ""} placeholder="Enhetspris" onChange={(e) => oppdater(i, { unit_price: Number(e.target.value) })} onFocus={(e) => e.target.select()} />
+              <TallFelt verdi={l.unit_price} onEndre={(n) => oppdater(i, { unit_price: n })} placeholder="Enhetspris" />
               <span className="text-right font-medium tabular-nums">{nok(lineNet(l))}</span>
               {pil}
             </div>
@@ -265,7 +304,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
         <div className="mx-auto flex max-w-6xl flex-wrap justify-end gap-2">
           {/* PDF-KNAPP */}
           {/* TILBUD-KNAPP */}
-          <Button onClick={() => lagre()} disabled={lagrer}><Save className="mr-1 h-4 w-4" />Lagre</Button>
+          <Button onClick={() => lagre()} disabled={lagrer || !tenantId}><Save className="mr-1 h-4 w-4" />Lagre</Button>
         </div>
       </div>
     </div>

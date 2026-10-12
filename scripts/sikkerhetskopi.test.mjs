@@ -332,6 +332,9 @@ const DATA = {
   projects: [{ id: "prosjekt-1", name: "Testprosjekt 😀" }],
   tenders: [],
   tender_bids: [],
+  calculations: [{ id: "kalkyle-1", tenant_id: TENANT, name: "Oppdiktet kalkyle" }],
+  calculation_lines: [{ id: "kalkylelinje-1", tenant_id: TENANT, calculation_id: "kalkyle-1", ns_code: "FD2.13" }],
+  ns_codes: [{ id: "kode-1", tenant_id: TENANT, code: "FD2.13", title: "Grøftegraving" }],
   sms_inbox: [{ id: "sms-1", body: "Ja takk, oppdiktet svar" }],
   app_settings: [{ id: "innst-1", tenant_id: TENANT, sms_token: "TESTTOKEN-ikke-ekte-0000" }],
   tenants: [{ id: TENANT, name: "Testfirma AS" }],
@@ -621,7 +624,8 @@ try {
     "2026-08-19_151047",
     "2026-08-19_151047.kryptert",
   ]);
-  sjekk("klartekstmappa står urørt", readdirSync(gammel).length, 16);
+  // Alle tabellene unntatt sms_inbox, pluss _oversikt.json.
+  sjekk("klartekstmappa står urørt", readdirSync(gammel).length, Object.keys(DATA).length);
   const konvertert = await lesKopi("2026-08-19_151047.kryptert");
   sjekk("--fra-mappe: tidspunktet følger med", konvertert.tatt, "2026-08-19T13:10:47.000Z");
   sjekk("--fra-mappe: oversikten følger med", konvertert.oversikt, gammelOversikt);

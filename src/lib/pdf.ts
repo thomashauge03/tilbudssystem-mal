@@ -125,6 +125,8 @@ interface OfferLine {
   included: boolean;
   /** Overskrift i oppstillingen: bare tekst, over hele bredden, ingen tall. */
   is_heading?: boolean;
+  /** NS 3420-kode. Gir en Kode-kolonne i PDF-en når minst én linje har den. */
+  ns_code?: string | null;
 }
 
 interface OfferPdfData {
@@ -317,6 +319,9 @@ const PDF_STYLES = `  :root {
   .items col.c-price { width: 14%; }
   .items col.c-disc  { width: 8%; }
   .items col.c-sum   { width: 14%; }
+  .items col.c-code  { width: 10%; }
+  .items.med-kode col.c-desc { width: 40%; }
+  .items tbody td.code-cell { font-size: 9pt; color: var(--slate-600); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .items thead th {
     text-align: left; font-weight: 700; font-size: 7.5pt; letter-spacing: 0.16em;
     text-transform: uppercase; color: var(--slate-600); padding: 6px 8px 6px 0;
@@ -933,6 +938,10 @@ export function openOfferPdf(
   // Godkjent tilbud er aktivt — da har "gyldig t.o.m." ingen betydning
   const hasDeadline = offerHasDeadline(offer.status);
   const included = lines.filter((l) => l.included);
+  // Kode-kolonnen kommer bare med når tilbudet har NS-koder, så tilbud uten
+  // koder ser ut akkurat som før.
+  const visKode = included.some((l) => !l.is_heading && !!l.ns_code);
+  const kolonner = visKode ? 7 : 6;
   const vat = totals.total * (settings.vat_pct / 100);
   const totalInclVat = totals.total + vat;
   const now = new Date();
@@ -1002,7 +1011,7 @@ export function openOfferPdf(
       // tømmer tabellen og legger dem tilbake. En rad uten attributtet ble
       // samlet opp av ingen og lagt tilbake av ingen — overskriften forsvant
       // ut av det ferdige dokumentet, mens den sto fint i skjemaet.
-      return `<tr class="heading-row" data-sum="0"><td colspan="6">${escapeHtml(l.description)}</td></tr>`;
+      return `<tr class="heading-row" data-sum="0"><td colspan="${kolonner}">${escapeHtml(l.description)}</td></tr>`;
     }
     const gross = l.quantity * l.unit_price;
     const net = calcLineSum(l);
@@ -1017,6 +1026,7 @@ export function openOfferPdf(
       ? `<td class="num discount-cell">${fmtNum(l.discount_pct ?? 0)}&nbsp;%</td>`
       : `<td class="num discount-cell"></td>`;
     return `<tr data-sum="${net}">
+      ${visKode ? `<td class="code-cell">${escapeHtml(l.ns_code ?? "")}</td>` : ""}
       ${descCell}
       <td class="num">${fmtNum(l.quantity)}</td>
       <td class="num">${escapeHtml(l.unit)}</td>
@@ -1029,14 +1039,14 @@ export function openOfferPdf(
   function tableHtml(ls: OfferLine[]) {
     const rows = ls.length
       ? ls.map(lineRow).join("")
-      : `<tr><td colspan="6" style="text-align:center;color:#555;padding:14px 0">Ingen linjer</td></tr>`;
-    return `<table class="items">
+      : `<tr><td colspan="${kolonner}" style="text-align:center;color:#555;padding:14px 0">Ingen linjer</td></tr>`;
+    return `<table class="items${visKode ? " med-kode" : ""}">
       <colgroup>
-        <col class="c-desc"/><col class="c-qty"/><col class="c-unit"/>
+        ${visKode ? '<col class="c-code"/>' : ""}<col class="c-desc"/><col class="c-qty"/><col class="c-unit"/>
         <col class="c-price"/><col class="c-disc"/><col class="c-sum"/>
       </colgroup>
       <thead><tr>
-        <th>Beskrivelse</th>
+        ${visKode ? "<th>Kode</th>" : ""}<th>Beskrivelse</th>
         <th class="num">Antall</th>
         <th class="num">Enhet</th>
         <th class="num">Pris/enhet</th>

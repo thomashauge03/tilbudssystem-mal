@@ -27,6 +27,8 @@ interface Line {
   included: boolean;
   /** Overskrift i oppstillingen: bare tekst, ingen pris, ingen hake. */
   is_heading?: boolean;
+  /** NS 3420-kode fra kalkylen. null eller udefinert når linjen ikke har kode. */
+  ns_code?: string | null;
   description: string;
   comment: string;
   quantity: number;
@@ -404,6 +406,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         sort_order: idx,
         included: l.included,
         is_heading: !!l.is_heading,
+        ns_code: l.is_heading ? null : (l.ns_code?.trim() || null),
         description: l.description,
         comment: l.comment || null,
         quantity: Number(l.quantity || 0),
@@ -471,6 +474,9 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const laastOpp = laastOppTil ?? apenOpplasing ?? null;
   /** Signert OG ikke låst opp = linjene kan ikke røres. */
   const laast = isSigned && !laastOpp;
+  // Kode-kolonnen vises bare når minst én linje har kode, altså når linjer er
+  // hentet fra en kalkyle. Tilbud uten koder ser ut som før.
+  const visKode = lines.some((l) => !l.is_heading && l.ns_code != null);
 
   const [godkjennApen, setGodkjennApen] = useState(false);
   const [avslaaApen, setAvslaaApen] = useState(false);
@@ -1174,6 +1180,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                 <tr>
                   <th className="w-6 px-1 py-2"></th>
                   <th className="w-8 px-1 py-2"></th>
+                  {visKode && <th className="w-24 px-2 py-2 text-left">Kode</th>}
                   <th className="px-2 py-2 text-left">Beskrivelse</th>
                   <th className="w-20 px-2 py-2 text-right">Antall</th>
                   <th className="w-24 px-2 py-2">Enhet</th>
@@ -1185,7 +1192,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
               </thead>
               <tbody>
                 {lines.length === 0 ? (
-                  <tr><td colSpan={9} className="px-2 py-6 text-center text-muted-foreground">Ingen linjer. Klikk "Ny linje" for å starte.</td></tr>
+                  <tr><td colSpan={visKode ? 10 : 9} className="px-2 py-6 text-center text-muted-foreground">Ingen linjer. Klikk "Ny linje" for å starte.</td></tr>
                 ) : lines.map((l, i) => {
                   const isCustomUnit = !!l.unit && !units.includes(l.unit);
                   // Overskriften strekker seg over priskolonnene. Den har
@@ -1208,7 +1215,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                         >
                           <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />
                         </td>
-                        <td className="px-2 py-2" colSpan={7}>
+                        <td className="px-2 py-2" colSpan={visKode ? 8 : 7}>
                           <Input
                             readOnly={laast}
                             value={l.description}
@@ -1252,6 +1259,11 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                         <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />
                       </td>
                       <td className="px-1 pt-3"><Checkbox checked={l.included} onCheckedChange={(v) => updLine(i, { included: !!v })} /></td>
+                      {visKode && (
+                        <td className="px-2 py-2">
+                          <Input readOnly={laast} className="font-mono text-xs" value={l.ns_code ?? ""} onChange={(e) => updLine(i, { ns_code: e.target.value })} placeholder="Kode" />
+                        </td>
+                      )}
                       <td className="px-2 py-2">
                         <Input readOnly={laast} value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} placeholder="Beskrivelse" />
                         <Input
@@ -1360,6 +1372,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
                         <Button size="icon" variant="ghost" onClick={() => removeLine(i)} title="Slett linje"><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </div>
                     </div>
+                    {l.ns_code != null && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">NS-kode</Label>
+                        <Input readOnly={laast} className="font-mono" value={l.ns_code} onChange={(e) => updLine(i, { ns_code: e.target.value })} />
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                       <Label className="text-xs">Beskrivelse</Label>
                       <Input readOnly={laast} value={l.description} onChange={(e) => updLine(i, { description: e.target.value })} placeholder="Beskrivelse" />

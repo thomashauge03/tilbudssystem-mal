@@ -401,20 +401,26 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (lines.length) {
       if (!nullinjerAlleredeBekreftet && !bekreftNullinjer()) return null;
 
-      const linesInsert = lines.map((l, idx) => ({
-        offer_id: id!,
-        tenant_id: tenantId,
-        sort_order: idx,
-        included: l.included,
-        is_heading: !!l.is_heading,
-        ns_code: l.is_heading ? null : (l.ns_code?.trim() || null),
-        description: l.description,
-        comment: l.comment || null,
-        quantity: Number(l.quantity || 0),
-        unit: l.unit,
-        unit_price: Number(l.unit_price || 0),
-        discount_pct: Number(l.discount_pct || 0),
-      }));
+      // ns_code sendes bare på linjer som har kode, så tilbud uten koder kan
+      // lagres også mot en base der kolonnen ikke finnes ennå. supabase-js lager
+      // kolonnelista av alle nøklene samlet, så linjer uten nøkkelen får null.
+      const linesInsert = lines.map((l, idx) => {
+        const kode = l.is_heading ? null : (l.ns_code?.trim() || null);
+        return {
+          offer_id: id!,
+          tenant_id: tenantId,
+          sort_order: idx,
+          included: l.included,
+          is_heading: !!l.is_heading,
+          ...(kode ? { ns_code: kode } : {}),
+          description: l.description,
+          comment: l.comment || null,
+          quantity: Number(l.quantity || 0),
+          unit: l.unit,
+          unit_price: Number(l.unit_price || 0),
+          discount_pct: Number(l.discount_pct || 0),
+        };
+      });
       const { error } = await supabase.from("offer_lines").insert(linesInsert);
       if (error) { toast.error(error.message); return null; }
     }

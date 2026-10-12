@@ -16,6 +16,7 @@ import { useTheme, THEME_OPTIONS } from "@/hooks/use-theme";
 const BASE_LINKS = [
   { to: "/", label: "Dashboard", exact: true },
   { to: "/tilbud", label: "Tilbud" },
+  { to: "/kalkyle", label: "Kalkyle" },
   { to: "/ordre", label: "Ordre" },
   { to: "/endringsmeldinger", label: "Endringsmeldinger" },
   { to: "/fremdriftsplan", label: "Fremdriftsplan" },

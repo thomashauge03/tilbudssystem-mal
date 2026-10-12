@@ -23,12 +23,14 @@ import { Route as AdmkostRouteImport } from './routes/admkost'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TilbudIndexRouteImport } from './routes/tilbud.index'
+import { Route as KalkyleIndexRouteImport } from './routes/kalkyle.index'
 import { Route as FremdriftsplanIndexRouteImport } from './routes/fremdriftsplan.index'
 import { Route as EndringsmeldingerIndexRouteImport } from './routes/endringsmeldinger.index'
 import { Route as TilbudNyRouteImport } from './routes/tilbud.ny'
 import { Route as TilbudIdRouteImport } from './routes/tilbud.$id'
 import { Route as SignerTokenRouteImport } from './routes/signer.$token'
 import { Route as SignerEndringTokenRouteImport } from './routes/signer-endring.$token'
+import { Route as KalkyleKodebankRouteImport } from './routes/kalkyle.kodebank'
 import { Route as FremdriftsplanNyRouteImport } from './routes/fremdriftsplan.ny'
 import { Route as FremdriftsplanIdRouteImport } from './routes/fremdriftsplan.$id'
 import { Route as EndringsmeldingerNyRouteImport } from './routes/endringsmeldinger.ny'
@@ -104,6 +106,11 @@ const TilbudIndexRoute = TilbudIndexRouteImport.update({
   path: '/tilbud/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KalkyleIndexRoute = KalkyleIndexRouteImport.update({
+  id: '/kalkyle/',
+  path: '/kalkyle/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FremdriftsplanIndexRoute = FremdriftsplanIndexRouteImport.update({
   id: '/fremdriftsplan/',
   path: '/fremdriftsplan/',
@@ -132,6 +139,11 @@ const SignerTokenRoute = SignerTokenRouteImport.update({
 const SignerEndringTokenRoute = SignerEndringTokenRouteImport.update({
   id: '/signer-endring/$token',
   path: '/signer-endring/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KalkyleKodebankRoute = KalkyleKodebankRouteImport.update({
+  id: '/kalkyle/kodebank',
+  path: '/kalkyle/kodebank',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FremdriftsplanNyRoute = FremdriftsplanNyRouteImport.update({
@@ -173,12 +185,14 @@ export interface FileRoutesByFullPath {
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
   '/fremdriftsplan/$id': typeof FremdriftsplanIdRoute
   '/fremdriftsplan/ny': typeof FremdriftsplanNyRoute
+  '/kalkyle/kodebank': typeof KalkyleKodebankRoute
   '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
   '/endringsmeldinger/': typeof EndringsmeldingerIndexRoute
   '/fremdriftsplan/': typeof FremdriftsplanIndexRoute
+  '/kalkyle/': typeof KalkyleIndexRoute
   '/tilbud/': typeof TilbudIndexRoute
 }
 export interface FileRoutesByTo {
@@ -199,12 +213,14 @@ export interface FileRoutesByTo {
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
   '/fremdriftsplan/$id': typeof FremdriftsplanIdRoute
   '/fremdriftsplan/ny': typeof FremdriftsplanNyRoute
+  '/kalkyle/kodebank': typeof KalkyleKodebankRoute
   '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
   '/endringsmeldinger': typeof EndringsmeldingerIndexRoute
   '/fremdriftsplan': typeof FremdriftsplanIndexRoute
+  '/kalkyle': typeof KalkyleIndexRoute
   '/tilbud': typeof TilbudIndexRoute
 }
 export interface FileRoutesById {
@@ -226,12 +242,14 @@ export interface FileRoutesById {
   '/endringsmeldinger/ny': typeof EndringsmeldingerNyRoute
   '/fremdriftsplan/$id': typeof FremdriftsplanIdRoute
   '/fremdriftsplan/ny': typeof FremdriftsplanNyRoute
+  '/kalkyle/kodebank': typeof KalkyleKodebankRoute
   '/signer-endring/$token': typeof SignerEndringTokenRoute
   '/signer/$token': typeof SignerTokenRoute
   '/tilbud/$id': typeof TilbudIdRoute
   '/tilbud/ny': typeof TilbudNyRoute
   '/endringsmeldinger/': typeof EndringsmeldingerIndexRoute
   '/fremdriftsplan/': typeof FremdriftsplanIndexRoute
+  '/kalkyle/': typeof KalkyleIndexRoute
   '/tilbud/': typeof TilbudIndexRoute
 }
 export interface FileRouteTypes {
@@ -254,12 +272,14 @@ export interface FileRouteTypes {
     | '/endringsmeldinger/ny'
     | '/fremdriftsplan/$id'
     | '/fremdriftsplan/ny'
+    | '/kalkyle/kodebank'
     | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
     | '/endringsmeldinger/'
     | '/fremdriftsplan/'
+    | '/kalkyle/'
     | '/tilbud/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -280,12 +300,14 @@ export interface FileRouteTypes {
     | '/endringsmeldinger/ny'
     | '/fremdriftsplan/$id'
     | '/fremdriftsplan/ny'
+    | '/kalkyle/kodebank'
     | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
     | '/endringsmeldinger'
     | '/fremdriftsplan'
+    | '/kalkyle'
     | '/tilbud'
   id:
     | '__root__'
@@ -306,12 +328,14 @@ export interface FileRouteTypes {
     | '/endringsmeldinger/ny'
     | '/fremdriftsplan/$id'
     | '/fremdriftsplan/ny'
+    | '/kalkyle/kodebank'
     | '/signer-endring/$token'
     | '/signer/$token'
     | '/tilbud/$id'
     | '/tilbud/ny'
     | '/endringsmeldinger/'
     | '/fremdriftsplan/'
+    | '/kalkyle/'
     | '/tilbud/'
   fileRoutesById: FileRoutesById
 }
@@ -333,12 +357,14 @@ export interface RootRouteChildren {
   EndringsmeldingerNyRoute: typeof EndringsmeldingerNyRoute
   FremdriftsplanIdRoute: typeof FremdriftsplanIdRoute
   FremdriftsplanNyRoute: typeof FremdriftsplanNyRoute
+  KalkyleKodebankRoute: typeof KalkyleKodebankRoute
   SignerEndringTokenRoute: typeof SignerEndringTokenRoute
   SignerTokenRoute: typeof SignerTokenRoute
   TilbudIdRoute: typeof TilbudIdRoute
   TilbudNyRoute: typeof TilbudNyRoute
   EndringsmeldingerIndexRoute: typeof EndringsmeldingerIndexRoute
   FremdriftsplanIndexRoute: typeof FremdriftsplanIndexRoute
+  KalkyleIndexRoute: typeof KalkyleIndexRoute
   TilbudIndexRoute: typeof TilbudIndexRoute
 }
 
@@ -442,6 +468,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TilbudIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kalkyle/': {
+      id: '/kalkyle/'
+      path: '/kalkyle'
+      fullPath: '/kalkyle/'
+      preLoaderRoute: typeof KalkyleIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/fremdriftsplan/': {
       id: '/fremdriftsplan/'
       path: '/fremdriftsplan'
@@ -482,6 +515,13 @@ declare module '@tanstack/react-router' {
       path: '/signer-endring/$token'
       fullPath: '/signer-endring/$token'
       preLoaderRoute: typeof SignerEndringTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kalkyle/kodebank': {
+      id: '/kalkyle/kodebank'
+      path: '/kalkyle/kodebank'
+      fullPath: '/kalkyle/kodebank'
+      preLoaderRoute: typeof KalkyleKodebankRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/fremdriftsplan/ny': {
@@ -533,12 +573,14 @@ const rootRouteChildren: RootRouteChildren = {
   EndringsmeldingerNyRoute: EndringsmeldingerNyRoute,
   FremdriftsplanIdRoute: FremdriftsplanIdRoute,
   FremdriftsplanNyRoute: FremdriftsplanNyRoute,
+  KalkyleKodebankRoute: KalkyleKodebankRoute,
   SignerEndringTokenRoute: SignerEndringTokenRoute,
   SignerTokenRoute: SignerTokenRoute,
   TilbudIdRoute: TilbudIdRoute,
   TilbudNyRoute: TilbudNyRoute,
   EndringsmeldingerIndexRoute: EndringsmeldingerIndexRoute,
   FremdriftsplanIndexRoute: FremdriftsplanIndexRoute,
+  KalkyleIndexRoute: KalkyleIndexRoute,
   TilbudIndexRoute: TilbudIndexRoute,
 }
 export const routeTree = rootRouteImport

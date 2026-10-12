@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { AppNav } from "@/components/app-nav";
 import { useEffect } from "react";
+import { tryggNeste } from "@/lib/dyplenke";
 
 function NotFoundComponent() {
   return (
@@ -86,6 +87,7 @@ function NoTenantPage({ email, signOut }: { email: string; signOut: () => void }
 function AppShell() {
   const { user, loading, roleLoading, hasTenant, signOut, branding } = useAuth();
   const path = useRouterState({ select: (r) => r.location.pathname });
+  const searchStr = useRouterState({ select: (r) => r.location.searchStr });
   const isPublic = path === "/login" || path.startsWith("/signer");
 
   // Sett primærfarge basert på tenant-branding
@@ -146,7 +148,13 @@ function AppShell() {
     );
   }
 
-  if (!user && !isPublic) return <Navigate to="/login" />;
+  // Hele stien med query følger med til innloggingen, så en dyplenke fra
+  // Innboks (/tilbud/<id>, /anbud?sms=<id>) åpner saken etter innlogging i
+  // stedet for å ende på forsiden.
+  if (!user && !isPublic) {
+    const next = tryggNeste(path + searchStr);
+    return <Navigate to="/login" search={next && next !== "/" ? { next } : {}} />;
+  }
   if (isPublic) return <Outlet />;
 
   if (!hasTenant) {

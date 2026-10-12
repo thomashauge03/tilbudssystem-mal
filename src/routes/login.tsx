@@ -1,9 +1,15 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
+import { tryggNeste } from "@/lib/dyplenke";
 
 export const Route = createFileRoute("/login")({
+  // Siden du ble sendt hit fra. Valideres som en lokal sti, ellers ville
+  // innloggingen kunnet sende deg videre til et hvilket som helst nettsted.
+  validateSearch: (search: Record<string, unknown>): { next?: string } => ({
+    next: tryggNeste(search.next),
+  }),
   component: LoginPage,
 });
 
@@ -167,6 +173,8 @@ function LoadingDots() {
 function LoginPage() {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  const router = useRouter();
+  const { next } = Route.useSearch();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -180,7 +188,10 @@ function LoginPage() {
     setLoading(false);
     if (error) { toast.error(error); return; }
     toast.success(mode === "signup" ? "Konto opprettet" : "Innlogget");
-    navigate({ to: "/" });
+    // history.push tar stien med query som den er; to i navigate vil ha en
+    // kjent rute og ville mistet ?sms= og lignende.
+    if (next) router.history.push(next);
+    else navigate({ to: "/" });
   };
 
   return (

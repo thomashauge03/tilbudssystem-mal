@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,15 @@ import { lagDuell, konkurrentliste } from "@/lib/anbud-duell";
 import { useAppSettings } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { ProsjektVelger } from "@/components/prosjekt-velger";
+import { smsParam } from "@/lib/dyplenke";
 
-export const Route = createFileRoute("/anbud")({ component: AnbudPage });
+export const Route = createFileRoute("/anbud")({
+  // ?sms=<uuid> kommer fra Innboks og peker på én melding i sms_inbox.
+  validateSearch: (search: Record<string, unknown>): { sms?: string } => ({
+    sms: smsParam(search.sms),
+  }),
+  component: AnbudPage,
+});
 
 function AnbudPage() {
   const qc = useQueryClient();
@@ -77,7 +84,7 @@ function AnbudPage() {
   // men de andre kan hentes fram for å ryddes bort.
   const [visAlle, setVisAlle] = useState(false);
 
-  const { data: innboks } = useQuery({
+  const { data: innboks, isSuccess: innboksLastet, isError: innboksFeil } = useQuery({
     queryKey: ["sms-innboks", tenantId, visAlle],
     enabled: !!tenantId,
     queryFn: async () => {
@@ -100,6 +107,53 @@ function AnbudPage() {
     if (innboksId === id) setInnboksId(null);
     qc.invalidateQueries({ queryKey: ["sms-innboks"] });
   };
+
+  // ─── Dyplenke fra Innboks ───────────────────────────────────────────────
+  // /anbud?sms=<id> skal ende med meldingen synlig, markert og åpnet i
+  // innlimingsfeltet. En behandlet eller ignorert melding finnes bare i
+  // «Vis også behandlede», så vi bytter dit når den ikke er blant de nye.
+  // Bare lesing: lenken endrer aldri status på meldingen.
+  const { sms } = Route.useSearch();
+  const [markertSms, setMarkertSms] = useState<string | null>(null);
+  const [smsMangler, setSmsMangler] = useState(false);
+  // Hvilken lenke som er tatt hånd om. Uten den ville markeringen kommet
+  // tilbake hver gang lista hentes på nytt, for eksempel etter «Skjul».
+  const behandletSms = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!sms || behandletSms.current === sms) return;
+    if (innboksFeil) { behandletSms.current = sms; return; }
+    // Anbudslista og grafene over SMS-boksen må være på plass først. Ellers
+    // dytter de boksen nedover etter at vi har rullet til meldingen.
+    if (!innboksLastet || isLoading) return;
+
+    const m = (innboks ?? []).find((x: any) => x.id === sms);
+    if (!m) {
+      if (!visAlle) { setVisAlle(true); return; }
+      behandletSms.current = sms;
+      setSmsMangler(true);
+      return;
+    }
+
+    behandletSms.current = sms;
+    setSmsMangler(false);
+    setMarkertSms(m.id);
+    // Samme som «Se over», men bare hvis feltet er tomt: noe du alt holder
+    // på med skal ikke byttes ut uten at du ber om det.
+    if (!tekst.trim()) { setInnboksId(m.id); tolk(m.body); }
+
+    requestAnimationFrame(() => {
+      const rolig = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document.getElementById(`sms-${m.id}`)?.scrollIntoView({ block: "center", behavior: rolig ? "auto" : "smooth" });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sms, innboks, innboksLastet, innboksFeil, isLoading, visAlle]);
+
+  useEffect(() => {
+    if (!markertSms) return;
+    const t = window.setTimeout(() => setMarkertSms(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [markertSms]);
 
   const merkHandtert = async (id: string, tenderId: string | null) => {
     await supabase
@@ -825,6 +879,11 @@ function AnbudPage() {
             {visAlle ? "Vis bare nye" : "Vis også behandlede"}
           </button>
         </h2>
+        {smsMangler && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Fant ikke SMS-en fra lenken. Den kan være slettet.
+          </p>
+        )}
         {(innboks ?? []).length === 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">
             {visAlle
@@ -834,7 +893,11 @@ function AnbudPage() {
         ) : (
           <div className="mt-3 space-y-2">
             {(innboks ?? []).map((m: any) => (
-              <div key={m.id} className="flex items-start gap-3 rounded-lg border bg-card px-3 py-2">
+              <div
+                key={m.id}
+                id={`sms-${m.id}`}
+                className={`flex items-start gap-3 rounded-lg border px-3 py-2 motion-safe:transition-colors motion-safe:duration-500 ${markertSms === m.id ? "border-primary bg-primary/10 ring-2 ring-primary" : "bg-card"}`}
+              >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{m.body.split("\n")[0]}</p>
                   <p className="text-xs text-muted-foreground">

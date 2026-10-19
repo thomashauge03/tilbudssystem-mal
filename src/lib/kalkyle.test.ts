@@ -9,6 +9,8 @@ import {
   grupperKalkyle,
   sokKoder,
   linjeFraKode,
+  alleKoderSomLinjer,
+  utenTommePoster,
   kalkyleTilTilbudslinjer,
   kalkyleImportNokkel,
   harKode,
@@ -90,6 +92,23 @@ console.log("\n--- 4. Ny linje fra kode ---");
 sjekk("linje fra kode uten pris", linjeFraKode({ ...kode("FD2.13", "Grøftegraving, volum"), unit: "m³" }),
   { ns_code: "FD2.13", description: "Grøftegraving, volum", unit: "m³", quantity: 0, unit_price: 0 });
 sjekk("linje fra kode med pris", linjeFraKode({ ...kode("FD2.13", "Grøft"), unit_price: 245.5 }).unit_price, 245.5);
+
+console.log("\n--- 4b. Ny kalkyle med alle koder ---");
+
+sjekk("alle aktive koder, sortert", alleKoderSomLinjer(koder).map((l) => l.ns_code), ["FD2.1", "FD2.13", "FD2.2", "KD2.31"]);
+sjekk("kodebanken sorteres ikke om på stedet", koder.map((k) => k.code)[0], "FD2.2");
+sjekk("tom kodebank gir tom kalkyle", alleKoderSomLinjer([]), []);
+
+const luket = utenTommePoster([
+  overskrift("GRUNNARBEID"),
+  linje({ ns_code: "FD2.1", description: "Grøft", quantity: 0, unit_price: 100 }),
+  linje({ ns_code: "FD2.13", description: "Grøft, volum", quantity: 12 }),
+  linje({ ns_code: null, description: "Rigg og drift", quantity: 0, unit_price: 0 }),
+  linje({ ns_code: null, description: "  ", quantity: 0 }),
+  linje({ ns_code: "KD2.31", description: "Kantstein", quantity: -2 }),
+]);
+sjekk("luker bort koder uten mengde", luket.map((l) => l.ns_code ?? l.description),
+  ["GRUNNARBEID", "FD2.13", "Rigg og drift", "KD2.31"]);
 
 console.log("\n--- 5. Overføring til tilbud ---");
 

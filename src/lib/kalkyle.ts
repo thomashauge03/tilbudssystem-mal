@@ -106,6 +106,18 @@ export function linjeFraKode(k: NsKode): KalkyleLinje {
   return { ns_code: k.code, description: k.title, unit: k.unit, quantity: 0, unit_price: Number(k.unit_price ?? 0) };
 }
 
+/**
+ * Startlinjene i en ny kalkyle: alle aktive koder i kodebanken, sortert som i
+ * standarden. Brukeren luker bort det som ikke trengs i stedet for å søke opp
+ * hver kode.
+ */
+export const alleKoderSomLinjer = (koder: NsKode[]): KalkyleLinje[] =>
+  koder.filter((k) => k.active).sort(sammenlignKoder).map(linjeFraKode);
+
+/** Fjerner poster uten mengde. Overskrifter og fritekstlinjer med tekst blir stående. */
+export const utenTommePoster = (linjer: KalkyleLinje[]): KalkyleLinje[] =>
+  linjer.filter((l) => l.is_heading || Number(l.quantity || 0) !== 0 || (!l.ns_code?.trim() && !!l.description.trim()));
+
 export const tomLinje = (enhet: string): KalkyleLinje =>
   ({ ns_code: null, description: "", unit: enhet, quantity: 0, unit_price: 0 });
 

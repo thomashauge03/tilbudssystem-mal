@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowDown, ArrowUp, FileDown, Heading, Plus, Save, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowDown, ArrowUp, Eraser, FileDown, Heading, Plus, Save, Search, Trash2 } from "lucide-react";
 import { db } from "@/lib/kalkyle-db";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  beregnKalkyle, linjeFraKode, sammenlignKoder, sokKoder, tomLinje, tomOverskrift,
+  alleKoderSomLinjer, beregnKalkyle, linjeFraKode, sammenlignKoder, sokKoder, tomLinje, tomOverskrift, utenTommePoster,
   type KalkyleLinje, type NsKode,
 } from "@/lib/kalkyle";
 import { lineNet, nok, UNITS as FALLBACK_UNITS } from "@/lib/format";
@@ -82,7 +82,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
     },
   });
 
-  const { data: koder } = useQuery({
+  const { data: koder, isError: koderFeilet } = useQuery({
     queryKey: ["ns-codes"],
     queryFn: async () => {
       const { data, error } = await db.from("ns_codes").select("*");
@@ -107,8 +107,11 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
 
   useEffect(() => {
     if (klar) return;
-    if (!calculationId && adminCost !== undefined) {
+    // En ny kalkyle starter med hele kodebanken. Brukeren luker bort det som ikke trengs.
+    // Feiler kodebanken, starter den tom i stedet for å henge på «Laster…».
+    if (!calculationId && adminCost !== undefined && (koder || koderFeilet)) {
       setHode((h) => ({ ...h, markup_pct: adminCost }));
+      setLinjer(alleKoderSomLinjer(koder ?? []));
       setKlar(true);
     }
     if (calculationId && lastet) {
@@ -117,7 +120,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
       setLinjer(lastet.linjer.map((l) => ({ ...l, quantity: Number(l.quantity), unit_price: Number(l.unit_price) })));
       setKlar(true);
     }
-  }, [calculationId, adminCost, lastet, klar]);
+  }, [calculationId, adminCost, koder, koderFeilet, lastet, klar]);
 
   // Etter at en kode er lagt til, står markøren i mengdefeltet
   useEffect(() => {
@@ -128,6 +131,7 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
 
   const treff = useMemo(() => sokKoder(koder ?? [], sok), [koder, sok]);
   const summer = useMemo(() => beregnKalkyle(linjer, hode.markup_pct, vatPct), [linjer, hode.markup_pct, vatPct]);
+  const antallTomme = linjer.length - utenTommePoster(linjer).length;
 
   const leggTilKode = (k: NsKode) => {
     const i = linjer.length;
@@ -151,8 +155,11 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
   const bekreftNullinjer = () => {
     const mistenkelige = linjer.filter((l) => !l.is_heading && l.description.trim() && lineNet(l) === 0);
     if (!mistenkelige.length) return true;
-    const liste = mistenkelige.map((l) => `• ${l.ns_code ?? ""} ${l.description} — ${l.quantity} × ${l.unit_price}`).join("\n");
-    return window.confirm(`${mistenkelige.length} linje(r) summerer til 0 kr:\n\n${liste}\n\nLagre likevel?`);
+    // Med hele kodebanken i kalkylen kan det bli over hundre linjer. Vis de første.
+    const MAKS = 10;
+    const liste = mistenkelige.slice(0, MAKS).map((l) => `• ${l.ns_code ?? ""} ${l.description} — ${l.quantity} × ${l.unit_price}`).join("\n");
+    const resten = mistenkelige.length > MAKS ? `\n… og ${mistenkelige.length - MAKS} til` : "";
+    return window.confirm(`${mistenkelige.length} linje(r) summerer til 0 kr:\n\n${liste}${resten}\n\nKnappen «Fjern poster uten mengde» luker bort de tomme. Lagre likevel?`);
   };
 
   const lagre = async (): Promise<string | null> => {
@@ -303,6 +310,18 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => setLinjer((p) => [...p, tomOverskrift()])}><Heading className="mr-1 h-4 w-4" />Ny overskrift</Button>
           <Button size="sm" variant="outline" onClick={() => setLinjer((p) => [...p, tomLinje(units[0] ?? "")])}><Plus className="mr-1 h-4 w-4" />Fritekstlinje</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={antallTomme === 0}
+            onClick={() => {
+              setLinjer(utenTommePoster);
+              toast.success(`${antallTomme} poster uten mengde er fjernet`);
+            }}
+            title="Fjerner kodelinjer der mengden er 0. Overskrifter og fritekstlinjer blir stående."
+          >
+            <Eraser className="mr-1 h-4 w-4" />Fjern poster uten mengde{antallTomme ? ` (${antallTomme})` : ""}
+          </Button>
         </div>
       </div>
 

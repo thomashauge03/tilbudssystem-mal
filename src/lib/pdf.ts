@@ -1,5 +1,6 @@
 import { offerHasDeadline, escapeHtml, lineNet } from "@/lib/format";
 import { beregnKalkyle, grupperKalkyle, harKode, type KalkyleLinje } from "@/lib/kalkyle";
+import { ENDRINGSTYPER, type Endringstyper } from "@/lib/endringstyper";
 
 export { escapeHtml };
 
@@ -1697,7 +1698,7 @@ ${PDF_REFLOW_SCRIPT}
   win.document.close();
 }
 
-interface AmendmentPdfData {
+interface AmendmentPdfData extends Endringstyper {
   amendment_number: string;
   project_ref: string;
   internal_description: string;
@@ -1710,9 +1711,6 @@ interface AmendmentPdfData {
   project_manager_email?: string;
   customer_name?: string;
   customer_email: string;
-  is_mass_settlement: boolean;
-  is_additional_work: boolean;
-  is_price_increase: boolean;
   status?: string;
   customer_signed_at?: string | null;
   /** digital = signert via lenken; papir/muntlig/epost = godkjent manuelt av oss */
@@ -1852,11 +1850,7 @@ export function openAmendmentPdf(
     </table>`;
   }
 
-  const typeTags = [
-    amendment.is_mass_settlement ? "Masseavregning" : "",
-    amendment.is_additional_work ? "Tilleggsarbeid" : "",
-    amendment.is_price_increase ? "Prisstigning" : "",
-  ].filter(Boolean);
+  const typeTags = ENDRINGSTYPER.filter((t) => amendment[t.k]).map((t) => t.l);
 
   const typeTagsHtml = typeTags.length
     ? `<div class="type-tags">${typeTags

@@ -18,11 +18,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { Passordbekreftelse } from "@/components/passordbekreftelse";
 import { ProsjektVelger } from "@/components/prosjekt-velger";
 import type { Prosjektvalg } from "@/lib/prosjekter";
+import { ENDRINGSTYPER, endringstyperFra, ingenEndringstyper, type Endringstyper } from "@/lib/endringstyper";
 
 interface ALine { id?: string; sort_order: number; description: string; quantity: number; unit: string; unit_price: number; is_heading?: boolean; }
-interface AState {
+interface AState extends Endringstyper {
   id?: string; amendment_number: string; offer_id: string | null; project_id: string | null; project_ref: string; internal_description: string;
-  is_mass_settlement: boolean; is_additional_work: boolean; is_price_increase: boolean;
   notified_date: string; revised_date: string | null; project_manager: string; customer_email: string;
   change_description: string; reason: string; other_notes: string;
   // Livssyklus: 'krav' ved oppretting, 'endringsmelding' når kunden har signert.
@@ -67,7 +67,7 @@ const AVSLAG_MAATE_TEKST: Record<string, string> = {
 function empty(): AState {
   return {
     amendment_number: "", offer_id: null, project_id: null, project_ref: "", internal_description: "",
-    is_mass_settlement: false, is_additional_work: false, is_price_increase: false,
+    ...ingenEndringstyper(),
     notified_date: toISODate(new Date()), revised_date: null,
     project_manager: "", customer_email: "",
     change_description: "", reason: "", other_notes: "",
@@ -266,6 +266,8 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
           // Det samme gjelder sendingen: den skjedde, og et gammelt utkast skal
           // ikke få skjemaet til å påstå at kravet aldri gikk ut.
           setA({
+            // Et utkast fra før de nye grunnene kom, mangler feltene for dem
+            ...ingenEndringstyper(),
             ...sa,
             status: la.status,
             customer_signed_at: la.customer_signed_at,
@@ -618,7 +620,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
       title: internalDesc || `${docLabel} ${number}`,
       amendment_number: number, offer_id: a.offer_id || null, project_id: a.project_id || null,
       project_ref: projectRef, internal_description: a.internal_description,
-      is_mass_settlement: a.is_mass_settlement, is_additional_work: a.is_additional_work, is_price_increase: a.is_price_increase,
+      ...endringstyperFra(a),
       notified_date: a.notified_date, revised_date: a.revised_date || null,
       project_manager: a.project_manager || null, customer_email: a.customer_email || null,
       change_description: a.change_description, reason: a.reason, other_notes: a.other_notes,
@@ -796,9 +798,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         project_manager_email: (appSettings?.our_refs ?? []).find((r) => r.name === a.project_manager)?.email ?? "",
         customer_name: kundeNavn,
         customer_email: a.customer_email,
-        is_mass_settlement: a.is_mass_settlement,
-        is_additional_work: a.is_additional_work,
-        is_price_increase: a.is_price_increase,
+        ...endringstyperFra(a),
         status: a.status,
         customer_signed_at: a.customer_signed_at,
         signature_method: a.signature_method,
@@ -1220,16 +1220,16 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
           </div>
           <div className="space-y-3 rounded-md border bg-muted/30 p-3">
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</div>
-            {[
-              { k: "is_mass_settlement", l: "Masseavregning" },
-              { k: "is_additional_work", l: "Tilleggsarbeid" },
-              { k: "is_price_increase", l: "Prisstigning" },
-            ].map((x) => (
-              <label key={x.k} className="flex items-center gap-2 text-sm">
-                <Checkbox checked={(a as any)[x.k]} onCheckedChange={(v) => set(x.k as any, !!v)} />
-                {x.l}
-              </label>
-            ))}
+            {/* To kolonner der skjemaet går i full bredde. Ved siden av linjene
+                er kolonnen bare 380px, og der brakk de lange navnene. */}
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              {ENDRINGSTYPER.map((x) => (
+                <label key={x.k} className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={a[x.k]} onCheckedChange={(v) => set(x.k, !!v)} />
+                  {x.l}
+                </label>
+              ))}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2"><Label>Dato varslet</Label><Input type="date" value={a.notified_date} onChange={(e) => set("notified_date", e.target.value)} /></div>

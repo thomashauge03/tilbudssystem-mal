@@ -10,6 +10,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Trash2, MailCheck, MailWarning } from "lucide-react";
+import { ENDRINGSTYPER } from "@/lib/endringstyper";
 
 // Livssyklusen: en endring opprettes som "Krav om endring", og blir til
 // "Endringsmelding" i det kunden signerer. Verdiene lagres i databasen og
@@ -34,9 +35,9 @@ const statusOf = (a: any): AmendmentStatus =>
     : "krav";
 
 /** Kort merke for endringstype — tre avhukingskolonner tok for mye bredde. */
-function Merke({ children }: { children: React.ReactNode }) {
+function Merke({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <span className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+    <span title={title} className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
       {children}
     </span>
   );
@@ -262,10 +263,10 @@ function AmendmentsList() {
                 <td className="px-3 py-3">
                   {/* Tre avhukingskolonner tok mye bredde for lite informasjon */}
                   <div className="flex flex-wrap gap-1">
-                    {a.is_mass_settlement && <Merke>Masse</Merke>}
-                    {a.is_additional_work && <Merke>Tillegg</Merke>}
-                    {a.is_price_increase && <Merke>Pris↑</Merke>}
-                    {!a.is_mass_settlement && !a.is_additional_work && !a.is_price_increase && (
+                    {ENDRINGSTYPER.filter((t) => a[t.k]).map((t) => (
+                      <Merke key={t.k} title={t.l}>{t.kort}</Merke>
+                    ))}
+                    {!ENDRINGSTYPER.some((t) => a[t.k]) && (
                       <span className="text-muted-foreground/30">—</span>
                     )}
                   </div>

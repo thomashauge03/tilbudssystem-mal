@@ -85,9 +85,15 @@ export type Database = {
           id: string
           internal_description: string | null
           invoiced_amount: number
+          is_acceleration: boolean
           is_additional_work: boolean
+          is_authority_order: boolean
+          is_document_error: boolean
+          is_ground_conditions: boolean
           is_mass_settlement: boolean
           is_price_increase: boolean
+          is_schedule_change: boolean
+          is_waiting_time: boolean
           notified_date: string | null
           other_notes: string | null
           project_id: string | null
@@ -105,9 +111,15 @@ export type Database = {
           id?: string
           internal_description?: string | null
           invoiced_amount?: number
+          is_acceleration?: boolean
           is_additional_work?: boolean
+          is_authority_order?: boolean
+          is_document_error?: boolean
+          is_ground_conditions?: boolean
           is_mass_settlement?: boolean
           is_price_increase?: boolean
+          is_schedule_change?: boolean
+          is_waiting_time?: boolean
           notified_date?: string | null
           other_notes?: string | null
           project_id?: string | null
@@ -125,9 +137,15 @@ export type Database = {
           id?: string
           internal_description?: string | null
           invoiced_amount?: number
+          is_acceleration?: boolean
           is_additional_work?: boolean
+          is_authority_order?: boolean
+          is_document_error?: boolean
+          is_ground_conditions?: boolean
           is_mass_settlement?: boolean
           is_price_increase?: boolean
+          is_schedule_change?: boolean
+          is_waiting_time?: boolean
           notified_date?: string | null
           other_notes?: string | null
           project_id?: string | null

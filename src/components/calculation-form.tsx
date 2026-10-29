@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowDown, ArrowUp, Eraser, FileDown, Heading, Plus, Save, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowDown, ArrowUp, Eraser, ExternalLink, FileDown, Heading, Plus, Save, Search, Trash2 } from "lucide-react";
 import { db } from "@/lib/kalkyle-db";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  alleKoderSomLinjer, beregnKalkyle, linjeFraKode, sammenlignKoder, sokKoder, tomLinje, tomOverskrift, utenTommePoster,
+  alleKoderSomLinjer, beregnKalkyle, linjeFraKode, nsLenke, sammenlignKoder, sokKoder, tomLinje, tomOverskrift, utenTommePoster,
   type KalkyleLinje, type NsKode,
 } from "@/lib/kalkyle";
 import { lineNet, nok, UNITS as FALLBACK_UNITS } from "@/lib/format";
@@ -295,9 +295,17 @@ export function CalculationForm({ calculationId }: { calculationId?: string }) {
             );
           }
           const null0 = l.description.trim() && lineNet(l) === 0;
+          const lenke = nsLenke(l.ns_code, koder ?? []);
           return (
             <div key={i} className={`grid grid-cols-2 items-center gap-2 rounded border px-2 py-1.5 md:grid-cols-[7rem_1fr_6rem_5rem_8rem_8rem_6rem] ${null0 ? "border-amber-400" : ""}`}>
-              <Input className="font-mono" value={l.ns_code ?? ""} onChange={(e) => oppdater(i, { ns_code: e.target.value })} placeholder="Kode" />
+              <div className="relative">
+                <Input className={`font-mono ${lenke ? "pr-7" : ""}`} value={l.ns_code ?? ""} onChange={(e) => oppdater(i, { ns_code: e.target.value })} placeholder="Kode" />
+                {lenke && (
+                  <a href={lenke} target="_blank" rel="noopener noreferrer" title="Se hele beskrivelsen i NS 3420 hos Standard Online (krever tilgang)" className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+              </div>
               <Input className="col-span-2 md:col-span-1" value={l.description} onChange={(e) => oppdater(i, { description: e.target.value })} placeholder="Beskrivelse" />
               <TallFelt data-mengde={i} verdi={l.quantity} onEndre={(n) => oppdater(i, { quantity: n })} placeholder="Mengde" />
               <Input list="kalkyle-enheter" value={l.unit} onChange={(e) => oppdater(i, { unit: e.target.value })} placeholder="Enhet" />

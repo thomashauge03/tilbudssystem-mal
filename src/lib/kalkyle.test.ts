@@ -14,6 +14,7 @@ import {
   kalkyleTilTilbudslinjer,
   kalkyleImportNokkel,
   harKode,
+  nsLenke,
   type KalkyleLinje,
   type NsKode,
 } from "./kalkyle.ts";
@@ -137,6 +138,18 @@ sjekk("overskrift med kode har ikke kode", harKode({ is_heading: true, ns_code: 
 sjekk("bare mellomrom er ingen kode", harKode({ ns_code: "  " }), false);
 sjekk("vanlig kode", harKode({ ns_code: "FD2.13" }), true);
 sjekk("null er ingen kode", harKode({ ns_code: null }), false);
+
+console.log("\n--- 8. Lenke til Standard Online ---");
+
+const deler = [
+  { part: "F", code: "FD2.13" }, { part: "C", code: "CX1" }, { part: "CD", code: "CD4.11" }, { part: "S", code: "SB5.21" },
+];
+sjekk("del fra kodebanken", nsLenke("FD2.13", deler), "https://online.standard.no/nb/ns-3420-f-2024");
+sjekk("ukjent kode får delen fra prefikset", nsLenke("fd 9.9", deler), "https://online.standard.no/nb/ns-3420-f-2024");
+sjekk("lengste del vinner", nsLenke("CD9.1", deler), "https://online.standard.no/nb/ns-3420-cd-2024");
+sjekk("eldre utgave for S", nsLenke("SB5.21", deler), "https://online.standard.no/nb/ns-3420-s-2019");
+sjekk("ukjent del gir null", nsLenke("XY1", deler), null);
+sjekk("tom kode gir null", nsLenke("  ", deler), null);
 
 console.log(`\n${ok} ok, ${feil} feil`);
 if (feil) process.exit(1);

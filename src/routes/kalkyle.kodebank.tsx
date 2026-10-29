@@ -2,9 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Search, Save, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ExternalLink, Plus, Search, Save, ShieldAlert } from "lucide-react";
 import { db } from "@/lib/kalkyle-db";
-import { sammenlignKoder, type NsKode } from "@/lib/kalkyle";
+import { nsLenke, sammenlignKoder, type NsKode } from "@/lib/kalkyle";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -171,6 +171,9 @@ function KodeRad({ kode }: { kode: NsKode }) {
     <div className={`grid items-center gap-2 rounded border px-2 py-1.5 md:grid-cols-[7rem_1fr_5rem_7rem_7rem_1fr_auto_auto] ${k.active ? "" : "opacity-60"}`}>
       <div className="flex items-center gap-1 font-mono text-sm">
         {k.code}
+        <a href={nsLenke(k.code, [k])!} target="_blank" rel="noopener noreferrer" title="Se hele beskrivelsen i NS 3420 hos Standard Online (krever tilgang)" className="text-muted-foreground hover:text-foreground">
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
         {k.maa_kontrolleres && (
           <button type="button" title="Finnes bare hos én byggherre. Trykk når koden er kontrollert mot standarden." onClick={merkKontrollert}>
             <ShieldAlert className="h-4 w-4 text-amber-600" />

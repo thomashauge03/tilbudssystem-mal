@@ -124,6 +124,29 @@ export const tomLinje = (enhet: string): KalkyleLinje =>
 export const tomOverskrift = (): KalkyleLinje =>
   ({ ns_code: null, description: "", unit: "", quantity: 0, unit_price: 0, is_heading: true });
 
+/**
+ * Nyeste utgave hos Standard Online for deler som ikke kom i 2024. Adressen må
+ * ha riktig år, ellers havner man på «page-not-found».
+ */
+const NS_UTGAVE: Record<string, string> = { S: "2019" };
+
+/**
+ * Lenke til delen av NS 3420 hos Standard Online, der hele teksten står for den
+ * som har tilgang. Standard Online har ingen adresse per kode, så lenken går
+ * til delen. Delen hentes fra kodebanken, eller fra lengste kjente del koden
+ * starter med (FD2.13 → F, CD4.11 → CD). Ukjent del gir null.
+ */
+export function nsLenke(kode: string | null | undefined, koder: Pick<NsKode, "part" | "code">[]): string | null {
+  const n = normKode(kode ?? "");
+  if (!n) return null;
+  const del = koder.find((k) => normKode(k.code) === n)?.part
+    ?? [...new Set(koder.map((k) => k.part))]
+      .filter((p) => n.startsWith(p.toLowerCase()))
+      .sort((a, b) => b.length - a.length)[0];
+  if (!del) return null;
+  return `https://online.standard.no/nb/ns-3420-${del.toLowerCase()}-${NS_UTGAVE[del.toUpperCase()] ?? "2024"}`;
+}
+
 /** Har linjen en kode som skal vises? Overskrifter og tomme koder teller ikke. */
 export const harKode = (l: { is_heading?: boolean | null; ns_code?: string | null }) =>
   !l.is_heading && !!l.ns_code?.trim();

@@ -14,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, isOfferWon, lineNet, amendmentTotal, OFFER_REJECTED, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
+import { apneEpost, kopierLenke, LIM_INN, TRYGG_LENKE, type Avsnitt } from "@/lib/epost-lenke";
 import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
 import { planPeriode, ukeTekst } from "@/lib/fremdrift";
@@ -739,11 +740,8 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     let signingLink = "";
     if (lenkeKanSendes) {
       const token = await getSigningToken(id);
-      if (token) signingLink = `\n\nSigner tilbudet digitalt her:\n${window.location.origin}/signer/${token}`;
+      if (token) signingLink = `${window.location.origin}/signer/${token}`;
     }
-    const signingInfo = signingLink
-      ? "\n\nVia signeringslenken kan du lese gjennom tilbudet og kontrakten før du signerer digitalt."
-      : "";
 
     // Emnet er en mal i innstillingene: {nr}, {tittel} og {kunde}. Er den tom,
     // faller vi tilbake på det innebygde emnet.
@@ -758,9 +756,24 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       : `Tilbud nr. ${offer.offer_number ?? ""} – ${offer.title}`;
     const senderName = appSettings?.company_name ?? "Tilbudssystem";
     // Et godkjent tilbud har ingen frist igjen, så da nevnes den ikke
-    const gyldighet = hasDeadline ? `\n\nTilbudet er gyldig t.o.m. ${fmtDate(offer.valid_until)}.` : "";
-    const body = `Hei,\n\nVi sender herved tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.${gyldighet}${signingLink}${signingInfo}\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
-    window.location.href = `mailto:${encodeURIComponent(offer.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const avsnitt: Avsnitt[] = [
+      "Hei,",
+      `Vi sender herved tilbud nr. ${offer.offer_number ?? ""} fra ${senderName}.`,
+      ...(hasDeadline ? [`Tilbudet er gyldig t.o.m. ${fmtDate(offer.valid_until)}.`] : []),
+      // Setningene om lenken faller bort når lenken ikke ble med
+      ...(signingLink
+        ? [
+            "Via knappen under kan du lese gjennom tilbudet og kontrakten før du signerer digitalt.",
+            { lenke: signingLink, tekst: "Se og signer tilbudet" },
+            TRYGG_LENKE,
+          ]
+        : []),
+      "Ta gjerne kontakt om du har spørsmål.",
+      `Med vennlig hilsen\n${senderName}`,
+    ];
+    if (await apneEpost(offer.customer_email, subject, avsnitt, !!signingLink)) {
+      toast.info(LIM_INN, { duration: 10000 });
+    }
   });
 
   const handleSigningLink = withSaving(async () => {
@@ -769,7 +782,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     const token = await getSigningToken(id);
     if (!token) return;
     const link = `${window.location.origin}/signer/${token}`;
-    await navigator.clipboard.writeText(link);
+    await kopierLenke(link, "Se og signer tilbudet");
     toast.success("Signeringslenke kopiert til utklippstavlen!");
   });
 

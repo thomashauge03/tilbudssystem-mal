@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, FilePlus2, MailCheck, MailX, MailWarning, XCircle, Heading } from "lucide-react";
 import { nok, fmtDate, toISODate, OFFER_SENT, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openAmendmentPdf } from "@/lib/pdf";
+import { apneEpost, kopierLenke, LIM_INN, TRYGG_LENKE, type Avsnitt } from "@/lib/epost-lenke";
 import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -935,14 +936,10 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         if (tokenError || !tokenData) {
           toast.error(tokenError?.message ?? "Kunne ikke opprette signeringslenke");
         } else {
-          signingLink = `\n\nSigner kravet digitalt her:\n${window.location.origin}/signer-endring/${(tokenData as any).token}`;
+          signingLink = `${window.location.origin}/signer-endring/${(tokenData as any).token}`;
         }
       }
     }
-    // Setningen om signeringslenken faller bort når lenken ikke ble med
-    const signingInfo = signingLink
-      ? "\n\nVia signeringslenken kan du lese gjennom kravet før du signerer digitalt. Når kravet er signert, blir det en endringsmelding."
-      : "";
 
     const senderName = appSettings?.company_name ?? "Tilbudssystem";
     // Nummeret ligger bare i referansen når kravet nettopp ble opprettet
@@ -950,9 +947,22 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
     const subject = isSigned
       ? `Endringsmelding nr. ${number} – Prosjekt ${a.project_ref}`
       : `Krav om endring nr. ${number} – Prosjekt ${a.project_ref}`;
-    const body = isSigned
-      ? `Hei,\n\nVedlagt finner du endringsmelding nr. ${number} for prosjekt ${a.project_ref}.\n\nMed vennlig hilsen\n${senderName}`
-      : `Hei,\n\nVi sender herved krav om endring nr. ${number} for prosjekt ${a.project_ref}.${signingLink}${signingInfo}\n\nTa gjerne kontakt om du har spørsmål.\n\nMed vennlig hilsen\n${senderName}`;
+    const avsnitt: Avsnitt[] = isSigned
+      ? ["Hei,", `Vedlagt finner du endringsmelding nr. ${number} for prosjekt ${a.project_ref}.`, `Med vennlig hilsen\n${senderName}`]
+      : [
+          "Hei,",
+          `Vi sender herved krav om endring nr. ${number} for prosjekt ${a.project_ref}.`,
+          // Setningene om lenken faller bort når lenken ikke ble med
+          ...(signingLink
+            ? [
+                "Via knappen under kan du lese gjennom kravet før du signerer digitalt. Når kravet er signert, blir det en endringsmelding.",
+                { lenke: signingLink, tekst: "Se og signer kravet" },
+                TRYGG_LENKE,
+              ]
+            : []),
+          "Ta gjerne kontakt om du har spørsmål.",
+          `Med vennlig hilsen\n${senderName}`,
+        ];
     // Prosjektlederfeltet inneholder et navn, ikke en adresse, så den gamle
     // sjekken på "@" traff aldri og kopien ble aldri sendt. Adressen slås nå opp
     // blant referansene i innstillingene, med feltet selv som reserve dersom
@@ -961,7 +971,6 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
     // Feltet kan komme tilbake som null fra databasen, så oppslaget må skjermes
     const pmNavn = a.project_manager ?? "";
     const pmEpost = pmRef?.email || (pmNavn.includes("@") ? pmNavn : "");
-    const cc = pmEpost ? `&cc=${encodeURIComponent(pmEpost)}` : "";
 
     // Merket settes før e-postprogrammet åpnes, ikke etter. Det finnes ingen
     // vei tilbake fra mailto-en som sier om den ble sendt, og skrev vi merket
@@ -978,7 +987,9 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
       toast.success("Merket som sendt — trykk «Ikke sendt likevel» om du avbryter");
     }
 
-    window.location.href = `mailto:${encodeURIComponent(a.customer_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}${cc}`;
+    if (await apneEpost(a.customer_email, subject, avsnitt, !!signingLink, pmEpost)) {
+      toast.info(LIM_INN, { duration: 10000 });
+    }
   };
 
   const handleSigningLink = async () => {
@@ -992,7 +1003,7 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
       .single();
     if (error || !tokenData) { toast.error("Kunne ikke opprette signeringslenke"); return; }
     const link = `${window.location.origin}/signer-endring/${(tokenData as any).token}`;
-    await navigator.clipboard.writeText(link);
+    await kopierLenke(link, "Se og signer kravet");
     toast.success("Signeringslenke kopiert til utklippstavlen!");
   };
 

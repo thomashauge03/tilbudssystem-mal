@@ -7,10 +7,16 @@ import { TelefonInput } from "@/components/telefon-input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Save, GripVertical, Upload, X, Building2, FileText, Calculator, Palette } from "lucide-react";
+import { Plus, Trash2, Save, GripVertical, Upload, X, Building2, FileText, Calculator, Palette, Link2, Users } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTheme, THEME_OPTIONS } from "@/hooks/use-theme";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { fmtDate } from "@/lib/format";
+import {
+  useTripletexStatus, tripletexKall, hentKunderFraTripletex, kundeHentingTekst,
+} from "@/lib/tripletex";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -242,6 +248,196 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
   );
 }
 
+/**
+ * Nøklene til Tripletex. Har sin egen lagreknapp og hører ikke med i den faste
+ * lagre-linja: nøklene går til edge functionen og testes før de lagres, og
+ * skal aldri ligge i app_settings der alle i firmaet kan lese dem.
+ *
+ * Feltene er alltid tomme. En lagret nøkkel vises aldri igjen — et tomt felt
+ * ved lagring betyr «behold den som er der».
+ */
+function TripletexOppsett() {
+  const qc = useQueryClient();
+  const { data: status, isLoading, error } = useTripletexStatus();
+  const [consumer, setConsumer] = useState("");
+  const [employee, setEmployee] = useState("");
+  const [miljo, setMiljo] = useState<"produksjon" | "test">("produksjon");
+  const [arbeider, setArbeider] = useState<null | "lagre" | "kunder" | "fra">(null);
+
+  useEffect(() => {
+    if (status) setMiljo(status.miljo);
+  }, [status]);
+
+  const tilkoblet = !!status?.tilkoblet;
+  const kanEndre = !!status?.kan_endre;
+
+  const lagre = async () => {
+    setArbeider("lagre");
+    try {
+      const r = await tripletexKall<{ firma: string | null; bruker: string }>({
+        handling: "lagre",
+        consumer_token: consumer,
+        employee_token: employee,
+        miljo,
+      });
+      setConsumer("");
+      setEmployee("");
+      toast.success(`Koblet til Tripletex${r.firma ? ` — ${r.firma}` : ""}${r.bruker ? ` som ${r.bruker}` : ""}`);
+      qc.invalidateQueries({ queryKey: ["tripletex-status"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setArbeider(null);
+    }
+  };
+
+  const hentKunder = async () => {
+    setArbeider("kunder");
+    try {
+      const r = await hentKunderFraTripletex();
+      toast.success(kundeHentingTekst(r));
+      qc.invalidateQueries({ queryKey: ["tripletex-status"] });
+      qc.invalidateQueries({ queryKey: ["customers-full"] });
+      qc.invalidateQueries({ queryKey: ["customers-simple"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setArbeider(null);
+    }
+  };
+
+  const kobleFra = async () => {
+    if (!window.confirm("Koble fra Tripletex? Nøklene slettes. Kunder og ordre som alt er sendt, blir liggende.")) return;
+    setArbeider("fra");
+    try {
+      await tripletexKall({ handling: "koble-fra" });
+      toast.success("Koblet fra Tripletex");
+      qc.invalidateQueries({ queryKey: ["tripletex-status"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setArbeider(null);
+    }
+  };
+
+  if (isLoading) return <div className="text-sm text-muted-foreground">Sjekker Tripletex-koblingen…</div>;
+
+  if (error) {
+    return (
+      <SectionCard title="Tripletex">
+        <p className="text-sm text-destructive">Fikk ikke kontakt med Tripletex-koblingen: {(error as Error).message}</p>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <>
+      <SectionCard
+        title="Tripletex"
+        description="Send tilbud over som ordre, og hent kundene fra Tripletex"
+      >
+        <div className="flex items-center gap-2 text-sm">
+          <span className={`h-2 w-2 rounded-full ${tilkoblet ? "bg-green-500" : "bg-muted-foreground/40"}`} />
+          {tilkoblet
+            ? <span>Koblet til{status?.miljo === "test" ? " testmiljøet" : ""}</span>
+            : <span className="text-muted-foreground">Ikke koblet til</span>}
+        </div>
+
+        {!kanEndre ? (
+          <p className="text-sm text-muted-foreground">Bare administratorer kan endre Tripletex-koblingen.</p>
+        ) : (
+          <>
+            <ol className="ml-4 list-decimal space-y-1.5 text-sm text-muted-foreground">
+              <li>Integrasjonsnøkkelen («consumer token») får du fra Tripletex når API-tilgangen er godkjent</li>
+              <li>Brukernøkkelen («employee token») lager du i Tripletex under din profil → API-tilgang</li>
+              <li>Lim inn begge her. De testes mot Tripletex før de lagres</li>
+            </ol>
+            <div className="space-y-2">
+              <Label>Integrasjonsnøkkel (consumer token)</Label>
+              <Input
+                type="password"
+                autoComplete="off"
+                value={consumer}
+                onChange={(e) => setConsumer(e.target.value)}
+                placeholder={tilkoblet ? "Lagret — la stå tom for å beholde" : ""}
+                className="max-w-lg font-mono text-xs"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Brukernøkkel (employee token)</Label>
+              <Input
+                type="password"
+                autoComplete="off"
+                value={employee}
+                onChange={(e) => setEmployee(e.target.value)}
+                placeholder={tilkoblet ? "Lagret — la stå tom for å beholde" : ""}
+                className="max-w-lg font-mono text-xs"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Miljø</Label>
+              <div className="flex gap-2">
+                {([["produksjon", "Ekte regnskap"], ["test", "Testmiljø"]] as const).map(([v, tekst]) => (
+                  <button
+                    key={v}
+                    onClick={() => setMiljo(v)}
+                    className={`rounded border px-3 py-1 text-xs font-medium transition-colors ${
+                      miljo === v
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {tekst}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Testmiljøet (api-test.tripletex.tech) har egne nøkler. Nøkler fra det ekte regnskapet virker ikke der.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={lagre}
+                disabled={!!arbeider || (!tilkoblet && (!consumer.trim() || !employee.trim()))}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {arbeider === "lagre" ? "Tester…" : tilkoblet ? "Lagre og test" : "Koble til"}
+              </Button>
+              {tilkoblet && (
+                <Button variant="outline" onClick={kobleFra} disabled={!!arbeider} className="text-destructive border-destructive/50 hover:bg-destructive/10">
+                  {arbeider === "fra" ? "Kobler fra…" : "Koble fra"}
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </SectionCard>
+
+      {tilkoblet && (
+        <SectionCard
+          title="Kunder fra Tripletex"
+          description="Kunderegisteret i Tripletex er fasiten"
+        >
+          <p className="text-sm text-muted-foreground">
+            Nye kunder i Tripletex legges inn her. Kunder som finnes fra før, kobles på org.nr. eller navn og får
+            navn, e-post, telefon og adresse fra Tripletex. Kunder som bare finnes her, opprettes i Tripletex
+            første gang et tilbud til dem sendes over.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="outline" onClick={hentKunder} disabled={!!arbeider}>
+              <Users className="mr-2 h-4 w-4" />
+              {arbeider === "kunder" ? "Henter…" : "Hent kunder nå"}
+            </Button>
+            {status?.sist_hentet_kunder && (
+              <span className="text-xs text-muted-foreground">Sist hentet {fmtDate(status.sist_hentet_kunder)}</span>
+            )}
+          </div>
+        </SectionCard>
+      )}
+    </>
+  );
+}
+
 function SettingsPage() {
   const { tenantId } = useAuth();
   const { data: saved, isLoading } = useAppSettings();
@@ -340,12 +536,17 @@ function SettingsPage() {
       </div>
 
       <Tabs defaultValue="firma" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+        <TabsList className="grid h-auto w-full grid-cols-3 sm:grid-cols-5">
           <TabsTrigger value="firma"><Building2 className="mr-1.5 h-4 w-4" />Firma</TabsTrigger>
           <TabsTrigger value="tilbod"><FileText className="mr-1.5 h-4 w-4" />Tilbud</TabsTrigger>
           <TabsTrigger value="okonomi"><Calculator className="mr-1.5 h-4 w-4" />Økonomi</TabsTrigger>
+          <TabsTrigger value="tripletex"><Link2 className="mr-1.5 h-4 w-4" />Tripletex</TabsTrigger>
           <TabsTrigger value="utsjaanad"><Palette className="mr-1.5 h-4 w-4" />Utseende</TabsTrigger>
         </TabsList>
+
+      <TabsContent value="tripletex" className="space-y-6">
+        <TripletexOppsett />
+      </TabsContent>
 
       <TabsContent value="tilbod" className="space-y-6">
       {/* Tilbud-standarder */}

@@ -9,11 +9,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, XCircle, Heading } from "lucide-react";
+import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, ChevronDown, FileSignature, Link2, RotateCcw, ChevronsUpDown, Check, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, XCircle, Heading, Send } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, isOfferWon, lineNet, amendmentTotal, OFFER_REJECTED, UNITS as FALLBACK_UNITS } from "@/lib/format";
 import { openOfferPdf, openContractPdf } from "@/lib/pdf";
+import { lagPdfFil } from "@/lib/pdf-fil";
+import { useTripletexStatus, sendTilbudTilTripletex } from "@/lib/tripletex";
 import { apneEpost, kopierLenke, LIM_INN, TRYGG_LENKE, type Avsnitt } from "@/lib/epost-lenke";
 import { Link } from "@tanstack/react-router";
 import { AttachmentField } from "@/components/attachment-field";
@@ -695,6 +697,58 @@ export function OfferForm({ offerId }: { offerId?: string }) {
     if (!win) return;
     const id = await save(true);
     if (!id) { win.close(); return; }
+    skrivTilbudsPdf(win);
+  });
+
+  // ─── Tripletex ─────────────────────────────────────────────────────────────
+  const { data: tripletex } = useTripletexStatus();
+  const tripletexOrdre = (loaded?.offer as { tripletex_ordre_nr?: string | null } | undefined)?.tripletex_ordre_nr ?? null;
+
+  /**
+   * Tilbudet blir en ordre i Tripletex, med den samme PDF-en kunden får som
+   * vedlegg. PDF-en lages her, i nettleseren, fordi det er her den lages ellers
+   * også — en kopi av oppsettet på serveren ville før eller siden sett
+   * annerledes ut enn den kunden fikk.
+   */
+  const handleTripletex = withSaving(async () => {
+    if (!requireSettings()) return;
+    if (!offer.customer_id) { toast.error("Velg en kunde før tilbudet sendes til Tripletex"); return; }
+    const paNytt = !!tripletexOrdre;
+    if (paNytt && !window.confirm(
+      `Tilbudet er alt sendt til Tripletex som ordre ${tripletexOrdre}.\n\n` +
+      "Sender du på nytt, lages en ny ordre. Den gamle blir liggende i Tripletex og må slettes der.",
+    )) return;
+    if (!bekreftNullinjer()) return;
+    const id = await save(true);
+    if (!id) return;
+
+    const venter = toast.loading("Lager PDF og sender til Tripletex…");
+    try {
+      let pdf: Blob | null = null;
+      try {
+        pdf = await lagPdfFil((w) => skrivTilbudsPdf(w));
+      } catch (e) {
+        // Ordren er verdt mer enn vedlegget: den sendes uansett, og det sies fra.
+        console.error(e);
+      }
+      const r = await sendTilbudTilTripletex(id, pdf, paNytt);
+      qc.invalidateQueries({ queryKey: ["offer", id] });
+      toast.dismiss(venter);
+      if (!pdf || r.vedlegg_feil) {
+        toast.warning(
+          `Ordre ${r.ordre_nr} er laget i Tripletex, men PDF-en kom ikke med` +
+            (r.vedlegg_feil ? `: ${r.vedlegg_feil}` : ". Legg den ved for hånd."),
+        );
+      } else {
+        toast.success(`Sendt til Tripletex som ordre ${r.ordre_nr} på ${nok(r.sum)} eks. mva`);
+      }
+    } catch (e) {
+      toast.dismiss(venter);
+      toast.error((e as Error).message);
+    }
+  });
+
+  function skrivTilbudsPdf(win: Window) {
     const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === offer.our_ref);
     const customerObj = (customers ?? []).find((c: any) => c.id === offer.customer_id);
     openOfferPdf(
@@ -722,7 +776,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       },
       win
     );
-  });
+  }
 
   const handleEmail = withSaving(async () => {
     if (!requireSettings()) return;
@@ -920,6 +974,21 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           {isEdit && isSigned && (
             <Button variant="outline" onClick={handleResetSignature} disabled={saving} className="text-destructive border-destructive/50 hover:bg-destructive/10" title="Nullstill kundesignatur">
               <RotateCcw className="mr-2 h-4 w-4" />Nullstill signatur
+            </Button>
+          )}
+          {/* Bare når firmaet er koblet til. Svarer ikke funksjonen, står
+              knappen bare ikke der — resten av skjemaet virker som før. */}
+          {tripletex?.tilkoblet && (
+            <Button
+              variant="outline"
+              onClick={handleTripletex}
+              disabled={saving}
+              title={tripletexOrdre
+                ? `Sendt til Tripletex som ordre ${tripletexOrdre}. Klikk for å sende på nytt.`
+                : "Lag en ordre i Tripletex med tilbudslinjene og PDF-en som vedlegg"}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              {saving ? "Lagrer…" : tripletexOrdre ? `Tripletex: ordre ${tripletexOrdre}` : "Send til Tripletex"}
             </Button>
           )}
           <Button variant="outline" onClick={handleEmail} disabled={saving}><Mail className="mr-2 h-4 w-4" />{saving ? "Lagrer…" : "Send på e-post"}</Button>

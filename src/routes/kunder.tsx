@@ -9,8 +9,9 @@ import { TelefonInput } from "@/components/telefon-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { useTripletexStatus, hentKunderFraTripletex, kundeHentingTekst } from "@/lib/tripletex";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/kunder")({
 interface Customer {
   id?: string; name: string; email: string | null; phone: string | null;
   address: string | null; contact_person: string | null; notes: string | null;
+  org_number?: string | null; tripletex_id?: number | null;
 }
 
 function CustomersPage() {
@@ -33,6 +35,22 @@ function CustomersPage() {
   const [edit, setEdit] = useState<Customer | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; offerCount: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [henter, setHenter] = useState(false);
+  const { data: tripletex } = useTripletexStatus();
+
+  const hentFraTripletex = async () => {
+    setHenter(true);
+    try {
+      toast.success(kundeHentingTekst(await hentKunderFraTripletex()));
+      qc.invalidateQueries({ queryKey: ["customers-full"] });
+      qc.invalidateQueries({ queryKey: ["customers-simple"] });
+      qc.invalidateQueries({ queryKey: ["tripletex-status"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setHenter(false);
+    }
+  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["customers-full"],
@@ -68,7 +86,7 @@ function CustomersPage() {
     const payload = {
       name: c.name, email: c.email || null, phone: c.phone || null,
       address: c.address || null, contact_person: c.contact_person || null,
-      notes: c.notes || null,
+      notes: c.notes || null, org_number: c.org_number?.trim() || null,
     };
     const prevName = c.id ? (data ?? []).find((x: any) => x.id === c.id)?.name : null;
     const { error } = c.id
@@ -104,9 +122,17 @@ function CustomersPage() {
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Kunder</h1>
           <p className="mt-1 text-sm text-muted-foreground">{rows.length} kunder</p>
         </div>
-        <Button onClick={() => { setEdit({ name: "", email: "", phone: "", address: "", contact_person: "", notes: "" }); setOpen(true); }}>
-          <Plus className="mr-2 h-4 w-4" />Ny kunde
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          {tripletex?.tilkoblet && (
+            <Button variant="outline" onClick={hentFraTripletex} disabled={henter} title="Hent nye og endrede kunder fra Tripletex">
+              <RefreshCw className={`mr-2 h-4 w-4 ${henter ? "animate-spin" : ""}`} />
+              {henter ? "Henter…" : "Hent fra Tripletex"}
+            </Button>
+          )}
+          <Button onClick={() => { setEdit({ name: "", email: "", phone: "", address: "", contact_person: "", notes: "", org_number: "" }); setOpen(true); }}>
+            <Plus className="mr-2 h-4 w-4" />Ny kunde
+          </Button>
+        </div>
       </div>
 
       <div className="relative max-w-sm">
@@ -139,7 +165,14 @@ function CustomersPage() {
               <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Ingen kunder.</td></tr>
             ) : rows.map((c: any, i: number) => (
               <tr key={c.id} className={`border-b transition-colors hover:bg-accent/40 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
-                <td className="px-4 py-3 font-medium">{c.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  {c.name}
+                  {c.tripletex_id != null && (
+                    <span className="ml-2 rounded border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground" title="Koblet til kunden i Tripletex">
+                      Tripletex
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{c.email ?? "—"}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{c.phone ?? "—"}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{c.address ?? "—"}</td>
@@ -160,6 +193,11 @@ function CustomersPage() {
           {edit && (
             <div className="space-y-4">
               <div><Label>Navn *</Label><Input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></div>
+              <div>
+                <Label>Org.nr.</Label>
+                <Input value={edit.org_number ?? ""} onChange={(e) => setEdit({ ...edit, org_number: e.target.value })} placeholder="000 000 000" inputMode="numeric" />
+                <p className="mt-1 text-xs text-muted-foreground">Brukes til å finne igjen kunden i Tripletex.</p>
+              </div>
               <div><Label>E-post</Label><Input type="email" value={edit.email ?? ""} onChange={(e) => setEdit({ ...edit, email: e.target.value })} /></div>
               <div><Label>Telefon</Label><TelefonInput value={edit.phone ?? ""} onChange={(v) => setEdit({ ...edit, phone: v })} /></div>
               <div><Label>Adresse</Label><Input value={edit.address ?? ""} onChange={(e) => setEdit({ ...edit, address: e.target.value })} /></div>

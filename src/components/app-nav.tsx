@@ -40,14 +40,16 @@ function initials(email: string | undefined) {
 }
 
 export function AppNav() {
-  const { user, signOut, isAdmin, branding } = useAuth();
+  const { user, signOut, isPlatformAdmin, branding } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (r) => r.location.pathname });
   const { theme, setTheme } = useTheme();
 
+  // Admin-siden styrer alle firmaer, så den er for plattformeieren — ikke for
+  // den som er admin i sitt eget firma.
   const links = useMemo(
-    () => isAdmin ? [...BASE_LINKS, ADMIN_LINK] : BASE_LINKS,
-    [isAdmin]
+    () => isPlatformAdmin ? [...BASE_LINKS, ADMIN_LINK] : BASE_LINKS,
+    [isPlatformAdmin]
   );
 
   const isActive = (to: string, exact?: boolean) =>

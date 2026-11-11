@@ -152,15 +152,19 @@ type Tab = "oversikt" | "brukere" | "kunder" | "koble" | "tilpass";
 
 // C1: wrap so hooks are not called after early return
 function AdminPage() {
-  const { isAdmin, loading: authLoading } = useAuth();
+  // Bare plattformeieren. En admin i et firma slapp før inn her og så alle
+  // firmaer og brukere. Databasen nekter dem nå uansett, men siden skal ikke
+  // vises heller.
+  const { isPlatformAdmin, loading: authLoading, roleLoading } = useAuth();
   const navigate = useNavigate();
+  const venter = authLoading || roleLoading;
 
   // H1: navigate added to deps
   useEffect(() => {
-    if (!authLoading && !isAdmin) navigate({ to: "/" });
-  }, [isAdmin, authLoading, navigate]);
+    if (!venter && !isPlatformAdmin) navigate({ to: "/" });
+  }, [isPlatformAdmin, venter, navigate]);
 
-  if (authLoading || !isAdmin) return null;
+  if (venter || !isPlatformAdmin) return null;
   return <AdminPageContent />;
 }
 

@@ -16,7 +16,14 @@ interface AuthCtx {
   loading: boolean;
   roleLoading: boolean;
   role: "admin" | "member" | null;
+  /** Admin i sitt eget firma: Tripletex, SMS-nøkkel, logo. Ikke hele plattformen. */
   isAdmin: boolean;
+  /**
+   * Eier av plattformen (platform_admins): styrer firmaer og brukere på
+   * admin-siden. Et annet nivå enn isAdmin — en firma-admin skal aldri se
+   * andre firmaer. Databasen håndhever det; dette styrer bare hva som vises.
+   */
+  isPlatformAdmin: boolean;
   tenantId: string | null;
   hasTenant: boolean;
   branding: TenantBranding | null;
@@ -35,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [roleLoading, setRoleLoading] = useState(false);
   const [role, setRole] = useState<"admin" | "member" | null>(null);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [branding, setBranding] = useState<TenantBranding | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -76,13 +84,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!stille) setRoleLoading(true);
     setAuthError(null);
     try {
-      const { data, error } = await supabase
-        .from("tenant_users")
-        .select("role, tenant_id")
-        .eq("user_id", userId)
-        .single();
+      const [{ data, error }, plattform] = await Promise.all([
+        supabase
+          .from("tenant_users")
+          .select("role, tenant_id")
+          .eq("user_id", userId)
+          .single(),
+        supabase.rpc("is_platform_admin" as never),
+      ]);
 
       if (cancelRef.current) return;
+
+      // Feiler sjekken, er svaret nei: admin-siden skal heller mangle enn vises
+      // for feil person.
+      setIsPlatformAdmin(plattform.data === true);
 
       // M2: explicit error handling — network failure vs no tenant are different
       if (error && error.code !== "PGRST116") {
@@ -127,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         sisteBrukerRef.current = null;
         setRole(null);
+        setIsPlatformAdmin(false);
         setTenantId(null);
         setBranding(null);
         setAuthError(null);
@@ -181,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={{
       user, session, loading, roleLoading, role,
       isAdmin: role === "admin",
+      isPlatformAdmin,
       tenantId,
       hasTenant: tenantId !== null,
       branding,

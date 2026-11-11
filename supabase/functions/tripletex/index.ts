@@ -27,6 +27,7 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   delordre,
+  andelerPasser,
   gjeldendeAndeler,
   fakturastatus,
   mvaNummer,
@@ -80,7 +81,8 @@ interface Oppsett {
 }
 
 /** Tripletex sin nye nøkkel, som gir en økt uten integrasjonsnøkkel. */
-const erRefreshToken = (nokkel: string | null | undefined) => (nokkel ?? "").trim().startsWith("tlxr_");
+const erRefreshToken = (nokkel: string | null | undefined) =>
+  (nokkel ?? "").trim().startsWith("tlxr_");
 
 /** Integrasjonsnøkkelen til den gamle innloggingen. Trengs ikke med tlxr_-nøkkel. */
 const integrasjonsnokkel = (o: Pick<Oppsett, "consumer_token"> | null) =>
@@ -349,6 +351,35 @@ async function tripletexKunde(
   return id!;
 }
 
+/**
+ * Prosjektet i Tripletex for tilbudets prosjekt, funnet på prosjektnummeret.
+ *
+ * Prosjektnumrene i appen er de samme som i Tripletex (2026118 osv.), så
+ * nummeret er nok. Uten nummer, eller uten treff, blir ordren uten prosjekt —
+ * appen lager aldri prosjekter i Tripletex selv.
+ */
+async function tripletexProsjekt(
+  tx: Tripletex,
+  bruker: SupabaseClient,
+  tilbud: { project_number?: string | null; project_id?: string | null },
+): Promise<{ id: number; number: string; name: string } | null> {
+  let nummer = String(tilbud.project_number ?? "").trim();
+  if (!nummer && tilbud.project_id) {
+    const { data } = await bruker
+      .from("projects")
+      .select("project_number")
+      .eq("id", tilbud.project_id)
+      .maybeSingle();
+    nummer = String(data?.project_number ?? "").trim();
+  }
+  if (!nummer) return null;
+  const treff = await tx.kall("GET", "/project", {
+    query: { number: nummer, fields: "id,number,name", count: 5 },
+  });
+  const p = (treff?.values ?? []).find((x: { number?: string }) => String(x.number) === nummer);
+  return p ? { id: Number(p.id), number: String(p.number), name: String(p.name ?? "") } : null;
+}
+
 /** Id-en til mva-koden for firmaets sats. */
 async function mvaTypeId(tx: Tripletex, sats: number): Promise<number> {
   const typer = (await tx.alle("/ledger/vatType", { fields: "id,number,percentage" })) as Array<{
@@ -413,6 +444,23 @@ async function lagDelordre(
     .eq("offer_id", offerId);
   if (radfeil) throw new Brukerfeil(500, radfeil.message);
 
+  // Peker andelene på linjer som ikke finnes lenger, ville neste ordre tatt
+  // alt med på nytt. Da stopper vi heller.
+  const linjeIder = (tilbud.offer_lines ?? []).map((l: { id: string }) => l.id);
+  if (!andelerPasser(rader ?? [], linjeIder)) {
+    throw new Brukerfeil(
+      409,
+      "Linjene i tilbudet er byttet ut etter forrige delordre, så appen vet ikke lenger hva som er fakturert. " +
+        "Ingen ordre er laget. Ta kontakt for å få koblet andelene til de nye linjene.",
+    );
+  }
+
+  const { data: fullfort, error: fullfortFeil } = await bruker
+    .from("delpost_fullfort")
+    .select("offer_line_id")
+    .eq("offer_id", offerId);
+  if (fullfortFeil) throw new Brukerfeil(500, fullfortFeil.message);
+
   const { data: kunde } = await bruker
     .from("customers")
     .select("id, name, org_number, email, phone, address, tripletex_id")
@@ -435,6 +483,7 @@ async function lagDelordre(
       nye,
       tilbud.admin_cost_pct,
       await mvaTypeId(tx, sats),
+      new Set((fullfort ?? []).map((f) => f.offer_line_id as string)),
     );
   } catch (e) {
     if (e instanceof Brukerfeil) throw e;
@@ -442,23 +491,37 @@ async function lagDelordre(
   }
 
   const kundeId = await tripletexKunde(tx, bruker, kunde as AppKunde);
+  const prosjekt = await tripletexProsjekt(tx, bruker, tilbud);
   const nummer = (rader ?? []).filter((r) => r.tripletex_ordre_id).length + 1;
   const idag = osloDato(0);
   const tittel = String(tilbud.title ?? "").trim();
-  const ordre = await tx.kall("POST", "/order", {
-    json: {
-      customer: { id: kundeId },
-      orderDate: idag,
-      deliveryDate: idag,
-      reference: String(tilbud.their_ref ?? "").trim() || undefined,
-      invoiceComment:
-        `Delfaktura ${nummer} iht. tilbud nr. ${tilbud.offer_number}` +
-        (tittel ? ` – ${tittel}` : ""),
-      orderLines: plan.linjer,
-    },
-  });
+  const ordreBody = {
+    customer: { id: kundeId },
+    orderDate: idag,
+    deliveryDate: idag,
+    reference: String(tilbud.their_ref ?? "").trim() || undefined,
+    invoiceComment:
+      `Delfaktura ${nummer} iht. tilbud nr. ${tilbud.offer_number}` +
+      (tittel ? ` – ${tittel}` : ""),
+    orderLines: plan.linjer,
+  };
+  let ordre;
+  let prosjektFeil: string | null = null;
+  try {
+    ordre = await tx.kall("POST", "/order", {
+      json: prosjekt ? { ...ordreBody, project: { id: prosjekt.id } } : ordreBody,
+    });
+  } catch (e) {
+    // Nekter Tripletex prosjektet — lukket, eller hører til en annen kunde —
+    // er ordren viktigere enn koblingen. Den lages uten, og det sies fra.
+    if (!prosjekt) throw e;
+    prosjektFeil = `Prosjekt ${prosjekt.number} ble ikke satt på ordren: ${(e as Error).message}`;
+    ordre = await tx.kall("POST", "/order", { json: ordreBody });
+  }
   const ordreId = Number(ordre?.value?.id);
-  const ordreNr = String(ordre?.value?.number ?? ordreId);
+  // Tripletex gir ordren et nummer bare når nummerserien er slått på; ellers er
+  // det tomt, og da er id-en det som finnes igjen i Tripletex.
+  const ordreNr = String(ordre?.value?.number || ordreId);
 
   const { error: lagrefeil } = await bruker.from("payments").insert({
     tenant_id: tenantId,
@@ -499,7 +562,14 @@ async function lagDelordre(
     }
   }
 
-  return { ordre_id: ordreId, ordre_nr: ordreNr, sum: plan.sum, vedlegg_feil: vedleggFeil };
+  return {
+    ordre_id: ordreId,
+    ordre_nr: ordreNr,
+    sum: plan.sum,
+    vedlegg_feil: vedleggFeil,
+    prosjekt: prosjekt && !prosjektFeil ? `${prosjekt.number} ${prosjekt.name}`.trim() : null,
+    prosjekt_feil: prosjektFeil,
+  };
 }
 
 async function slettDelordre(tx: Tripletex, bruker: SupabaseClient, paymentId: string) {

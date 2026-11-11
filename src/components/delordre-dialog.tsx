@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { nok, lineNet } from "@/lib/format";
 import { toast } from "sonner";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { useAuth } from "@/hooks/use-auth";
+import { Checkbox } from "@/components/ui/checkbox";
 import { lagPdfFil } from "@/lib/pdf-fil";
 import { hentTilbudForPdf, skrivTilbudsPdf } from "@/lib/tilbud-pdf";
 import { gjeldendeAndeler, lagDelordre, delordreTekst, type Andeler } from "@/lib/tripletex";
@@ -60,9 +62,13 @@ export function DelordreDialog({
   onLaget: () => void;
 }) {
   const { data: innst } = useAppSettings();
+  const { tenantId } = useAuth();
   const [nye, setNye] = useState<Record<string, string>>({});
   const [alle, setAlle] = useState("");
   const [sender, setSender] = useState(false);
+  // Hvilke poster som skal stå som fullført etter lagring. Starter likt med
+  // basen; forskjellen er det som lagres.
+  const [fullfortValg, setFullfortValg] = useState<Record<string, boolean>>({});
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["delordre", offerId],
@@ -70,7 +76,7 @@ export function DelordreDialog({
     // Alltid ferske tall når dialogen åpnes.
     staleTime: 0,
     queryFn: async () => {
-      const [o, l, p] = await Promise.all([
+      const [o, l, p, f] = await Promise.all([
         supabase
           .from("offers")
           .select("offer_number, title, admin_cost_pct")
@@ -87,10 +93,15 @@ export function DelordreDialog({
           .from("payments")
           .select("amount, andeler, tripletex_status, tripletex_ordre_id")
           .eq("offer_id", offerId),
+        supabase
+          .from("delpost_fullfort" as never)
+          .select("offer_line_id, andel")
+          .eq("offer_id" as never, offerId as never),
       ]);
       if (o.error) throw o.error;
       if (l.error) throw l.error;
       if (p.error) throw p.error;
+      if (f.error) throw f.error;
       const rader = (p.data ?? []) as Array<{
         amount: number;
         andeler: unknown;
@@ -105,6 +116,13 @@ export function DelordreDialog({
         },
         poster: ((l.data ?? []) as unknown as Post[]).filter((x) => x.included !== false),
         forrige: gjeldendeAndeler(rader),
+        // {offer_line_id: andelen den ble merket fullført på}
+        fullfort: Object.fromEntries(
+          ((f.data ?? []) as Array<{ offer_line_id: string; andel: number }>).map((x) => [
+            x.offer_line_id,
+            Number(x.andel),
+          ]),
+        ) as Record<string, number>,
         // Ført for hånd før koblingen fantes. Vises, så ingen sender det samme på nytt.
         forHand: rader
           .filter((r) => !r.tripletex_ordre_id)
@@ -120,15 +138,32 @@ export function DelordreDialog({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (data)
+      setFullfortValg(Object.fromEntries(Object.keys(data.fullfort).map((id) => [id, true])));
+  }, [data]);
+
   const forrige = useMemo(() => data?.forrige ?? {}, [data]);
+  const lagretFullfort = useMemo(() => data?.fullfort ?? {}, [data]);
   const adminPct = Number(data?.tilbud.admin_cost_pct ?? 0);
+
+  // En post som er lagret som fullført og ikke åpnes igjen nå, står stille.
+  const laast = (id: string) => id in lagretFullfort && fullfortValg[id] !== false;
+
+  const endringer = useMemo(() => {
+    const apnes = Object.keys(lagretFullfort).filter((id) => fullfortValg[id] === false);
+    const lukkes = Object.keys(fullfortValg).filter(
+      (id) => fullfortValg[id] && !(id in lagretFullfort),
+    );
+    return { apnes, lukkes };
+  }, [fullfortValg, lagretFullfort]);
 
   const beregning = useMemo(() => {
     let grunnlag = 0;
     const feil: string[] = [];
     const andeler: Andeler = {};
     for (const p of data?.poster ?? []) {
-      if (p.is_heading) continue;
+      if (p.is_heading || laast(p.id)) continue;
       const fra = forrige[p.id] ?? 0;
       const til = lesProsent(nye[p.id] ?? "");
       if (til === null) continue;
@@ -143,41 +178,84 @@ export function DelordreDialog({
     }
     const admin = Math.round(grunnlag * (adminPct / 100) * 100) / 100;
     return { andeler, grunnlag, admin, sum: grunnlag + admin, feil };
-  }, [data, nye, forrige, adminPct]);
+    // laast leser fullfortValg og lagretFullfort, som står i listen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, nye, forrige, adminPct, fullfortValg, lagretFullfort]);
+
+  const harOrdre = Object.keys(beregning.andeler).length > 0;
+  const harFullfortEndring = endringer.apnes.length + endringer.lukkes.length > 0;
 
   const settAlle = () => {
     const pct = lesProsent(alle);
     if (pct === null || Number.isNaN(pct)) return;
     const ut: Record<string, string> = {};
     for (const p of data?.poster ?? []) {
-      // En post som alt er kommet lenger, blir stående.
-      if (!p.is_heading && (forrige[p.id] ?? 0) < pct) ut[p.id] = visProsent(pct);
+      // En post som alt er kommet lenger, eller er fullført, blir stående.
+      if (!p.is_heading && !laast(p.id) && !fullfortValg[p.id] && (forrige[p.id] ?? 0) < pct) {
+        ut[p.id] = visProsent(pct);
+      }
     }
     setNye(ut);
   };
 
+  /**
+   * Rekkefølgen betyr noe: en post som åpnes igjen, må være åpen før ordren
+   * lages, ellers nekter serveren økningen. En post som lukkes, lukkes etter
+   * ordren, så den siste andelen rekker å bli med.
+   */
   const lag = async () => {
-    if (beregning.feil.length || !Object.keys(beregning.andeler).length) return;
+    if (beregning.feil.length || (!harOrdre && !harFullfortEndring)) return;
     setSender(true);
-    const venter = toast.loading("Lager PDF og ordre i Tripletex…");
+    const venter = harOrdre ? toast.loading("Lager PDF og ordre i Tripletex…") : undefined;
     try {
-      let pdf: Blob | null = null;
-      try {
-        const t = await hentTilbudForPdf(offerId);
-        pdf = await lagPdfFil((w) => skrivTilbudsPdf(w, t.tilbud, t.linjer, t.kunde, innst));
-      } catch (e) {
-        // Ordren er verdt mer enn vedlegget: den lages uansett, og det sies fra.
-        console.error(e);
+      if (endringer.apnes.length) {
+        const { error: e } = await supabase
+          .from("delpost_fullfort" as never)
+          .delete()
+          .in("offer_line_id" as never, endringer.apnes as never);
+        if (e) throw e;
       }
-      const r = await lagDelordre(offerId, beregning.andeler, pdf);
-      toast.dismiss(venter);
-      const melding = delordreTekst(r, !!pdf);
-      if (melding.ok) toast.success(melding.tekst);
-      else toast.warning(melding.tekst);
+
+      if (harOrdre) {
+        let pdf: Blob | null = null;
+        try {
+          const t = await hentTilbudForPdf(offerId);
+          pdf = await lagPdfFil((w) => skrivTilbudsPdf(w, t.tilbud, t.linjer, t.kunde, innst));
+        } catch (e) {
+          // Ordren er verdt mer enn vedlegget: den lages uansett, og det sies fra.
+          console.error(e);
+        }
+        const r = await lagDelordre(offerId, beregning.andeler, pdf);
+        toast.dismiss(venter);
+        const melding = delordreTekst(r, !!pdf);
+        if (melding.ok) toast.success(melding.tekst);
+        else toast.warning(melding.tekst);
+      }
+
+      if (endringer.lukkes.length) {
+        const { error: e } = await supabase.from("delpost_fullfort" as never).upsert(
+          endringer.lukkes.map((id) => ({
+            offer_line_id: id,
+            offer_id: offerId,
+            tenant_id: tenantId,
+            andel: beregning.andeler[id] ?? forrige[id] ?? 0,
+          })) as never,
+        );
+        if (e) throw e;
+      }
+      if (harFullfortEndring) {
+        const n = endringer.lukkes.length;
+        const m = endringer.apnes.length;
+        toast.success(
+          [n && `${n} ${n === 1 ? "post" : "poster"} merket fullført`, m && `${m} åpnet igjen`]
+            .filter(Boolean)
+            .join(", "),
+        );
+      }
       onLaget();
       onOpenChange(false);
     } catch (e) {
-      toast.dismiss(venter);
+      if (venter) toast.dismiss(venter);
       toast.error((e as Error).message);
     } finally {
       setSender(false);
@@ -194,7 +272,8 @@ export function DelordreDialog({
           <DialogDescription>
             Skriv hvor mange prosent av hver post som er gjort, totalt. Ordren i Tripletex tar bare
             med økningen siden sist. Den blir ikke fakturert eller sendt — det gjør dere i
-            Tripletex.
+            Tripletex. Huk av «Fullført» når en post er ferdig, selv om ikke alt er fakturert: da
+            vises den som 100 %, og resten faktureres ikke.
           </DialogDescription>
         </DialogHeader>
 
@@ -229,6 +308,12 @@ export function DelordreDialog({
                     <th className="px-3 py-2 text-right">Før</th>
                     <th className="w-24 px-3 py-2 text-right">Nå</th>
                     <th className="px-3 py-2 text-right">Denne gang</th>
+                    <th
+                      className="px-3 py-2 text-center"
+                      title="Posten er ferdig, selv om ikke alt er fakturert — for eksempel fordi mengden ble mindre"
+                    >
+                      Fullført
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -237,7 +322,7 @@ export function DelordreDialog({
                       return (
                         <tr key={p.id} className="border-b bg-muted/30">
                           <td
-                            colSpan={5}
+                            colSpan={6}
                             className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
                           >
                             {p.description}
@@ -252,6 +337,10 @@ export function DelordreDialog({
                         ? lineNet(p) * ((til - fra) / 100)
                         : 0;
                     const ferdig = fra >= 100;
+                    // Fullført på mindre enn 100 % vises som 100 %: posten er
+                    // ferdig, og resten skal ikke faktureres.
+                    const lukket = laast(p.id);
+                    const merket = !!fullfortValg[p.id];
                     return (
                       <tr key={p.id} className="border-b last:border-0">
                         <td className="px-3 py-2">
@@ -271,9 +360,14 @@ export function DelordreDialog({
                           {visProsent(fra)} %
                         </td>
                         <td className="px-3 py-2 text-right">
-                          {ferdig ? (
+                          {ferdig || lukket ? (
                             <span className="text-xs text-green-700 dark:text-green-400">
-                              Ferdig
+                              {ferdig ? "Ferdig" : "100 %"}
+                              {lukket && !ferdig && (
+                                <span className="block text-[11px] text-muted-foreground">
+                                  fullført på {visProsent(lagretFullfort[p.id] ?? fra)} %
+                                </span>
+                              )}
                             </span>
                           ) : (
                             <Input
@@ -287,7 +381,20 @@ export function DelordreDialog({
                           )}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium">
-                          {okning ? nok(okning) : "—"}
+                          {okning && !lukket ? nok(okning) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {ferdig ? (
+                            <Checkbox checked disabled aria-label={`${p.description} er ferdig`} />
+                          ) : (
+                            <Checkbox
+                              checked={merket}
+                              onCheckedChange={(v) =>
+                                setFullfortValg((s) => ({ ...s, [p.id]: v === true }))
+                              }
+                              aria-label={`Merk ${p.description} som fullført`}
+                            />
+                          )}
                         </td>
                       </tr>
                     );
@@ -337,13 +444,16 @@ export function DelordreDialog({
           <Button
             onClick={lag}
             disabled={
-              sender ||
-              isLoading ||
-              !!beregning.feil.length ||
-              !Object.keys(beregning.andeler).length
+              sender || isLoading || !!beregning.feil.length || (!harOrdre && !harFullfortEndring)
             }
           >
-            {sender ? "Lager ordre…" : "Lag ordre i Tripletex"}
+            {sender
+              ? harOrdre
+                ? "Lager ordre…"
+                : "Lagrer…"
+              : harOrdre
+                ? "Lag ordre i Tripletex"
+                : "Lagre fullført"}
           </Button>
         </DialogFooter>
       </DialogContent>

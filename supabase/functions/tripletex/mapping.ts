@@ -57,6 +57,21 @@ export function gjeldendeAndeler(rader: Delordrerad[]): Andeler {
   return ut;
 }
 
+/**
+ * Passer andelene fra tidligere delordre med linjene tilbudet har nå?
+ *
+ * Andelene huskes per linje-id. Har linjene fått nye id-er — et tilbud som er
+ * bygd opp på nytt, eller en lagring fra en eldre versjon av appen — ser det ut
+ * som ingenting er fakturert, og neste ordre ville tatt alt med igjen. Da skal
+ * det heller stoppe enn å fakturere dobbelt. At noen linjer er fjernet, er
+ * greit; at ingen av dem finnes lenger, er det ikke.
+ */
+export function andelerPasser(rader: Delordrerad[], linjeIder: Iterable<string>): boolean {
+  const ider = new Set(linjeIder);
+  const tidligere = Object.keys(gjeldendeAndeler(rader));
+  return !tidligere.length || tidligere.some((id) => ider.has(id));
+}
+
 const tall = (n: number, des = 2) =>
   new Intl.NumberFormat("nb-NO", { minimumFractionDigits: des, maximumFractionDigits: des })
     .format(n)
@@ -86,13 +101,21 @@ export interface Delordre {
 /**
  * Ordrelinjene for økningen fra `forrige` til `nye`.
  *
- * Hver post som har økt, blir én linje på økningens beløp, med tekst som sier
- * hva posten er og hvor langt den er kommet — for eksempel
- * «Graving (12 m³ à 450,00) – utført 60 % (før 40 %)». Én linje med antall 1
- * framfor en brøkdel av mengden: 2,4 m³ ser ut som en feil på fakturaen.
+ * Hver post som har økt, blir én linje som ser ut som en vanlig fakturalinje:
+ * navnet, andelen i parentes — «asfalt (23 %)», neste gang «asfalt (23 → 60 %)»
+ * — og mengden og prisen i Tripletex sine egne felt, her 29,9 × 300,00. Før
+ * sto mengde, pris og andel i teksten, og linjen ble uleselig. Kommentaren på
+ * posten er utelatt av samme grunn; den står i tilbuds-PDF-en som ligger ved.
+ *
+ * Overskriftene fra tilbudet kommer med som tekstlinjer, men bare over poster
+ * som er med denne gangen — ellers står det overskrifter uten noe under.
  *
  * Adm.påslaget kommer som egen linje av det som er tatt med denne gangen, så
  * alle delordrene til sammen blir tilbudssummen.
+ *
+ * En post som er merket fullført (`avsluttet`), tas ikke med lenger: den er
+ * ferdig selv om ikke alt ble fakturert — mengden ble kanskje mindre enn i
+ * tilbudet. Andelen den hadde, står.
  *
  * Kaster med en melding brukeren kan lese hvis en andel er ugyldig eller
  * ingenting har økt.
@@ -103,19 +126,36 @@ export function delordre(
   nye: Andeler,
   adminPct: number | null | undefined,
   vatTypeId: number,
+  avsluttet: ReadonlySet<string> = new Set(),
 ): Delordre {
-  const poster = [...(linjer ?? [])]
-    .filter((l) => l.included !== false && !l.is_heading)
+  const iRekkefolge = [...(linjer ?? [])]
+    .filter((l) => l.included !== false)
     .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
 
   const ut: Ordrelinje[] = [];
   const andeler: Andeler = {};
   let grunnlag = 0;
+  let poster = 0;
+  // Overskriften settes inn først når en post under den faktisk kommer med.
+  let ventendeOverskrift: string | null = null;
 
-  for (const l of poster) {
+  for (const l of iRekkefolge) {
+    if (l.is_heading) {
+      ventendeOverskrift = (l.description ?? "").trim() || null;
+      continue;
+    }
     const for_ = Number(forrige[l.id] ?? 0);
     const na = nye[l.id] === undefined ? for_ : Number(nye[l.id]);
     const navn = (l.description ?? "").trim() || "posten";
+    if (avsluttet.has(l.id)) {
+      if (na > for_) {
+        throw new Error(
+          `«${navn}» er merket som fullført. Ta av haken for å fakturere mer av den.`,
+        );
+      }
+      andeler[l.id] = for_;
+      continue;
+    }
     if (!Number.isFinite(na) || na < 0 || na > 100) {
       throw new Error(`Andelen for «${navn}» må være mellom 0 og 100 %`);
     }
@@ -127,32 +167,40 @@ export function delordre(
     andeler[l.id] = na;
     if (na === for_) continue;
 
-    const belop = kroner(netto(l) * ((na - for_) / 100));
-    grunnlag += belop;
+    // Mengden for økningen, slik Tripletex regner: antall × pris − rabatt.
+    // Fire desimaler holder avviket fra tilbudssummen under et øre.
+    const antall = Math.round(Number(l.quantity ?? 0) * ((na - for_) / 100) * 10_000) / 10_000;
+    const pris = kroner(Number(l.unit_price ?? 0));
+    const rabatt = Number(l.discount_pct ?? 0);
+    grunnlag += kroner(antall * pris * (1 - rabatt / 100));
+
+    if (ventendeOverskrift) {
+      ut.push({
+        description: ventendeOverskrift,
+        count: 0,
+        unitPriceExcludingVatCurrency: 0,
+        discount: 0,
+        vatType: { id: vatTypeId },
+        sortIndex: ut.length + 1,
+      });
+      ventendeOverskrift = null;
+    }
 
     const kode = (l.ns_code ?? "").trim();
-    const enhet = (l.unit ?? "").trim();
-    const mengde = `${tall(Number(l.quantity ?? 0), Number.isInteger(Number(l.quantity ?? 0)) ? 0 : 2)}${enhet ? ` ${enhet}` : ""}`;
-    const rabatt = Number(l.discount_pct ?? 0) ? `, ${prosent(Number(l.discount_pct))} rabatt` : "";
-    let tekst =
-      [kode, navn].filter(Boolean).join(" ") +
-      ` (${mengde} à ${tall(Number(l.unit_price ?? 0))}${rabatt})` +
-      ` – utført ${prosent(na)}` +
-      (for_ > 0 ? ` (før ${prosent(for_)})` : "");
-    const kommentar = (l.comment ?? "").trim();
-    if (kommentar) tekst += `\n${kommentar}`;
-
+    const andel =
+      for_ > 0 ? `${tall(for_, Number.isInteger(for_) ? 0 : 1)} → ${prosent(na)}` : prosent(na);
     ut.push({
-      description: tekst,
-      count: 1,
-      unitPriceExcludingVatCurrency: belop,
-      discount: 0,
+      description: `${[kode, navn].filter(Boolean).join(" ")} (${andel})`,
+      count: antall,
+      unitPriceExcludingVatCurrency: pris,
+      discount: rabatt,
       vatType: { id: vatTypeId },
       sortIndex: ut.length + 1,
     });
+    poster++;
   }
 
-  if (!ut.length) throw new Error("Ingen poster har fått høyere andel enn sist");
+  if (!poster) throw new Error("Ingen poster har fått høyere andel enn sist");
 
   const pct = Number(adminPct ?? 0);
   if (pct > 0) {

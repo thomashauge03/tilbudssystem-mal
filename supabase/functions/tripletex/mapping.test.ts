@@ -6,6 +6,7 @@
 
 import {
   delordre,
+  andelerPasser,
   gjeldendeAndeler,
   fakturastatus,
   mvaNummer,
@@ -79,40 +80,68 @@ const linjer: Array<Tilbudslinje & { id: string }> = [
 // Graving: 12 × 450 × 0,9 = 4 860. Rigg: 5 000. Sum 9 860, + 8 % = 10 648,80.
 
 const forste = delordre(linjer, {}, { grav: 40, rigg: 100 }, 8, 42);
-sjekk("første: graving 40 %", forste.linjer[0].unitPriceExcludingVatCurrency, 1944);
+const [overskrift, grav1, rigg1, adm1] = forste.linjer;
 sjekk(
-  "første: tekst med mengde, pris, rabatt og andel",
-  forste.linjer[0].description,
-  "Graving (12 m³ à 450,00, 10 % rabatt) – utført 40 %",
+  "første: overskriften står over postene sine",
+  [overskrift.description, overskrift.count, overskrift.unitPriceExcludingVatCurrency],
+  ["Grunnarbeid", 0, 0],
 );
+sjekk("første: ryddig tekst, bare navn og andel", grav1.description, "Graving (40 %)");
 sjekk(
-  "første: NS-kode først, kommentar på egen linje",
-  forste.linjer[1].description,
-  "AB1 Rigg (1 RS à 5 000,00) – utført 100 %\nInkl. brakke",
+  "første: mengden for andelen, pris og rabatt i egne felt",
+  [grav1.count, grav1.unitPriceExcludingVatCurrency, grav1.discount],
+  [4.8, 450, 10],
 );
-sjekk(
-  "første: antall 1, ingen rabatt på linjen",
-  [forste.linjer[0].count, forste.linjer[0].discount],
-  [1, 0],
-);
-sjekk("første: adm.påslag av det som er med", forste.linjer[2], {
+sjekk("første: NS-kode først, ingen kommentar", rigg1.description, "AB1 Rigg (100 %)");
+sjekk("første: adm.påslag av det som er med", adm1, {
   description: "Adm.påslag 8 %",
   count: 1,
   unitPriceExcludingVatCurrency: 555.52,
   discount: 0,
   vatType: { id: 42 },
-  sortIndex: 3,
+  sortIndex: 4,
 });
-sjekk("første: overskrift og opsjon ikke med", forste.linjer.length, 3);
+sjekk("første: opsjon som ikke er med, er borte", forste.linjer.length, 4);
+// 4,8 × 450 × 0,9 = 1 944; + 5 000; + 8 % = 7 499,52
+sjekk("første: summen", forste.sum, 7499.52);
 sjekk("første: andeler lagres for alle poster", forste.andeler, { grav: 40, rigg: 100 });
 
 const andre = delordre(linjer, forste.andeler, { grav: 100, rigg: 100 }, 8, 42);
-sjekk("andre: bare økningen på graving", andre.linjer[0].unitPriceExcludingVatCurrency, 2916);
-sjekk("andre: rigg som står stille er ikke med", andre.linjer.length, 2);
 sjekk(
-  "andre: teksten sier hvor langt den var",
-  andre.linjer[0].description.endsWith("utført 100 % (før 40 %)"),
-  true,
+  "andre: bare økningen på graving, rigg står stille",
+  andre.linjer.map((l) => [l.description, l.count]),
+  [
+    ["Grunnarbeid", 0],
+    ["Graving (40 → 100 %)", 7.2],
+    ["Adm.påslag 8 %", 1],
+  ],
+);
+sjekk(
+  "overskrift uten poster med denne gangen, blir ikke med",
+  delordre(
+    [
+      { id: "h1", sort_order: 1, description: "Del 1", is_heading: true },
+      { id: "a", sort_order: 2, description: "A", quantity: 1, unit_price: 100 },
+      { id: "h2", sort_order: 3, description: "Del 2", is_heading: true },
+      { id: "b", sort_order: 4, description: "B", quantity: 1, unit_price: 100 },
+    ],
+    { a: 100 },
+    { b: 50 },
+    0,
+    1,
+  ).linjer.map((l) => l.description),
+  ["Del 2", "B (50 %)"],
+);
+sjekk(
+  "mengde med mange desimaler rundes til fire",
+  delordre(
+    [{ id: "x", sort_order: 1, description: "X", quantity: 7, unit_price: 99 }],
+    {},
+    { x: 33.33 },
+    0,
+    1,
+  ).linjer[0].count,
+  2.3331,
 );
 sjekk(
   "til sammen er delordrene tilbudssummen",
@@ -125,13 +154,11 @@ sjekk(
   delordre(linjer, { grav: 40, rigg: 50 }, { rigg: 60 }, 0, 1).andeler,
   { grav: 40, rigg: 60 },
 );
-sjekk("uten påslag ingen påslagslinje", delordre(linjer, {}, { grav: 50 }, 0, 1).linjer.length, 1);
+sjekk("uten påslag ingen påslagslinje", delordre(linjer, {}, { grav: 50 }, 0, 1).linjer.length, 2);
 sjekk(
   "desimalprosent med komma",
-  delordre(linjer, {}, { grav: 12.5 }, 7.5, 1).linjer.map(
-    (l) => l.description.split(" – ")[1] ?? l.description,
-  ),
-  ["utført 12,5 %", "Adm.påslag 7,5 %"],
+  delordre(linjer, {}, { grav: 12.5 }, 7.5, 1).linjer.map((l) => l.description),
+  ["Grunnarbeid", "Graving (12,5 %)", "Adm.påslag 7,5 %"],
 );
 
 kaster(
@@ -155,6 +182,51 @@ sjekk(
     { andeler: null, tripletex_status: null },
   ]),
   { grav: 60, rigg: 100 },
+);
+
+// ─── Fullført post ──────────────────────────────────────────────────────────
+
+const fullfort = new Set(["grav"]);
+const medFullfort = delordre(linjer, { grav: 95, rigg: 50 }, { rigg: 100 }, 0, 1, fullfort);
+sjekk(
+  "fullført post blir ikke med på ordren",
+  medFullfort.linjer.map((l) => l.description),
+  ["Grunnarbeid", "AB1 Rigg (50 → 100 %)"],
+);
+sjekk("fullført post beholder andelen den hadde", medFullfort.andeler.grav, 95);
+kaster(
+  "fullført post kan ikke faktureres mer",
+  () => delordre(linjer, { grav: 95 }, { grav: 100 }, 0, 1, fullfort),
+  "merket som fullført",
+);
+kaster(
+  "bare fullførte poster igjen: ingenting å lage",
+  () => delordre(linjer, { grav: 95, rigg: 100 }, {}, 0, 1, fullfort),
+  "Ingen poster",
+);
+
+// ─── Vakt mot dobbel fakturering ────────────────────────────────────────────
+
+sjekk("ingen tidligere delordre: passer", andelerPasser([], ["a"]), true);
+sjekk(
+  "samme linje-id-er: passer",
+  andelerPasser([{ andeler: { grav: 40 } }], ["grav", "rigg"]),
+  true,
+);
+sjekk(
+  "noen linjer fjernet: passer",
+  andelerPasser([{ andeler: { grav: 40, borte: 100 } }], ["grav"]),
+  true,
+);
+sjekk(
+  "alle linjene har ny id: stopper",
+  andelerPasser([{ andeler: { gammel1: 40, gammel2: 100 } }], ["ny1", "ny2"]),
+  false,
+);
+sjekk(
+  "bare kreditert før: passer",
+  andelerPasser([{ andeler: { gammel: 40 }, tripletex_status: "kreditert" }], ["ny"]),
+  true,
 );
 
 // ─── Status fra Tripletex ───────────────────────────────────────────────────

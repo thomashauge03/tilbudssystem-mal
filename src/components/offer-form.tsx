@@ -382,9 +382,17 @@ export function OfferForm({ offerId }: { offerId?: string }) {
 
     let id = currentOfferIdRef.current ?? offerId;
     const editing = isEdit || !!currentOfferIdRef.current;
+    // Id-ene linjene har i basen nå. De settes inn igjen med samme id, fordi
+    // delordrene i Tripletex husker andelen per linje-id: fikk linjene nye
+    // id-er ved hver lagring, så det ut som ingenting var fakturert, og neste
+    // ordre ville tatt alt med på nytt.
+    let lagredeIder = new Set<string>();
     if (editing && id) {
       const { error } = await supabase.from("offers").update(payload).eq("id", id);
       if (error) { toast.error(error.message); return null; }
+      const { data: fra, error: lesFeil } = await supabase.from("offer_lines").select("id").eq("offer_id", id);
+      if (lesFeil) { toast.error(lesFeil.message); return null; }
+      lagredeIder = new Set((fra ?? []).map((r: { id: string }) => r.id));
       // Linjene skrives som slett-og-sett-inn. Går slettingen galt uten at vi
       // merker det, legges linjene inn dobbelt; går innsettingen galt etterpå,
       // er linjene borte i basen mens skjermen fortsatt viser dem.
@@ -403,9 +411,15 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       // ns_code sendes bare på linjer som har kode, så tilbud uten koder kan
       // lagres også mot en base der kolonnen ikke finnes ennå. supabase-js lager
       // kolonnelista av alle nøklene samlet, så linjer uten nøkkelen får null.
+      // En id brukes bare om den hørte til dette tilbudet, og bare én gang — en
+      // linje fra et utkast eller en kopi får en ny.
+      const brukt = new Set<string>();
       const linesInsert = lines.map((l, idx) => {
         const kode = l.is_heading ? null : (l.ns_code?.trim() || null);
+        const beholdId = !!l.id && lagredeIder.has(l.id) && !brukt.has(l.id);
+        if (beholdId) brukt.add(l.id!);
         return {
+          ...(beholdId ? { id: l.id } : {}),
           offer_id: id!,
           tenant_id: tenantId,
           sort_order: idx,
@@ -420,8 +434,12 @@ export function OfferForm({ offerId }: { offerId?: string }) {
           discount_pct: Number(l.discount_pct || 0),
         };
       });
-      const { error } = await supabase.from("offer_lines").insert(linesInsert);
+      const { data: satt, error } = await supabase.from("offer_lines").insert(linesInsert).select("id, sort_order");
       if (error) { toast.error(error.message); return null; }
+      // Nye linjer har fått id i basen. Skjemaet må vite den, ellers får de
+      // en ny id igjen ved neste lagring.
+      const idPaPlass = new Map((satt ?? []).map((r: { id: string; sort_order: number }) => [r.sort_order, r.id]));
+      setLines((p) => p.map((l, idx) => (idPaPlass.has(idx) ? { ...l, id: idPaPlass.get(idx) } : l)));
     }
 
     qc.invalidateQueries({ queryKey: ["offers"] });
@@ -727,9 +745,17 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         .select("id, included, is_heading")
         .eq("offer_id", id);
       if (error) throw error;
+      // En post som er merket fullført på Status-siden, er ferdig selv om ikke
+      // alt er fakturert. Den skal ikke fylles opp til 100 % her.
+      const { data: fullfort, error: fullfortFeil } = await supabase
+        .from("delpost_fullfort" as never)
+        .select("offer_line_id")
+        .eq("offer_id" as never, id as never);
+      if (fullfortFeil) throw fullfortFeil;
+      const ferdig = new Set(((fullfort ?? []) as Array<{ offer_line_id: string }>).map((f) => f.offer_line_id));
       const alle: Andeler = {};
       for (const l of (lagret ?? []) as Array<{ id: string; included: boolean; is_heading?: boolean }>) {
-        if (l.included !== false && !l.is_heading) alle[l.id] = 100;
+        if (l.included !== false && !l.is_heading && !ferdig.has(l.id)) alle[l.id] = 100;
       }
 
       let pdf: Blob | null = null;

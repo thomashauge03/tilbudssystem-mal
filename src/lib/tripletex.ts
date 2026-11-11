@@ -106,6 +106,9 @@ export interface LagetOrdre {
   ordre_nr: string;
   sum: number;
   vedlegg_feil: string | null;
+  /** «2026118 VA Skardheie Hyttefelt» når prosjektet ble funnet og satt. */
+  prosjekt?: string | null;
+  prosjekt_feil?: string | null;
 }
 
 export function lagDelordre(offerId: string, andeler: Andeler, pdf: Blob | null) {
@@ -128,16 +131,18 @@ export function synkTripletex(offerId?: string) {
   });
 }
 
-/** Toasten etter en delordre: sier fra om PDF-en ikke kom med. */
+/** Toasten etter en delordre: sier fra om PDF-en eller prosjektet ikke kom med. */
 export function delordreTekst(r: LagetOrdre, pdfLaget: boolean): { ok: boolean; tekst: string } {
   const sum = new Intl.NumberFormat("nb-NO", { style: "currency", currency: "NOK" }).format(r.sum);
-  if (!pdfLaget || r.vedlegg_feil) {
-    return {
-      ok: false,
-      tekst:
-        `Ordre ${r.ordre_nr} på ${sum} eks. mva er laget i Tripletex, men PDF-en kom ikke med` +
-        (r.vedlegg_feil ? `: ${r.vedlegg_feil}` : ". Legg den ved for hånd."),
-    };
-  }
-  return { ok: true, tekst: `Ordre ${r.ordre_nr} på ${sum} eks. mva er laget i Tripletex` };
+  const hva =
+    `Ordre ${r.ordre_nr} på ${sum} eks. mva er laget i Tripletex` +
+    (r.prosjekt ? ` på prosjekt ${r.prosjekt}` : "");
+  const mangler = [
+    (!pdfLaget || r.vedlegg_feil) &&
+      `PDF-en kom ikke med${r.vedlegg_feil ? `: ${r.vedlegg_feil}` : " — legg den ved for hånd"}`,
+    r.prosjekt_feil,
+  ].filter(Boolean);
+  return mangler.length
+    ? { ok: false, tekst: `${hva}, men ${mangler.join(". ")}` }
+    : { ok: true, tekst: hva };
 }

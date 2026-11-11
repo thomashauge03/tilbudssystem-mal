@@ -38,6 +38,22 @@ const les = <T>(tabell: string, select: string) =>
 const alle = <T>(tabell: string, select: string) =>
   alleRader<T>((fra, til) => les<T>(tabell, select).order("id").range(fra, til));
 
+/** Poster merket ferdig. Tom liste når tabellen mangler eller ikke kan leses: den bare trekker fra. */
+async function hentFerdigePoster(): Promise<RaaFullfort[]> {
+  try {
+    const { data, error } = await les<RaaFullfort>("delpost_fullfort", UTVALG.delpost_fullfort);
+    return error ? [] : (data ?? []);
+  } catch {
+    return [];
+  }
+}
+
+/** Betalinger og poster merket ferdig, for å regne «igjen» med samme regel som dashbordet (Status-siden). */
+export async function hentBetalingerOgFerdigePoster() {
+  const [betalinger, ferdige] = await Promise.all([alle<RaaBetaling>("payments", UTVALG.payments), hentFerdigePoster()]);
+  return { betalinger, ferdige };
+}
+
 /**
  * Henter alt dashbordet trenger. Ingen tak på antall rader: et tak avkorter
  * kontraktssummen stille. Første feil kastes, slik at en feilet spørring ikke
@@ -45,14 +61,7 @@ const alle = <T>(tabell: string, select: string) =>
  * mangler den, er tallene som før merkingen fantes.
  */
 export async function hentRaadata(): Promise<Raadata> {
-  const fullfort = (async () => {
-    try {
-      const { data, error } = await les<RaaFullfort>("delpost_fullfort", UTVALG.delpost_fullfort);
-      return error ? [] : (data ?? []);
-    } catch {
-      return [];
-    }
-  })();
+  const fullfort = hentFerdigePoster();
 
   const innstillinger = (async () => {
     const { data, error } = await les<{ payment_terms: string | null }>("app_settings", UTVALG.app_settings);

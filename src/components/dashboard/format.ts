@@ -33,18 +33,6 @@ export function mill(n: number): string {
   return `${millTall(n)} mill`;
 }
 
-/** «882 tusen» – rundet til hele tusen. Under 1 000 kr: hele kroner. */
-export function tusen(n: number): string {
-  if (Math.abs(n) < 1_000) return kr(n);
-  return `${tall(Math.round(n / 1_000))} tusen`;
-}
-
-/** Én enhet i en rekke: «2,0 mill» fra 1 mill og opp, ellers «882 tusen». */
-export function millEllerTusen(n: number): string {
-  // 999 600 skal bli «1,0 mill», ikke «1 000 tusen».
-  return Math.abs(n) >= 999_500 ? `${millTall(n)} mill` : tusen(n);
-}
-
 /** «0,6 mill» – alltid i millioner, for tall som skal sammenlignes med hverandre. */
 export function millAlltid(n: number, desimaler = 1): string {
   return `${millTall(n, desimaler)} mill`;

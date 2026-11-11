@@ -3,7 +3,7 @@ import { ChevronRight, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DashboardData } from "@/lib/dashboard-typer";
 import { BlokkTittel, Kort, knappKlasse } from "./felles";
-import { antall, forrigeManedNavn, mill, millAlltid, millEllerTusen } from "./format";
+import { antall, forrigeManedNavn, mill, millAlltid } from "./format";
 
 // «Gir vi nok tilbud, og får vi jobbene?» Skrevet som vanlige setninger med
 // tallene i fet skrift, ikke som prosent av verdi.
@@ -54,10 +54,10 @@ export function TilbudSetninger({
         )}
         {taperDeStore && (
           <p>
-            {/* snittFatt/snittTapt er median («vanlig jobb»), og under 1 mill står de i tusen. */}
+            {/* snittFatt/snittTapt er median («vanlig jobb»), og under 1 mill står de i hele kroner. */}
             Du får de små jobbene, men taper de store: vanlig jobb du fikk{" "}
-            <b className="font-semibold">{millEllerTusen(t.snittFatt)}</b>, vanlig jobb du tapte{" "}
-            <b className="font-semibold">{millEllerTusen(t.snittTapt)}</b>.
+            <b className="font-semibold">{mill(t.snittFatt)}</b>, vanlig jobb du tapte{" "}
+            <b className="font-semibold">{mill(t.snittTapt)}</b>.
           </p>
         )}
         {antallGodkjenteEndringer > 0 && (

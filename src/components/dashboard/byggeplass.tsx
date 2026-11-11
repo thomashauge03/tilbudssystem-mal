@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { DashboardData, Jobb } from "@/lib/dashboard-typer";
 import { BlokkTittel, Kort, dempet, knappKlasse, tekstFarge } from "./felles";
-import { antall, kr, mill, millEllerTusen } from "./format";
+import { antall, kr, mill } from "./format";
 
 // «Hvor ligger pengene jeg har til gode?» De 8 jobbene med mest igjen, tegnet
 // som bygg som reises: grønt nedenfra er fakturert, stillaset er det som er
@@ -242,8 +242,8 @@ export function Byggeplass({
                   </span>
                   <span className="mt-0.5 text-sm leading-5 sm:text-[15px]">
                     <span className={dempet}>igjen </span>
-                    {/* Samme enhet i hele rekka: «2,0 mill» eller «882 tusen». */}
-                    <span className="whitespace-nowrap font-semibold">{millEllerTusen(j.igjen)}</span>
+                    {/* «2,0 mill» fra 1 mill og opp, ellers hele kroner: «882 198 kr». */}
+                    <span className="whitespace-nowrap font-semibold">{mill(j.igjen)}</span>
                   </span>
                   {j.fakturertForMye > 0 && (
                     <span className={cn("text-sm font-medium leading-5", tekstFarge.haster)}>fakturert for mye</span>

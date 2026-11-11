@@ -200,7 +200,8 @@ export const erKrav = (a: RaaEndring) => !isAmendmentRejected(a) && !erEndringGo
 const FAKTURERT_STATUS = ["fakturert", "delvis_betalt", "betalt"];
 
 /** Fakturaen er sendt: betalt, eller fakturert i Tripletex. */
-const erFakturert = (p: RaaBetaling) => !!p.paid || FAKTURERT_STATUS.includes(p.tripletex_status ?? "");
+const erFakturert = (p: Pick<RaaBetaling, "paid" | "tripletex_status">) =>
+  !!p.paid || FAKTURERT_STATUS.includes(p.tripletex_status ?? "");
 
 /** Ordre i Tripletex som ikke er fakturert ennå. */
 const erKlar = (p: RaaBetaling) => p.tripletex_status === "ordre" && !p.paid;
@@ -225,6 +226,99 @@ const harFeilTilbudsdato = (o: RaaTilbud) => {
 /** Datoen tilbudet ble gitt: offer_date, eller created_at når offer_date mangler eller er feilskrevet. */
 const tilbudDato = (o: RaaTilbud) =>
   (harFeilTilbudsdato(o) ? null : lokalDato(o.offer_date)) ?? lokalDato(o.created_at);
+
+// ─── Igjen å fakturere ─────────────────────────────────────────────────────
+//
+// Regelen deles med Status-siden, så «igjen» er samme tall begge steder:
+// - en jobb er tilbudet pluss de godkjente endringene på det,
+// - en fullført jobb har ingenting igjen, uansett hvor mye som er fakturert,
+// - en jobb har aldri mindre enn 0 igjen: det som er fakturert for mye på én
+//   jobb, skal ikke trekkes fra det som står igjen på de andre,
+// - det som står igjen på poster merket ferdig i delordren, skal ikke faktureres.
+
+/** Det som trengs av et tilbud for å regne ut igjen. */
+export type IgjenTilbud = Pick<RaaTilbud, "id" | "status" | "admin_cost_pct" | "offer_lines">;
+/** Det som trengs av en godkjent endring for å regne ut igjen. */
+export type IgjenEndring = Pick<RaaEndring, "id" | "offer_id" | "amendment_lines">;
+/** Det som trengs av en betaling for å regne ut igjen. */
+export type IgjenBetaling = Pick<RaaBetaling, "amount" | "paid" | "offer_id" | "amendment_id" | "tripletex_status">;
+
+/** Igjen på én jobb. Under en krone er avrunding og regnes som 0. */
+export function igjenPaJobb(kontrakt: number, fakturert: number, fullfort: boolean, restFerdigePoster = 0) {
+  if (fullfort) return 0;
+  const r = kontrakt - fakturert - restFerdigePoster;
+  return r < ORE ? 0 : r;
+}
+
+/** Det av postene merket ferdig som aldri skal faktureres, per tilbud og per endring. */
+export function restPaFerdigePoster(tilbud: IgjenTilbud[], endringer: IgjenEndring[], ferdige: RaaFullfort[]) {
+  const linjeTilbud = new Map<string, { linje: Linje; adminPct: number }>();
+  for (const o of tilbud)
+    for (const l of o.offer_lines ?? [])
+      if (l.included !== false) linjeTilbud.set(l.id, { linje: l, adminPct: tall(o.admin_cost_pct) });
+  const linjeEndring = new Map<string, Linje>();
+  for (const a of endringer) for (const l of a.amendment_lines ?? []) linjeEndring.set(l.id, l);
+
+  const restTilbud = new Map<string, number>();
+  const restEndring = new Map<string, number>();
+  for (const f of ferdige) {
+    const andel = Math.min(100, Math.max(0, tall(f.andel)));
+    if (f.amendment_id) {
+      const l = linjeEndring.get(f.offer_line_id);
+      if (l) restEndring.set(f.amendment_id, (restEndring.get(f.amendment_id) ?? 0) + lineNet(l) * ((100 - andel) / 100));
+    } else if (f.offer_id) {
+      const t = linjeTilbud.get(f.offer_line_id);
+      if (t)
+        restTilbud.set(
+          f.offer_id,
+          (restTilbud.get(f.offer_id) ?? 0) + lineNet(t.linje) * ((100 - andel) / 100) * (1 + t.adminPct / 100),
+        );
+    }
+  }
+  return { restTilbud, restEndring };
+}
+
+/**
+ * Igjen å fakturere for et utvalg vunne tilbud og godkjente endringer. Betalingene kan gjelde hva som helst:
+ * bare de som hører til utvalget, telles. En endring uten tilbud i utvalget regnes som en jobb for seg.
+ */
+export function igjenAFakturere(
+  tilbud: IgjenTilbud[],
+  endringer: IgjenEndring[],
+  betalinger: IgjenBetaling[],
+  ferdige: RaaFullfort[] = [],
+) {
+  const fakturertPaTilbud = new Map<string, number>();
+  const fakturertPaEndring = new Map<string, number>();
+  for (const p of betalinger) {
+    if (p.tripletex_status === "kreditert" || !erFakturert(p)) continue;
+    const m = p.amendment_id ? fakturertPaEndring : fakturertPaTilbud;
+    const id = p.amendment_id ?? p.offer_id;
+    if (id) m.set(id, (m.get(id) ?? 0) + tall(p.amount));
+  }
+  const { restTilbud, restEndring } = restPaFerdigePoster(tilbud, endringer, ferdige);
+  const tilbudIder = new Set(tilbud.map((o) => o.id));
+
+  let igjen = 0;
+  for (const o of tilbud) {
+    const endr = endringer.filter((a) => a.offer_id === o.id);
+    igjen += igjenPaJobb(
+      offerTotal(o.offer_lines, o.admin_cost_pct) + sum(endr.map((a) => amendmentTotal(a.amendment_lines))),
+      (fakturertPaTilbud.get(o.id) ?? 0) + sum(endr.map((a) => fakturertPaEndring.get(a.id) ?? 0)),
+      o.status === OFFER_COMPLETED,
+      (restTilbud.get(o.id) ?? 0) + sum(endr.map((a) => restEndring.get(a.id) ?? 0)),
+    );
+  }
+  for (const a of endringer)
+    if (!a.offer_id || !tilbudIder.has(a.offer_id))
+      igjen += igjenPaJobb(
+        amendmentTotal(a.amendment_lines),
+        fakturertPaEndring.get(a.id) ?? 0,
+        false,
+        restEndring.get(a.id) ?? 0,
+      );
+  return igjen;
+}
 
 // ─── Utregningen ───────────────────────────────────────────────────────────
 
@@ -259,29 +353,7 @@ export function lagDashboard(raa: Raadata, idag: string): DashboardData {
   }
 
   // Rest på poster merket ferdig: det av posten som aldri skal faktureres.
-  const linjeTilbud = new Map<string, { linje: Linje; adminPct: number }>();
-  for (const o of raa.offers)
-    for (const l of o.offer_lines ?? [])
-      if (l.included !== false) linjeTilbud.set(l.id, { linje: l, adminPct: tall(o.admin_cost_pct) });
-  const linjeEndring = new Map<string, Linje>();
-  for (const a of raa.amendments) for (const l of a.amendment_lines ?? []) linjeEndring.set(l.id, l);
-
-  const restTilbud = new Map<string, number>();
-  const restEndring = new Map<string, number>();
-  for (const f of raa.delpostFullfort ?? []) {
-    const andel = Math.min(100, Math.max(0, tall(f.andel)));
-    if (f.amendment_id) {
-      const l = linjeEndring.get(f.offer_line_id);
-      if (l) restEndring.set(f.amendment_id, (restEndring.get(f.amendment_id) ?? 0) + lineNet(l) * ((100 - andel) / 100));
-    } else if (f.offer_id) {
-      const t = linjeTilbud.get(f.offer_line_id);
-      if (t)
-        restTilbud.set(
-          f.offer_id,
-          (restTilbud.get(f.offer_id) ?? 0) + lineNet(t.linje) * ((100 - andel) / 100) * (1 + t.adminPct / 100),
-        );
-    }
-  }
+  const { restTilbud, restEndring } = restPaFerdigePoster(raa.offers, raa.amendments, raa.delpostFullfort ?? []);
 
   const endringerPaTilbud = new Map<string, RaaEndring[]>();
   for (const a of godkjente)
@@ -298,8 +370,7 @@ export function lagDashboard(raa: Raadata, idag: string): DashboardData {
     const kontrakt = tilbudSum.get(o.id)! + sum(endr.map((a) => endringSum.get(a.id)!));
     const fakturert = (fakturertPaTilbud.get(o.id) ?? 0) + sum(endr.map((a) => fakturertPaEndring.get(a.id) ?? 0));
     const rest = (restTilbud.get(o.id) ?? 0) + sum(endr.map((a) => restEndring.get(a.id) ?? 0));
-    let igjen = o.status === OFFER_COMPLETED ? 0 : Math.max(0, kontrakt - fakturert - rest);
-    if (igjen < ORE) igjen = 0;
+    const igjen = igjenPaJobb(kontrakt, fakturert, o.status === OFFER_COMPLETED, rest);
     // Tilbudet og hver endring sjekkes for seg, så en feil på én endring ikke
     // skjules av det som står igjen på tilbudet, eller telles to ganger.
     const forMye = overTilbud(o) + sum(endr.map(overEndring));
@@ -321,10 +392,9 @@ export function lagDashboard(raa: Raadata, idag: string): DashboardData {
   // Godkjente endringer uten et vunnet tilbud hører ikke til noen jobb, men er avtalt og skal med i pengene.
   const lose = godkjente.filter((a) => !a.offer_id || !vunnetIder.has(a.offer_id));
   const loseIgjen = sum(
-    lose.map((a) => {
-      const r = endringSum.get(a.id)! - (fakturertPaEndring.get(a.id) ?? 0) - (restEndring.get(a.id) ?? 0);
-      return r < ORE ? 0 : r;
-    }),
+    lose.map((a) =>
+      igjenPaJobb(endringSum.get(a.id)!, fakturertPaEndring.get(a.id) ?? 0, false, restEndring.get(a.id) ?? 0),
+    ),
   );
 
   // ── Pengene ──

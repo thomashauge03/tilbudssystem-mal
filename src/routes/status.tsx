@@ -11,6 +11,8 @@ import {
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { PaymentsPanel, syncInvoicedAmount } from "@/components/payments-panel";
 import { useTripletexStatus, synkTripletex } from "@/lib/tripletex";
+import { hentBetalingerOgFerdigePoster } from "@/lib/dashboard-data";
+import { igjenAFakturere, type IgjenEndring, type IgjenTilbud } from "@/lib/dashboard-utregning";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/status")({
@@ -103,7 +105,8 @@ function StatusPage() {
       const { data, error } = await supabase
         .from("offers")
         // discount_pct og included må være med, ellers regner offerTotal feil i stillhet
-        .select("id, offer_number, title, customer_name, status, valid_until, project_number, admin_cost_pct, invoiced_amount, offer_lines(quantity, unit_price, discount_pct, included)")
+        // id og is_heading på linjene trengs for «gjenstår» (poster merket ferdig, overskrifter uten beløp)
+        .select("id, offer_number, title, customer_name, status, valid_until, project_number, admin_cost_pct, invoiced_amount, offer_lines(id, quantity, unit_price, discount_pct, included, is_heading)")
         .in("status", OFFER_WON_STATUSES)
         .order("offer_number", { ascending: false });
       if (error) throw error;
@@ -116,7 +119,7 @@ function StatusPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("amendments")
-        .select("id, offer_id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, status, rejected_at, customer_signed_at, amendment_lines(quantity, unit_price, discount_pct), offers(offer_number, title, customer_name, project_number)")
+        .select("id, offer_id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, status, rejected_at, customer_signed_at, amendment_lines(id, quantity, unit_price, discount_pct, is_heading), offers(offer_number, title, customer_name, project_number)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       // Et avslått krav er ute av spill: kunden har sagt nei, og det skal
@@ -193,9 +196,32 @@ function StatusPage() {
     [filteredOffers, filteredAmendments],
   );
 
+  // «Gjenstår» regnes med samme regel som dashbordet: jobb for jobb, fullførte jobber har
+  // ingenting igjen, og det som er fakturert for mye på én jobb, trekkes ikke fra de andre.
+  // Det regnes av fakturerte rader, så en faktura som er sendt men ikke betalt, ikke står som igjen.
+  const { data: betalingsdata, error: errorB } = useQuery({
+    queryKey: ["status-betalinger"],
+    queryFn: hentBetalingerOgFerdigePoster,
+  });
+
+  const totalGjenstar = useMemo(
+    () =>
+      betalingsdata
+        ? igjenAFakturere(
+            filteredOffers as unknown as IgjenTilbud[],
+            filteredAmendments as unknown as IgjenEndring[],
+            betalingsdata.betalinger,
+            betalingsdata.ferdige,
+          )
+        : null,
+    [filteredOffers, filteredAmendments, betalingsdata],
+  );
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["status-offers"] });
     qc.invalidateQueries({ queryKey: ["status-amendments"] });
+    qc.invalidateQueries({ queryKey: ["status-betalinger"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   // Hent ferske tall fra Tripletex hver gang siden åpnes. Synkjobben i basen
@@ -241,7 +267,11 @@ function StatusPage() {
           value={nok(totalInvoiced)}
           sub={`${totalSum > 0 ? Math.round((totalInvoiced / totalSum) * 100) : 0} % av total`}
         />
-        <SummaryCard label="Gjenstår" value={nok(Math.max(0, totalSum - totalInvoiced))} sub="Eks. mva" />
+        <SummaryCard
+          label="Gjenstår"
+          value={totalGjenstar === null ? (errorB ? "–" : "…") : nok(totalGjenstar)}
+          sub="Eks. mva · fullførte jobber og for mye fakturert er holdt utenfor"
+        />
       </div>
 
       {(errorO || errorA) && (

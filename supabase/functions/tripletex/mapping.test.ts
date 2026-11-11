@@ -86,13 +86,18 @@ sjekk(
   [overskrift.description, overskrift.count, overskrift.unitPriceExcludingVatCurrency],
   ["Grunnarbeid", 0, 0],
 );
-sjekk("første: ryddig tekst, bare navn og andel", grav1.description, "Graving (40 %)");
+sjekk("første: bare navnet, ingen prosent", grav1.description, "Graving");
 sjekk(
   "første: mengden for andelen, pris og rabatt i egne felt",
   [grav1.count, grav1.unitPriceExcludingVatCurrency, grav1.discount],
   [4.8, 450, 10],
 );
-sjekk("første: NS-kode først, ingen kommentar", rigg1.description, "AB1 Rigg (100 %)");
+sjekk("første: NS-kode først, ingen kommentar", rigg1.description, "AB1 Rigg");
+sjekk(
+  "første: 1 stk hel post er 1 stk til full pris",
+  [rigg1.count, rigg1.unitPriceExcludingVatCurrency, rigg1.discount],
+  [1, 5000, 0],
+);
 sjekk("første: adm.påslag av det som er med", adm1, {
   description: "Adm.påslag 8 %",
   count: 1,
@@ -112,7 +117,7 @@ sjekk(
   andre.linjer.map((l) => [l.description, l.count]),
   [
     ["Grunnarbeid", 0],
-    ["Graving (40 → 100 %)", 7.2],
+    ["Graving", 7.2],
     ["Adm.påslag 8 %", 1],
   ],
 );
@@ -130,8 +135,35 @@ sjekk(
     0,
     1,
   ).linjer.map((l) => l.description),
-  ["Del 2", "B (50 %)"],
+  ["Del 2", "B"],
 );
+{
+  // «veg 1», 1 stk à 10 000, 40 % gjort: 1 stk à 4 000 — ikke 0,4 stk.
+  const veg = [
+    {
+      id: "v",
+      sort_order: 1,
+      description: "veg 1",
+      unit: "Stk",
+      quantity: 1,
+      unit_price: 10000,
+      discount_pct: 10,
+    },
+  ];
+  const d1 = delordre(veg, {}, { v: 40 }, 0, 1).linjer[0];
+  sjekk(
+    "1 stk delvis: 1 stk med delbeløpet, rabatten trukket fra",
+    [d1.count, d1.unitPriceExcludingVatCurrency, d1.discount],
+    [1, 3600, 0],
+  );
+  const d2 = delordre(veg, { v: 40 }, { v: 100 }, 0, 1);
+  sjekk(
+    "1 stk resten: 1 stk med resten",
+    [d2.linjer[0].count, d2.linjer[0].unitPriceExcludingVatCurrency],
+    [1, 5400],
+  );
+  sjekk("1 stk til sammen: hele posten", 3600 + d2.sum, 9000);
+}
 sjekk(
   "mengde med mange desimaler rundes til fire",
   delordre(
@@ -156,9 +188,20 @@ sjekk(
 );
 sjekk("uten påslag ingen påslagslinje", delordre(linjer, {}, { grav: 50 }, 0, 1).linjer.length, 2);
 sjekk(
-  "desimalprosent med komma",
+  "påslag med desimal skrives med komma",
   delordre(linjer, {}, { grav: 12.5 }, 7.5, 1).linjer.map((l) => l.description),
-  ["Grunnarbeid", "Graving (12,5 %)", "Adm.påslag 7,5 %"],
+  ["Grunnarbeid", "Graving", "Adm.påslag 7,5 %"],
+);
+sjekk(
+  "mengde inn som andel: 29,9 av 130 m³ blir 29,9 tilbake",
+  delordre(
+    [{ id: "a", sort_order: 1, description: "asfalt", unit: "m³", quantity: 130, unit_price: 300 }],
+    {},
+    { a: (29.9 / 130) * 100 },
+    0,
+    1,
+  ).linjer[0].count,
+  29.9,
 );
 
 kaster(
@@ -191,7 +234,7 @@ const medFullfort = delordre(linjer, { grav: 95, rigg: 50 }, { rigg: 100 }, 0, 1
 sjekk(
   "fullført post blir ikke med på ordren",
   medFullfort.linjer.map((l) => l.description),
-  ["Grunnarbeid", "AB1 Rigg (50 → 100 %)"],
+  ["Grunnarbeid", "AB1 Rigg"],
 );
 sjekk("fullført post beholder andelen den hadde", medFullfort.andeler.grav, 95);
 kaster(

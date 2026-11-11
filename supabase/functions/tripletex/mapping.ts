@@ -102,9 +102,9 @@ export interface Delordre {
  * Ordrelinjene for økningen fra `forrige` til `nye`.
  *
  * Hver post som har økt, blir én linje som ser ut som en vanlig fakturalinje:
- * navnet, andelen i parentes — «asfalt (23 %)», neste gang «asfalt (23 → 60 %)»
- * — og mengden og prisen i Tripletex sine egne felt, her 29,9 × 300,00. Før
- * sto mengde, pris og andel i teksten, og linjen ble uleselig. Kommentaren på
+ * bare navnet, og mengden og prisen i Tripletex sine egne felt — «asfalt»,
+ * 29,9 × 300,00. En post på 1 stk blir 1 stk med delbeløpet som pris. Før sto
+ * mengde, pris og prosent i teksten, og linjen ble uleselig. Kommentaren på
  * posten er utelatt av samme grunn; den står i tilbuds-PDF-en som ligger ved.
  *
  * Overskriftene fra tilbudet kommer med som tekstlinjer, men bare over poster
@@ -167,11 +167,18 @@ export function delordre(
     andeler[l.id] = na;
     if (na === for_) continue;
 
-    // Mengden for økningen, slik Tripletex regner: antall × pris − rabatt.
-    // Fire desimaler holder avviket fra tilbudssummen under et øre.
-    const antall = Math.round(Number(l.quantity ?? 0) * ((na - for_) / 100) * 10_000) / 10_000;
-    const pris = kroner(Number(l.unit_price ?? 0));
-    const rabatt = Number(l.discount_pct ?? 0);
+    // To slags poster. En med mengde (130 m³) får mengden for økningen som
+    // antall: 29,9 × 300. En på 1 stk / 1 RS blir 1 stk også på ordren, med
+    // delbeløpet som pris — «0,4 stk veg» gir ingen mening på en faktura.
+    // Fire desimaler i mengden holder avviket fra tilbudssummen under et øre.
+    const mengde = Number(l.quantity ?? 0);
+    const enkeltpost = mengde === 1;
+    const hel = na - for_ === 100;
+    const antall = enkeltpost ? 1 : Math.round(mengde * ((na - for_) / 100) * 10_000) / 10_000;
+    const pris = kroner(
+      enkeltpost && !hel ? netto(l) * ((na - for_) / 100) : Number(l.unit_price ?? 0),
+    );
+    const rabatt = enkeltpost && !hel ? 0 : Number(l.discount_pct ?? 0);
     grunnlag += kroner(antall * pris * (1 - rabatt / 100));
 
     if (ventendeOverskrift) {
@@ -186,11 +193,10 @@ export function delordre(
       ventendeOverskrift = null;
     }
 
+    // Bare navnet: mengden står i antall-feltet, og hele tilbudet ligger ved.
     const kode = (l.ns_code ?? "").trim();
-    const andel =
-      for_ > 0 ? `${tall(for_, Number.isInteger(for_) ? 0 : 1)} → ${prosent(na)}` : prosent(na);
     ut.push({
-      description: `${[kode, navn].filter(Boolean).join(" ")} (${andel})`,
+      description: [kode, navn].filter(Boolean).join(" "),
       count: antall,
       unitPriceExcludingVatCurrency: pris,
       discount: rabatt,

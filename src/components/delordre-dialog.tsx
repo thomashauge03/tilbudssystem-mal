@@ -50,6 +50,33 @@ function lesProsent(s: string): number | null {
 
 const visProsent = (n: number) => (Number.isInteger(n) ? String(n) : String(n).replace(".", ","));
 
+/** Med to desimaler på det meste: 29,9 og ikke 29,900000000000002. */
+const visTall = (n: number) => visProsent(Math.round(n * 100) / 100);
+
+/**
+ * En post med mengde (130 m³) føres i mengde utført — det er det man måler
+ * ute. En post på 1 stk / 1 RS har ingen mengde å dele, og føres i prosent.
+ * Under panseret er alt prosent, slik serveren regner.
+ */
+const iMengde = (p: Post) => Number(p.quantity) > 0 && Number(p.quantity) !== 1;
+
+/** Det som er skrevet i feltet, som prosent av posten. */
+const somProsent = (p: Post, verdi: number) =>
+  iMengde(p) ? (verdi / Number(p.quantity)) * 100 : verdi;
+
+/** En andel slik feltet for posten viser den: «39 m³» eller «40 %». */
+const visAndel = (p: Post, pct: number) =>
+  iMengde(p)
+    ? `${visTall((Number(p.quantity) * pct) / 100)} ${p.unit ?? ""}`.trim()
+    : `${visProsent(Math.round(pct * 10) / 10)} %`;
+
+/** Feltets verdi for en andel: mengde for mengdeposter, prosent ellers. */
+const feltverdi = (p: Post, pct: number) =>
+  iMengde(p) ? visTall((Number(p.quantity) * pct) / 100) : visProsent(pct);
+
+/** Avrunding i mengde → prosent skal ikke gi «mer enn 100 %». */
+const EPS = 1e-6;
+
 export function DelordreDialog({
   offerId,
   open,
@@ -165,13 +192,17 @@ export function DelordreDialog({
     for (const p of data?.poster ?? []) {
       if (p.is_heading || laast(p.id)) continue;
       const fra = forrige[p.id] ?? 0;
-      const til = lesProsent(nye[p.id] ?? "");
-      if (til === null) continue;
+      const lest = lesProsent(nye[p.id] ?? "");
+      if (lest === null) continue;
+      let til = Number.isNaN(lest) ? NaN : somProsent(p, lest);
+      if (Math.abs(til - 100) < EPS) til = 100;
       if (Number.isNaN(til) || til < 0 || til > 100)
-        feil.push(`«${p.description}»: mellom 0 og 100 %`);
-      else if (til < fra)
-        feil.push(`«${p.description}»: kan ikke settes lavere enn ${visProsent(fra)} %`);
-      else if (til > fra) {
+        feil.push(
+          `«${p.description}»: ${iMengde(p) ? `mellom 0 og ${visAndel(p, 100)}` : "mellom 0 og 100 %"}`,
+        );
+      else if (til < fra - EPS)
+        feil.push(`«${p.description}»: kan ikke settes lavere enn ${visAndel(p, fra)}`);
+      else if (til > fra + EPS) {
         andeler[p.id] = til;
         grunnlag += Math.round(lineNet(p) * ((til - fra) / 100) * 100) / 100;
       }
@@ -192,7 +223,7 @@ export function DelordreDialog({
     for (const p of data?.poster ?? []) {
       // En post som alt er kommet lenger, eller er fullført, blir stående.
       if (!p.is_heading && !laast(p.id) && !fullfortValg[p.id] && (forrige[p.id] ?? 0) < pct) {
-        ut[p.id] = visProsent(pct);
+        ut[p.id] = feltverdi(p, pct);
       }
     }
     setNye(ut);
@@ -270,10 +301,11 @@ export function DelordreDialog({
             Ny delordre{data ? ` – tilbud #${data.tilbud.offer_number}` : ""}
           </DialogTitle>
           <DialogDescription>
-            Skriv hvor mange prosent av hver post som er gjort, totalt. Ordren i Tripletex tar bare
-            med økningen siden sist. Den blir ikke fakturert eller sendt — det gjør dere i
-            Tripletex. Huk av «Fullført» når en post er ferdig, selv om ikke alt er fakturert: da
-            vises den som 100 %, og resten faktureres ikke.
+            Skriv hvor mye av hver post som er utført totalt — mengden der posten har mengde (m³, m,
+            tonn), prosent der den er 1 stk. Ordren i Tripletex tar bare med økningen siden sist.
+            Den blir ikke fakturert eller sendt — det gjør dere i Tripletex. Huk av «Fullført» når
+            en post er ferdig, selv om ikke alt er fakturert: da vises den som 100 %, og resten
+            faktureres ikke.
           </DialogDescription>
         </DialogHeader>
 
@@ -306,7 +338,7 @@ export function DelordreDialog({
                     <th className="px-3 py-2">Post</th>
                     <th className="px-3 py-2 text-right">Beløp</th>
                     <th className="px-3 py-2 text-right">Før</th>
-                    <th className="w-24 px-3 py-2 text-right">Nå</th>
+                    <th className="w-32 px-3 py-2 text-right">Utført nå</th>
                     <th className="px-3 py-2 text-right">Denne gang</th>
                     <th
                       className="px-3 py-2 text-center"
@@ -331,10 +363,11 @@ export function DelordreDialog({
                       );
                     }
                     const fra = forrige[p.id] ?? 0;
-                    const til = lesProsent(nye[p.id] ?? "");
+                    const lest = lesProsent(nye[p.id] ?? "");
+                    const til = lest === null || Number.isNaN(lest) ? null : somProsent(p, lest);
                     const okning =
-                      til !== null && !Number.isNaN(til) && til > fra && til <= 100
-                        ? lineNet(p) * ((til - fra) / 100)
+                      til !== null && til > fra + EPS && til <= 100 + EPS
+                        ? lineNet(p) * ((Math.min(til, 100) - fra) / 100)
                         : 0;
                     const ferdig = fra >= 100;
                     // Fullført på mindre enn 100 % vises som 100 %: posten er
@@ -357,7 +390,12 @@ export function DelordreDialog({
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{nok(lineNet(p))}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                          {visProsent(fra)} %
+                          {visAndel(p, fra)}
+                          {iMengde(p) && fra > 0 && (
+                            <span className="block text-[11px]">
+                              {visProsent(Math.round(fra))} %
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right">
                           {ferdig || lukket ? (
@@ -365,19 +403,28 @@ export function DelordreDialog({
                               {ferdig ? "Ferdig" : "100 %"}
                               {lukket && !ferdig && (
                                 <span className="block text-[11px] text-muted-foreground">
-                                  fullført på {visProsent(lagretFullfort[p.id] ?? fra)} %
+                                  fullført på {visAndel(p, lagretFullfort[p.id] ?? fra)}
                                 </span>
                               )}
                             </span>
                           ) : (
-                            <Input
-                              value={nye[p.id] ?? ""}
-                              onChange={(e) => setNye((s) => ({ ...s, [p.id]: e.target.value }))}
-                              inputMode="decimal"
-                              placeholder={visProsent(fra)}
-                              className="h-8 w-20 text-right"
-                              aria-label={`Andel utført for ${p.description}`}
-                            />
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Input
+                                value={nye[p.id] ?? ""}
+                                onChange={(e) => setNye((s) => ({ ...s, [p.id]: e.target.value }))}
+                                inputMode="decimal"
+                                placeholder={feltverdi(p, fra)}
+                                className="h-8 w-20 text-right"
+                                aria-label={
+                                  iMengde(p)
+                                    ? `Mengde utført for ${p.description}, i ${p.unit ?? "enheter"}`
+                                    : `Prosent utført for ${p.description}`
+                                }
+                              />
+                              <span className="w-8 text-left text-xs text-muted-foreground">
+                                {iMengde(p) ? (p.unit ?? "") : "%"}
+                              </span>
+                            </div>
                           )}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium">

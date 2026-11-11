@@ -1,4 +1,5 @@
-// Kobling til Tripletex: delordre fra tilbud, status tilbake, og kunderegisteret.
+// Kobling til Tripletex: delordre fra tilbud og endringsmeldinger, status
+// tilbake, og kunderegisteret.
 //
 // Kalles fra appen med brukerens innlogging (verify_jwt på), og hvert 30.
 // minutt av synkjobben i basen. Nøklene til Tripletex forlater aldri denne
@@ -19,9 +20,9 @@
 //   lagre           — lagre firmaets API-nøkkel og test den (bare admin)
 //   koble-fra       — slett nøkkelen (bare admin)
 //   hent-kunder     — hent kundene fra Tripletex inn i appen
-//   lag-delordre    — multipart: offer_id, andeler (JSON), pdf
+//   lag-delordre    — multipart: offer_id eller amendment_id, andeler (JSON), pdf
 //   slett-delordre  — payment_id; sletter ordren i Tripletex og raden her
-//   synk            — hent status for firmaets ordre (valgfritt offer_id)
+//   synk            — hent status for firmaets ordre (valgfritt offer_id/amendment_id)
 //   synk-alle       — synkjobben; x-synk-nokkel i stedet for innlogging
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -35,6 +36,7 @@ import {
   tilTripletexKunde,
   orgnr,
   type Andeler,
+  type Tilbudslinje,
   type AppKunde,
   type TripletexKunde,
   type TripletexFaktura,
@@ -419,38 +421,135 @@ async function oppdaterBetalt(
 
 // ─── Delordre ───────────────────────────────────────────────────────────────
 
+/** Det en delordre lages av: et tilbud eller en endringsmelding. */
+type Kilde = { type: "offer" | "amendment"; id: string };
+
+interface Grunnlag {
+  linjer: Array<Tilbudslinje & { id: string }>;
+  adminPct: number;
+  kundeId: string | null;
+  prosjekt: { project_number?: string | null; project_id?: string | null };
+  deresRef: string;
+  /** «iht. tilbud nr. 1050 – Graving Storgata» */
+  hva: string;
+  pdfNavn: string;
+  /** Kolonnen i payments og delpost_fullfort. */
+  kol: "offer_id" | "amendment_id";
+  /** Ord til feilmeldingene: «tilbudet» / «endringsmeldingen». */
+  ord: string;
+}
+
+/**
+ * Leser det delordren trenger, likt for tilbud og endringsmeldinger.
+ *
+ * En endringsmelding har ingen kunde og ofte ikke prosjektnummer selv — de
+ * står på tilbudet den hører til. Den har heller ikke adm.påslag, og må være
+ * godkjent av kunden: et krav kunden ikke har sagt ja til, skal ikke faktureres.
+ */
+async function hentGrunnlag(bruker: SupabaseClient, kilde: Kilde): Promise<Grunnlag> {
+  if (kilde.type === "offer") {
+    const { data: t, error } = await bruker
+      .from("offers")
+      .select("*, offer_lines(*)")
+      .eq("id", kilde.id)
+      .maybeSingle();
+    if (error) throw new Brukerfeil(500, error.message);
+    if (!t) throw new Brukerfeil(404, "Fant ikke tilbudet");
+    const tittel = String(t.title ?? "").trim();
+    return {
+      linjer: t.offer_lines ?? [],
+      adminPct: Number(t.admin_cost_pct ?? 0),
+      kundeId: t.customer_id,
+      prosjekt: { project_number: t.project_number, project_id: t.project_id },
+      deresRef: String(t.their_ref ?? "").trim(),
+      hva: `iht. tilbud nr. ${t.offer_number}` + (tittel ? ` – ${tittel}` : ""),
+      pdfNavn: `Tilbud ${t.offer_number}.pdf`,
+      kol: "offer_id",
+      ord: "tilbudet",
+    };
+  }
+
+  const { data: e, error } = await bruker
+    .from("amendments")
+    .select("*, amendment_lines(*)")
+    .eq("id", kilde.id)
+    .maybeSingle();
+  if (error) throw new Brukerfeil(500, error.message);
+  if (!e) throw new Brukerfeil(404, "Fant ikke endringsmeldingen");
+  if (!e.customer_signed_at && e.status !== "endringsmelding") {
+    throw new Brukerfeil(
+      400,
+      "Endringsmeldingen er ikke godkjent av kunden ennå, og kan ikke faktureres",
+    );
+  }
+  let tilbud: Record<string, unknown> | null = null;
+  if (e.offer_id) {
+    const { data } = await bruker
+      .from("offers")
+      .select("offer_number, customer_id, project_number, project_id, their_ref")
+      .eq("id", e.offer_id)
+      .maybeSingle();
+    tilbud = data;
+  }
+  const tittel = String(e.title ?? e.internal_description ?? "").trim();
+  return {
+    linjer: e.amendment_lines ?? [],
+    adminPct: 0,
+    kundeId: (tilbud?.customer_id as string) ?? null,
+    // project_ref er prosjektnummeret («2026165»); ellers tilbudets.
+    prosjekt: {
+      project_number:
+        String(e.project_ref ?? "").trim() || (tilbud?.project_number as string) || null,
+      project_id: e.project_id ?? (tilbud?.project_id as string) ?? null,
+    },
+    deresRef: String(tilbud?.their_ref ?? "").trim(),
+    hva:
+      `iht. endringsmelding nr. ${e.amendment_number}` +
+      (tilbud ? ` (tilbud nr. ${tilbud.offer_number})` : "") +
+      (tittel ? ` – ${tittel}` : ""),
+    pdfNavn: `Endringsmelding ${e.amendment_number}.pdf`,
+    kol: "amendment_id",
+    ord: "endringsmeldingen",
+  };
+}
+
 async function lagDelordre(
   tx: Tripletex,
   bruker: SupabaseClient,
   tenantId: string,
-  offerId: string,
+  kilde: Kilde,
   nye: Andeler,
   pdf: File | null,
 ) {
-  const { data: tilbud, error } = await bruker
-    .from("offers")
-    .select("*, offer_lines(*)")
-    .eq("id", offerId)
-    .maybeSingle();
-  if (error) throw new Brukerfeil(500, error.message);
-  if (!tilbud) throw new Brukerfeil(404, "Fant ikke tilbudet");
-  if (!tilbud.customer_id) throw new Brukerfeil(400, "Tilbudet har ingen kunde");
+  const g = await hentGrunnlag(bruker, kilde);
+  if (!g.kundeId) {
+    throw new Brukerfeil(
+      400,
+      kilde.type === "offer"
+        ? "Tilbudet har ingen kunde"
+        : "Endringsmeldingen er ikke koblet til et tilbud med kunde",
+    );
+  }
 
   // Andelene leses rett før ordren lages, så det som alt er sendt — også fra
   // en annen fane eller en kollega — aldri tas med to ganger.
   const { data: rader, error: radfeil } = await bruker
     .from("payments")
     .select("andeler, tripletex_status, tripletex_ordre_id")
-    .eq("offer_id", offerId);
+    .eq(g.kol, kilde.id);
   if (radfeil) throw new Brukerfeil(500, radfeil.message);
 
   // Peker andelene på linjer som ikke finnes lenger, ville neste ordre tatt
   // alt med på nytt. Da stopper vi heller.
-  const linjeIder = (tilbud.offer_lines ?? []).map((l: { id: string }) => l.id);
-  if (!andelerPasser(rader ?? [], linjeIder)) {
+  if (
+    !andelerPasser(
+      rader ?? [],
+      g.linjer.map((l) => l.id),
+    )
+  ) {
     throw new Brukerfeil(
       409,
-      "Linjene i tilbudet er byttet ut etter forrige delordre, så appen vet ikke lenger hva som er fakturert. " +
+      `Linjene i ${g.ord} er byttet ut etter forrige delordre, så appen vet ikke lenger hva som er fakturert. ` +
         "Ingen ordre er laget. Ta kontakt for å få koblet andelene til de nye linjene.",
     );
   }
@@ -458,15 +557,15 @@ async function lagDelordre(
   const { data: fullfort, error: fullfortFeil } = await bruker
     .from("delpost_fullfort")
     .select("offer_line_id")
-    .eq("offer_id", offerId);
+    .eq(g.kol, kilde.id);
   if (fullfortFeil) throw new Brukerfeil(500, fullfortFeil.message);
 
   const { data: kunde } = await bruker
     .from("customers")
     .select("id, name, org_number, email, phone, address, tripletex_id")
-    .eq("id", tilbud.customer_id)
+    .eq("id", g.kundeId)
     .maybeSingle();
-  if (!kunde) throw new Brukerfeil(404, "Fant ikke kunden på tilbudet");
+  if (!kunde) throw new Brukerfeil(404, `Fant ikke kunden på ${g.ord}`);
 
   const { data: innst } = await bruker
     .from("app_settings")
@@ -478,10 +577,10 @@ async function lagDelordre(
   let plan;
   try {
     plan = delordre(
-      tilbud.offer_lines ?? [],
+      g.linjer,
       gjeldendeAndeler(rader ?? []),
       nye,
-      tilbud.admin_cost_pct,
+      g.adminPct,
       await mvaTypeId(tx, sats),
       new Set((fullfort ?? []).map((f) => f.offer_line_id as string)),
     );
@@ -491,18 +590,15 @@ async function lagDelordre(
   }
 
   const kundeId = await tripletexKunde(tx, bruker, kunde as AppKunde);
-  const prosjekt = await tripletexProsjekt(tx, bruker, tilbud);
+  const prosjekt = await tripletexProsjekt(tx, bruker, g.prosjekt);
   const nummer = (rader ?? []).filter((r) => r.tripletex_ordre_id).length + 1;
   const idag = osloDato(0);
-  const tittel = String(tilbud.title ?? "").trim();
   const ordreBody = {
     customer: { id: kundeId },
     orderDate: idag,
     deliveryDate: idag,
-    reference: String(tilbud.their_ref ?? "").trim() || undefined,
-    invoiceComment:
-      `Delfaktura ${nummer} iht. tilbud nr. ${tilbud.offer_number}` +
-      (tittel ? ` – ${tittel}` : ""),
+    reference: g.deresRef || undefined,
+    invoiceComment: `Delfaktura ${nummer} ${g.hva}`,
     orderLines: plan.linjer,
   };
   let ordre;
@@ -525,7 +621,7 @@ async function lagDelordre(
 
   const { error: lagrefeil } = await bruker.from("payments").insert({
     tenant_id: tenantId,
-    offer_id: offerId,
+    [g.kol]: kilde.id,
     amount: plan.sum,
     description: `Delordre ${nummer}`,
     invoice_date: idag,
@@ -549,7 +645,7 @@ async function lagDelordre(
   let vedleggFeil: string | null = null;
   if (pdf) {
     const form = new FormData();
-    form.append("file", pdf, `Tilbud ${tilbud.offer_number}.pdf`);
+    form.append("file", pdf, g.pdfNavn);
     try {
       // NONE: PDF-en ligger på ordren som dokumentasjon, men følger ikke
       // automatisk med fakturaen kunden får.
@@ -602,7 +698,13 @@ async function slettDelordre(tx: Tripletex, bruker: SupabaseClient, paymentId: s
  * Kreditert er endelig og hoppes over. Betalt sjekkes fortsatt, fordi en
  * betalt faktura kan bli kreditert etterpå.
  */
-async function synk(db: SupabaseClient, tx: Tripletex, tenantId: string, offerId?: string) {
+async function synk(
+  db: SupabaseClient,
+  tx: Tripletex,
+  tenantId: string,
+  offerId?: string,
+  amendmentId?: string,
+) {
   let sporring = db
     .from("payments")
     .select(
@@ -612,6 +714,7 @@ async function synk(db: SupabaseClient, tx: Tripletex, tenantId: string, offerId
     .not("tripletex_ordre_id", "is", null)
     .neq("tripletex_status", "kreditert");
   if (offerId) sporring = sporring.eq("offer_id", offerId);
+  if (amendmentId) sporring = sporring.eq("amendment_id", amendmentId);
   const { data: rader, error } = await sporring;
   if (error) throw new Brukerfeil(500, error.message);
   if (!rader?.length) return { endret: 0, slettet: 0 };
@@ -837,7 +940,12 @@ Deno.serve(async (req) => {
 
     if (handling === "lag-delordre") {
       const offerId = String(felt("offer_id") ?? "");
-      if (!offerId) throw new Brukerfeil(400, "Mangler offer_id");
+      const amendmentId = String(felt("amendment_id") ?? "");
+      if (!offerId && !amendmentId)
+        throw new Brukerfeil(400, "Mangler offer_id eller amendment_id");
+      const kilde: Kilde = offerId
+        ? { type: "offer", id: offerId }
+        : { type: "amendment", id: amendmentId };
       let nye: Andeler;
       try {
         nye = JSON.parse(String(felt("andeler") ?? "{}"));
@@ -849,7 +957,7 @@ Deno.serve(async (req) => {
         tx,
         bruker,
         tenantId,
-        offerId,
+        kilde,
         nye,
         pdf instanceof File ? pdf : null,
       );
@@ -864,7 +972,8 @@ Deno.serve(async (req) => {
 
     if (handling === "synk") {
       const offerId = String(felt("offer_id") ?? "") || undefined;
-      return svar(200, { ok: true, ...(await synk(bruker, tx, tenantId, offerId)) });
+      const amendmentId = String(felt("amendment_id") ?? "") || undefined;
+      return svar(200, { ok: true, ...(await synk(bruker, tx, tenantId, offerId, amendmentId)) });
     }
 
     throw new Brukerfeil(400, `Ukjent handling «${handling}»`);

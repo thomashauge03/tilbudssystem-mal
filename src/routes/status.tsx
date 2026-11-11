@@ -116,7 +116,7 @@ function StatusPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("amendments")
-        .select("id, offer_id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, status, rejected_at, amendment_lines(quantity, unit_price, discount_pct), offers(offer_number, title, customer_name, project_number)")
+        .select("id, offer_id, amendment_number, project_ref, internal_description, notified_date, invoiced_amount, status, rejected_at, customer_signed_at, amendment_lines(quantity, unit_price, discount_pct), offers(offer_number, title, customer_name, project_number)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       // Et avslått krav er ute av spill: kunden har sagt nei, og det skal
@@ -125,8 +125,13 @@ function StatusPage() {
       //
       // Sorteres på klienten: databasen kan bare sortere teksten alfabetisk, og
       // ville lagt "1001-10" foran "1001-2". Nyeste nummer først.
+      //
+      // Et krav kunden ikke har godkjent ennå, hører heller ikke hjemme her:
+      // Status er det som er avtalt og skal faktureres. Godkjent er signert
+      // digitalt, eller registrert som godkjent for hånd (status endringsmelding).
       return (data ?? [])
         .filter((a: any) => !isAmendmentRejected(a))
+        .filter((a: any) => !!a.customer_signed_at || a.status === "endringsmelding")
         .sort((x: any, y: any) => compareAmendmentNumber(y.amendment_number, x.amendment_number));
     },
   });

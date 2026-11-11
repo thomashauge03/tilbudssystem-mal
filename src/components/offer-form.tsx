@@ -765,7 +765,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
         // Ordren er verdt mer enn vedlegget: den lages uansett, og det sies fra.
         console.error(e);
       }
-      const r = await lagDelordre(id, alle, pdf);
+      const r = await lagDelordre({ type: "offers", id }, alle, pdf);
       qc.invalidateQueries({ queryKey: ["payments", id] });
       qc.invalidateQueries({ queryKey: ["status-offers"] });
       toast.dismiss(venter);

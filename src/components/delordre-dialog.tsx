@@ -25,7 +25,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { Checkbox } from "@/components/ui/checkbox";
 import { lagPdfFil } from "@/lib/pdf-fil";
 import { hentTilbudForPdf, skrivTilbudsPdf } from "@/lib/tilbud-pdf";
-import { gjeldendeAndeler, lagDelordre, delordreTekst, type Andeler } from "@/lib/tripletex";
+import { hentEndringForPdf, skrivEndringsPdf } from "@/lib/endring-pdf";
+import {
+  gjeldendeAndeler,
+  lagDelordre,
+  delordreTekst,
+  kildekolonne,
+  type Andeler,
+  type Kilde,
+} from "@/lib/tripletex";
 
 interface Post {
   id: string;
@@ -78,12 +86,13 @@ const feltverdi = (p: Post, pct: number) =>
 const EPS = 1e-6;
 
 export function DelordreDialog({
-  offerId,
+  kilde,
   open,
   onOpenChange,
   onLaget,
 }: {
-  offerId: string;
+  /** Tilbudet eller endringsmeldingen delordren lages av. */
+  kilde: Kilde;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onLaget: () => void;
@@ -97,33 +106,52 @@ export function DelordreDialog({
   // basen; forskjellen er det som lagres.
   const [fullfortValg, setFullfortValg] = useState<Record<string, boolean>>({});
 
+  const erTilbud = kilde.type === "offers";
+  const kol = kildekolonne(kilde);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["delordre", offerId],
+    queryKey: ["delordre", kilde.type, kilde.id],
     enabled: open,
     // Alltid ferske tall når dialogen åpnes.
     staleTime: 0,
     queryFn: async () => {
+      // Endringsmeldinger har ingen adm.påslag, ingen inkludert-hake og ingen
+      // NS-kode; ellers er postene de samme.
       const [o, l, p, f] = await Promise.all([
-        supabase
-          .from("offers")
-          .select("offer_number, title, admin_cost_pct")
-          .eq("id", offerId)
-          .single(),
-        supabase
-          .from("offer_lines")
-          .select(
-            "id, sort_order, description, unit, quantity, unit_price, discount_pct, included, is_heading, ns_code",
-          )
-          .eq("offer_id", offerId)
-          .order("sort_order"),
+        erTilbud
+          ? supabase
+              .from("offers")
+              .select("offer_number, title, admin_cost_pct")
+              .eq("id", kilde.id)
+              .single()
+          : supabase
+              .from("amendments")
+              .select("amendment_number, customer_signed_at, status")
+              .eq("id", kilde.id)
+              .single(),
+        erTilbud
+          ? supabase
+              .from("offer_lines")
+              .select(
+                "id, sort_order, description, unit, quantity, unit_price, discount_pct, included, is_heading, ns_code",
+              )
+              .eq("offer_id", kilde.id)
+              .order("sort_order")
+          : supabase
+              .from("amendment_lines")
+              .select(
+                "id, sort_order, description, unit, quantity, unit_price, discount_pct, is_heading",
+              )
+              .eq("amendment_id", kilde.id)
+              .order("sort_order"),
         supabase
           .from("payments")
           .select("amount, andeler, tripletex_status, tripletex_ordre_id")
-          .eq("offer_id", offerId),
+          .eq(kol, kilde.id),
         supabase
           .from("delpost_fullfort" as never)
           .select("offer_line_id, andel")
-          .eq("offer_id" as never, offerId as never),
+          .eq(kol as never, kilde.id as never),
       ]);
       if (o.error) throw o.error;
       if (l.error) throw l.error;
@@ -135,12 +163,20 @@ export function DelordreDialog({
         tripletex_status: string | null;
         tripletex_ordre_id: number | null;
       }>;
+      const hode = o.data as {
+        offer_number?: number;
+        amendment_number?: string;
+        admin_cost_pct?: number | null;
+        customer_signed_at?: string | null;
+        status?: string | null;
+      };
       return {
-        tilbud: o.data as {
-          offer_number: number;
-          title: string | null;
-          admin_cost_pct: number | null;
-        },
+        tittel: erTilbud
+          ? `tilbud #${hode.offer_number}`
+          : `endringsmelding ${hode.amendment_number}`,
+        adminPct: Number(hode.admin_cost_pct ?? 0),
+        // Et krav kunden ikke har godkjent, skal ikke faktureres.
+        godkjent: erTilbud || !!hode.customer_signed_at || hode.status === "endringsmelding",
         poster: ((l.data ?? []) as unknown as Post[]).filter((x) => x.included !== false),
         forrige: gjeldendeAndeler(rader),
         // {offer_line_id: andelen den ble merket fullført på}
@@ -172,7 +208,7 @@ export function DelordreDialog({
 
   const forrige = useMemo(() => data?.forrige ?? {}, [data]);
   const lagretFullfort = useMemo(() => data?.fullfort ?? {}, [data]);
-  const adminPct = Number(data?.tilbud.admin_cost_pct ?? 0);
+  const adminPct = data?.adminPct ?? 0;
 
   // En post som er lagret som fullført og ikke åpnes igjen nå, står stille.
   const laast = (id: string) => id in lagretFullfort && fullfortValg[id] !== false;
@@ -250,13 +286,20 @@ export function DelordreDialog({
       if (harOrdre) {
         let pdf: Blob | null = null;
         try {
-          const t = await hentTilbudForPdf(offerId);
-          pdf = await lagPdfFil((w) => skrivTilbudsPdf(w, t.tilbud, t.linjer, t.kunde, innst));
+          if (erTilbud) {
+            const t = await hentTilbudForPdf(kilde.id);
+            pdf = await lagPdfFil((w) => skrivTilbudsPdf(w, t.tilbud, t.linjer, t.kunde, innst));
+          } else {
+            const e = await hentEndringForPdf(kilde.id);
+            pdf = await lagPdfFil((w) =>
+              skrivEndringsPdf(w, e.endring, e.linjer, e.kundeNavn, e.kundesignatur, innst),
+            );
+          }
         } catch (e) {
           // Ordren er verdt mer enn vedlegget: den lages uansett, og det sies fra.
           console.error(e);
         }
-        const r = await lagDelordre(offerId, beregning.andeler, pdf);
+        const r = await lagDelordre(kilde, beregning.andeler, pdf);
         toast.dismiss(venter);
         const melding = delordreTekst(r, !!pdf);
         if (melding.ok) toast.success(melding.tekst);
@@ -267,7 +310,7 @@ export function DelordreDialog({
         const { error: e } = await supabase.from("delpost_fullfort" as never).upsert(
           endringer.lukkes.map((id) => ({
             offer_line_id: id,
-            offer_id: offerId,
+            [kol]: kilde.id,
             tenant_id: tenantId,
             andel: beregning.andeler[id] ?? forrige[id] ?? 0,
           })) as never,
@@ -297,9 +340,7 @@ export function DelordreDialog({
     <Dialog open={open} onOpenChange={(v) => !sender && onOpenChange(v)}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            Ny delordre{data ? ` – tilbud #${data.tilbud.offer_number}` : ""}
-          </DialogTitle>
+          <DialogTitle>Ny delordre{data ? ` – ${data.tittel}` : ""}</DialogTitle>
           <DialogDescription>
             Skriv hvor mye av hver post som er utført totalt — mengden der posten har mengde (m³, m,
             tonn), prosent der den er 1 stk. Ordren i Tripletex tar bare med økningen siden sist.
@@ -313,6 +354,11 @@ export function DelordreDialog({
           <p className="py-8 text-center text-sm text-muted-foreground">Laster…</p>
         ) : error ? (
           <p className="text-sm text-destructive">{(error as Error).message}</p>
+        ) : data && !data.godkjent ? (
+          <p className="rounded-md border px-3 py-4 text-sm text-muted-foreground">
+            Endringsmeldingen er ikke godkjent av kunden ennå. Delordre kan lages når den er signert
+            eller godkjent manuelt.
+          </p>
         ) : (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2 text-sm">

@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Plus, Trash2, Save, FileDown, Mail, ArrowLeft, Link2, RotateCcw, CheckCircle2, GripVertical, ArrowUp, ArrowDown, ShieldCheck, Unlock, FilePlus2, MailCheck, MailX, MailWarning, XCircle, Heading } from "lucide-react";
 import { nok, fmtDate, toISODate, OFFER_SENT, OFFER_WON_STATUSES, UNITS as FALLBACK_UNITS } from "@/lib/format";
-import { openAmendmentPdf } from "@/lib/pdf";
+import { skrivEndringsPdf, hentKundesignatur } from "@/lib/endring-pdf";
 import { apneEpost, kopierLenke, LIM_INN, TRYGG_LENKE, type Avsnitt } from "@/lib/epost-lenke";
 import { AttachmentField } from "@/components/attachment-field";
 import { useAppSettings, standardRef } from "@/hooks/use-app-settings";
@@ -629,6 +629,9 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
     };
     let id = currentAmendmentIdRef.current ?? amendmentId;
     const editing = isEdit || !!currentAmendmentIdRef.current;
+    // Id-ene linjene har i basen nå. De settes inn igjen med samme id, fordi
+    // delordrene i Tripletex husker andelen per linje-id — se offer-form.
+    let lagredeIder = new Set<string>();
     if (editing && id) {
       const { error } = await supabase.from("amendments").update(payload).eq("id", id);
       if (error) { toast.error(error.message); return null; }
@@ -637,6 +640,12 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
       // innsettingen, og save() returnerte null — da stoppet PDF, e-post og
       // lagring av overskriftsfeltene også, siden alt går gjennom save().
       if (!laast) {
+        const { data: fra, error: lesFeil } = await supabase
+          .from("amendment_lines")
+          .select("id")
+          .eq("amendment_id", id);
+        if (lesFeil) { toast.error(lesFeil.message); return null; }
+        lagredeIder = new Set((fra ?? []).map((r: { id: string }) => r.id));
         // Linjene skrives som slett-og-sett-inn. Går slettingen galt uten at vi
         // merker det, legges linjene inn dobbelt; går innsettingen galt etterpå,
         // er linjene borte i basen mens skjermen fortsatt viser dem.
@@ -674,7 +683,13 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         )) return null;
       }
 
-      const ins = lines.map((l, idx) => ({
+      // En id brukes bare om den hørte til denne meldingen, og bare én gang.
+      const brukt = new Set<string>();
+      const ins = lines.map((l, idx) => {
+        const beholdId = !!l.id && lagredeIder.has(l.id) && !brukt.has(l.id);
+        if (beholdId) brukt.add(l.id!);
+        return {
+        ...(beholdId ? { id: l.id } : {}),
         amendment_id: id!,
         tenant_id: tenantId,
         sort_order: idx,
@@ -683,9 +698,13 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
         quantity: Number(l.quantity || 0),
         unit: l.unit,
         unit_price: Number(l.unit_price || 0),
-      }));
-      const { error } = await supabase.from("amendment_lines").insert(ins);
+        };
+      });
+      const { data: satt, error } = await supabase.from("amendment_lines").insert(ins).select("id, sort_order");
       if (error) { toast.error(error.message); return null; }
+      // Nye linjer har fått id i basen; skjemaet må vite den til neste lagring.
+      const idPaPlass = new Map((satt ?? []).map((r: { id: string; sort_order: number }) => [r.sort_order, r.id]));
+      setLines((p) => p.map((l, idx) => (idPaPlass.has(idx) ? { ...l, id: idPaPlass.get(idx) } : l)));
     }
     qc.invalidateQueries({ queryKey: ["amendments"] });
     qc.invalidateQueries({ queryKey: ["amendment", id] });
@@ -767,65 +786,15 @@ export function AmendmentForm({ amendmentId, initialOfferId, initialProjectId, i
     if (!requireSettings()) return;
     const id = await save();
     if (!id) return;
-    // Referansen som hører til prosjektlederen — samme oppslag som tilbudet gjør
-    const refObj = (appSettings?.our_refs ?? []).find((r) => r.name === a.project_manager);
-    // Kundens signaturbilde ligger på tokenet han signerte med, ikke på selve
-    // meldingen. Samme oppslag som kontrakten gjør. Feiler det, skal PDF-en
-    // likevel komme — da står datolinjen alene, som før.
-    let kundesignatur = "";
-    if (a.customer_signed_at) {
-      const { data: tok } = await supabase
-        .from("amendment_signing_tokens")
-        .select("signer_signature, used_at")
-        .eq("amendment_id", id)
-        .not("used_at", "is", null)
-        .order("used_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      kundesignatur = (tok as any)?.signer_signature ?? "";
-    }
-    openAmendmentPdf(
-      {
-        amendment_number: a.amendment_number || currentNumberRef.current,
-        project_ref: a.project_ref,
-        internal_description: a.internal_description,
-        change_description: a.change_description,
-        reason: a.reason,
-        other_notes: a.other_notes,
-        notified_date: a.notified_date,
-        revised_date: a.revised_date,
-        project_manager: a.project_manager,
-        // Kunden og prosjektlederens adresse skal stå i dokumentet, ikke bare i e-posten
-        project_manager_email: (appSettings?.our_refs ?? []).find((r) => r.name === a.project_manager)?.email ?? "",
-        customer_name: kundeNavn,
-        customer_email: a.customer_email,
-        ...endringstyperFra(a),
-        status: a.status,
-        customer_signed_at: a.customer_signed_at,
-        signature_method: a.signature_method,
-        customer_signature: kundesignatur,
-      },
-      lines.map((l) => ({
-        description: l.description,
-        quantity: Number(l.quantity || 0),
-        unit: l.unit,
-        unit_price: Number(l.unit_price || 0),
-        is_heading: !!l.is_heading,
-      })),
-      // Endringsmeldingen har ingen adm.påslag, så totalen er summen av linjene
-      { subtotal, total: subtotal },
-      {
-        company_name: appSettings?.company_name ?? "",
-        company_tagline: appSettings?.company_tagline ?? "",
-        logo_url: appSettings?.logo_url ?? "",
-        company_org_nr: appSettings?.company_org_nr ?? "",
-        vat_pct: appSettings?.vat_pct ?? 25,
-        payment_terms: appSettings?.payment_terms ?? "30 dager netto",
-        ref_phone: refObj?.phone ?? "",
-        ref_email: refObj?.email ?? "",
-        ref_position: refObj?.position ?? "",
-        ref_signature: refObj?.signature ?? "",
-      },
+    const kundesignatur = a.customer_signed_at ? await hentKundesignatur(id) : "";
+    // Samme dokument som delordrene legger ved i Tripletex — se endring-pdf.ts.
+    skrivEndringsPdf(
+      undefined,
+      { ...a, amendment_number: a.amendment_number || currentNumberRef.current },
+      lines,
+      kundeNavn,
+      kundesignatur,
+      appSettings,
     );
   };
   /**

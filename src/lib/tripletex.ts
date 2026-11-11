@@ -111,12 +111,16 @@ export interface LagetOrdre {
   prosjekt_feil?: string | null;
 }
 
-export function lagDelordre(offerId: string, andeler: Andeler, pdf: Blob | null) {
+/** Det en delordre lages av. Kolonnen i payments og delpost_fullfort følger av typen. */
+export type Kilde = { type: "offers" | "amendments"; id: string };
+export const kildekolonne = (k: Kilde) => (k.type === "offers" ? "offer_id" : "amendment_id");
+
+export function lagDelordre(kilde: Kilde, andeler: Andeler, pdf: Blob | null) {
   const form = new FormData();
   form.append("handling", "lag-delordre");
-  form.append("offer_id", offerId);
+  form.append(kildekolonne(kilde), kilde.id);
   form.append("andeler", JSON.stringify(andeler));
-  if (pdf) form.append("pdf", pdf, "tilbud.pdf");
+  if (pdf) form.append("pdf", pdf, kilde.type === "offers" ? "tilbud.pdf" : "endringsmelding.pdf");
   return tripletexKall<LagetOrdre>(form);
 }
 
@@ -124,10 +128,10 @@ export function slettDelordre(paymentId: string) {
   return tripletexKall<{ slettet: string }>({ handling: "slett-delordre", payment_id: paymentId });
 }
 
-export function synkTripletex(offerId?: string) {
+export function synkTripletex(kilde?: Kilde) {
   return tripletexKall<{ endret: number; slettet: number }>({
     handling: "synk",
-    offer_id: offerId,
+    ...(kilde ? { [kildekolonne(kilde)]: kilde.id } : {}),
   });
 }
 

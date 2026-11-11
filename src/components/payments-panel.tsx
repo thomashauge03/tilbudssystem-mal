@@ -70,8 +70,9 @@ export function PaymentsPanel({
   const [delordreApen, setDelordreApen] = useState(false);
   const [synker, setSynker] = useState(false);
   const { data: tripletex } = useTripletexStatus();
-  // Delordre gjelder tilbud: endringsmeldinger har ikke andel per post ennå.
-  const kanDelordre = parentType === "offers" && !!tripletex?.tilkoblet;
+  // Delordre gjelder både tilbud og endringsmeldinger. En endringsmelding som
+  // ikke er godkjent, nekter serveren å lage ordre av.
+  const kanDelordre = !!tripletex?.tilkoblet;
 
   const col = parentType === "offers" ? "offer_id" : "amendment_id";
 
@@ -96,7 +97,7 @@ export function PaymentsPanel({
   const oppdaterFraTripletex = async () => {
     setSynker(true);
     try {
-      const r = await synkTripletex(parentType === "offers" ? parentId : undefined);
+      const r = await synkTripletex({ type: parentType, id: parentId });
       toast.success(r.endret || r.slettet
         ? `Oppdatert fra Tripletex: ${r.endret} endret${r.slettet ? `, ${r.slettet} slettet` : ""}`
         : "Alt stemmer med Tripletex");
@@ -310,7 +311,7 @@ export function PaymentsPanel({
 
       {kanDelordre && (
         <DelordreDialog
-          offerId={parentId}
+          kilde={{ type: parentType, id: parentId }}
           open={delordreApen}
           onOpenChange={setDelordreApen}
           onLaget={invalidate}

@@ -253,8 +253,8 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
  * i den faste lagre-linja: nøkkelen går til edge functionen og testes før den
  * lagres, og skal aldri ligge i app_settings der alle i firmaet kan lese den.
  *
- * Integrasjonsnøkkelen er appens egen og ligger på serveren — firmaene ser den
- * aldri og trenger den ikke.
+ * Nøkkelen er Tripletex sin API-token (tlxr_…), som firmaet lager selv og som
+ * alene gir tilgang — ingen egen integrasjonsnøkkel trengs.
  *
  * Feltet er alltid tomt. En lagret nøkkel vises aldri igjen — et tomt felt ved
  * lagring betyr «behold den som er der».
@@ -353,12 +353,12 @@ function TripletexOppsett() {
         ) : (
           <>
             <ol className="ml-4 list-decimal space-y-1.5 text-sm text-muted-foreground">
-              <li>Logg inn i Tripletex og gå til din profil → API-tilgang</li>
-              <li>Lag en ny nøkkel for denne appen og kopier den</li>
+              <li>Logg inn i Tripletex og gå til Selskap → API-tokens</li>
+              <li>Lag en ny token for tilbudssystemet og kopier den — den starter med <code className="rounded bg-muted px-1">tlxr_</code></li>
               <li>Lim den inn her. Den testes mot Tripletex før den lagres</li>
             </ol>
             <p className="text-xs text-muted-foreground">
-              Nøkkelen får de samme rettighetene i Tripletex som brukeren som lager den.
+              Tokenen vises bare én gang i Tripletex, og har en utløpsdato. Lag en ny og lim den inn her når den går ut.
             </p>
             <div className="space-y-2">
               <Label>API-nøkkel</Label>

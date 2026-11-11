@@ -2,11 +2,14 @@
 //
 // Kalles fra appen med brukerens innlogging (verify_jwt på), og hvert 30.
 // minutt av synkjobben i basen. Nøklene til Tripletex forlater aldri denne
-// funksjonen: integrasjonsnøkkelen er appens egen og ligger som secret
-// (TRIPLETEX_CONSUMER_TOKEN), og firmaets API-nøkkel ligger i
-// tripletex_oppsett, som bare service role kan lese. Tilbud, kunder og
-// betalinger leses og skrives som brukeren, så RLS holder hvert firma i sitt
-// eget.
+// funksjonen: firmaets API-nøkkel ligger i tripletex_oppsett, som bare service
+// role kan lese. Tilbud, kunder og betalinger leses og skrives som brukeren, så
+// RLS holder hvert firma i sitt eget.
+//
+// API-nøkkelen er vanligvis Tripletex sin «refresh token» (tlxr_…), som firmaet
+// lager selv under Selskap → API-tokens og som alene gir en økt. Den gamle
+// innloggingen — employee token pluss en integrasjonsnøkkel (secret
+// TRIPLETEX_CONSUMER_TOKEN) — virker fortsatt for den som har den.
 //
 // Appen lager bare ordre. Den fakturerer aldri og sender aldri noe til
 // kunden — det gjør firmaet selv i Tripletex, etter å ha gått gjennom ordren.
@@ -72,12 +75,20 @@ interface Oppsett {
   miljo: Miljo;
   session_token: string | null;
   session_utloper: string | null;
+  session_gyldig_til?: string | null;
   sist_hentet_kunder: string | null;
 }
 
-/** Appens integrasjonsnøkkel. Et firma kan ha sin egen, men trenger det ikke. */
+/** Tripletex sin nye nøkkel, som gir en økt uten integrasjonsnøkkel. */
+const erRefreshToken = (nokkel: string | null | undefined) => (nokkel ?? "").trim().startsWith("tlxr_");
+
+/** Integrasjonsnøkkelen til den gamle innloggingen. Trengs ikke med tlxr_-nøkkel. */
 const integrasjonsnokkel = (o: Pick<Oppsett, "consumer_token"> | null) =>
   (o?.consumer_token ?? "").trim() || (Deno.env.get("TRIPLETEX_CONSUMER_TOKEN") ?? "").trim();
+
+/** Har firmaet det som trengs for å logge inn i Tripletex? */
+const kanLoggeInn = (o: Oppsett | null) =>
+  !!o?.employee_token && (erRefreshToken(o.employee_token) || !!integrasjonsnokkel(o));
 
 /** Datoen i Norge, med et antall dager lagt til, som yyyy-mm-dd. */
 function osloDato(pluss = 0, fra = Date.now()): string {
@@ -110,8 +121,12 @@ class Tripletex {
     private admin: SupabaseClient,
     private oppsett: Oppsett,
   ) {
-    // En lagret øktnøkkel brukes så lenge den har minst ett døgn igjen.
-    const gyldig = oppsett.session_utloper && oppsett.session_utloper > osloDato(0);
+    // En lagret øktnøkkel brukes så lenge den har god tid igjen: en økt fra
+    // refresh token minst ti minutter, en fra den gamle innloggingen minst ett
+    // døgn.
+    const gyldig = oppsett.session_gyldig_til
+      ? Date.parse(oppsett.session_gyldig_til) > Date.now() + 10 * 60_000
+      : !!oppsett.session_utloper && oppsett.session_utloper > osloDato(0);
     this.token = gyldig ? oppsett.session_token : null;
   }
 
@@ -119,8 +134,10 @@ class Tripletex {
     return BASER[this.oppsett.miljo] ?? BASER.produksjon;
   }
 
-  /** Bytter nøklene i en øktnøkkel, og tar vare på den. */
+  /** Lager en ny øktnøkkel fra firmaets nøkkel, og tar vare på den. */
   private async nyOkt(): Promise<string> {
+    if (erRefreshToken(this.oppsett.employee_token)) return this.oktFraRefreshToken();
+
     const consumer = integrasjonsnokkel(this.oppsett);
     if (!consumer) {
       throw new Brukerfeil(500, "Appens integrasjonsnøkkel for Tripletex er ikke lagt inn ennå");
@@ -144,7 +161,36 @@ class Tripletex {
     this.token = token;
     await this.admin
       .from("tripletex_oppsett")
-      .update({ session_token: token, session_utloper: utloper })
+      .update({ session_token: token, session_utloper: utloper, session_gyldig_til: null })
+      .eq("tenant_id", this.oppsett.tenant_id);
+    return token;
+  }
+
+  /** Økt på 8 timer — det lengste Tripletex gir — fra en tlxr_-nøkkel. */
+  private async oktFraRefreshToken(): Promise<string> {
+    const ttl = 8 * 3600;
+    const res = await fetch(`${this.base}/token/session/:createFromRefreshToken`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ refreshToken: this.oppsett.employee_token.trim(), ttlSeconds: ttl }),
+    });
+    if (!res.ok) {
+      throw new Brukerfeil(
+        502,
+        `Tripletex godtok ikke API-nøkkelen (${await tripletexFeil(res)}). ` +
+          "Sjekk at nøkkelen er riktig, ikke er utløpt, og hører til valgt miljø.",
+      );
+    }
+    const token = String((await res.json())?.value?.token ?? "");
+    if (!token) throw new Brukerfeil(502, "Tripletex ga ingen øktnøkkel tilbake");
+    this.token = token;
+    await this.admin
+      .from("tripletex_oppsett")
+      .update({
+        session_token: token,
+        session_utloper: null,
+        session_gyldig_til: new Date(Date.now() + ttl * 1000).toISOString(),
+      })
       .eq("tenant_id", this.oppsett.tenant_id);
     return token;
   }
@@ -629,7 +675,7 @@ Deno.serve(async (req) => {
       .eq("tenant_id", tenantId)
       .maybeSingle();
     const oppsett = rad as Oppsett | null;
-    const tilkoblet = !!(oppsett?.employee_token && integrasjonsnokkel(oppsett));
+    const tilkoblet = kanLoggeInn(oppsett);
 
     if (handling === "status") {
       return svar(200, {
@@ -637,7 +683,9 @@ Deno.serve(async (req) => {
         miljo: oppsett?.miljo ?? "produksjon",
         sist_hentet_kunder: oppsett?.sist_hentet_kunder ?? null,
         kan_endre: erAdmin,
-        integrasjon_klar: !!integrasjonsnokkel(oppsett),
+        // Med tlxr_-nøkkel trengs ingen integrasjonsnøkkel, så firmaet kan
+        // alltid koble til selv.
+        integrasjon_klar: true,
       });
     }
 
@@ -653,15 +701,29 @@ Deno.serve(async (req) => {
         miljo,
         session_token: null,
         session_utloper: null,
+        session_gyldig_til: null,
         sist_hentet_kunder: oppsett?.sist_hentet_kunder ?? null,
       };
       if (!nytt.employee_token) throw new Brukerfeil(400, "Lim inn API-nøkkelen fra Tripletex");
+      if (!kanLoggeInn(nytt)) {
+        throw new Brukerfeil(
+          400,
+          "Nøkkelen ser ut som en gammel employee token. Lag en API-token under Selskap → API-tokens i Tripletex — den starter med tlxr_.",
+        );
+      }
 
       // Testes før noe lagres: en feil nøkkel skal ikke erstatte en som virker.
       const tx = new Tripletex(admin, nytt);
       const hvem = await tx.kall("GET", "/token/session/>whoAmI", {
-        query: { fields: "company(name),employee(firstName,lastName)" },
+        query: { fields: "companyId,company(name),employee(firstName,lastName)" },
       });
+      // whoAmI gir ikke alltid firmanavnet med API-token; da spør vi firmaet.
+      if (!hvem?.value?.company?.name && hvem?.value?.companyId) {
+        const firma = await tx
+          .kall("GET", `/company/${hvem.value.companyId}`, { query: { fields: "name" } })
+          .catch(() => null);
+        if (firma?.value?.name) hvem.value.company = { name: firma.value.name };
+      }
 
       const { error } = await admin
         .from("tripletex_oppsett")

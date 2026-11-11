@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { nok, fmtDate, offerTotal } from "@/lib/format";
 import { useAuth } from "@/hooks/use-auth";
 import { useAppSettings } from "@/hooks/use-app-settings";
-import { useDashboard } from "@/routes/dashboard";
+import { useDashboard } from "@/lib/dashboard-data";
 import {
   CircleDollarSign, CheckCircle2, TrendingUp, FileText,
   ClipboardEdit, AlertTriangle, PenLine, FileCheck, Monitor,

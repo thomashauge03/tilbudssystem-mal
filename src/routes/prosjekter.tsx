@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Search, Pencil, FolderOpen, Info } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { alleRader } from "@/lib/alle-rader";
 import { fmtDate, nok } from "@/lib/format";
 import { prosjekterFraSmartDok, sorterProsjekter } from "@/lib/prosjekter";
 import { toast } from "sonner";
@@ -70,7 +71,8 @@ function ProsjekterPage() {
     queryFn: async () => {
       const [p, c, o, am] = await Promise.all([
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
-        supabase.from("customers").select("id, name"),
+        alleRader((fra, til) => supabase.from("customers").select("id, name").order("id").range(fra, til))
+          .then((data) => ({ data, error: null }), (error) => ({ data: null, error })),
         supabase.from("offers").select("project_id, invoiced_amount").not("project_id", "is", null),
         supabase.from("amendments").select("project_id, invoiced_amount").not("project_id", "is", null),
       ]);
@@ -104,9 +106,9 @@ function ProsjekterPage() {
   const { data: customers } = useQuery({
     queryKey: ["customers-simple"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("customers").select("id, name, email").order("name");
-      if (error) throw error;
-      return data ?? [];
+      return alleRader((fra, til) =>
+        supabase.from("customers").select("id, name, email").order("name").order("id").range(fra, til),
+      );
     },
   });
 

@@ -274,13 +274,22 @@ async function hentKunder(
     fields: KUNDEFELT,
   })) as TripletexKunde[];
 
-  const { data: iAppen, error } = await bruker
-    .from("customers")
-    .select("id, name, org_number, email, phone, address, tripletex_id");
-  if (error) throw new Brukerfeil(500, error.message);
+  // Alle kundene, i sider på 1000: Supabase kutter stille ved 1000 rader, og
+  // da ville resten sett ut som nye og blitt forsøkt lagt inn på nytt.
+  const iAppen: AppKunde[] = [];
+  for (let fra = 0; ; fra += 1000) {
+    const { data, error } = await bruker
+      .from("customers")
+      .select("id, name, org_number, email, phone, address, tripletex_id")
+      .order("id")
+      .range(fra, fra + 999);
+    if (error) throw new Brukerfeil(500, error.message);
+    iAppen.push(...((data ?? []) as AppKunde[]));
+    if ((data ?? []).length < 1000) break;
+  }
 
-  const plan = planleggKunder(fraTripletex, (iAppen ?? []) as AppKunde[]);
-  const forrigeNavn = new Map((iAppen ?? []).map((k) => [k.id, k.name]));
+  const plan = planleggKunder(fraTripletex, iAppen);
+  const forrigeNavn = new Map(iAppen.map((k) => [k.id, k.name]));
 
   const nye = plan.filter((v) => v.type === "ny");
   if (nye.length) {

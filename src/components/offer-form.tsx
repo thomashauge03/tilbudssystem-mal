@@ -16,6 +16,7 @@ import { nok, num, fmtDate, toISODate, addDays, offerHasDeadline, isOfferWon, li
 import { openContractPdf } from "@/lib/pdf";
 import { lagPdfFil } from "@/lib/pdf-fil";
 import { skrivTilbudsPdf } from "@/lib/tilbud-pdf";
+import { alleRader } from "@/lib/alle-rader";
 import { useTripletexStatus, lagDelordre, delordreTekst, type Andeler } from "@/lib/tripletex";
 import { apneEpost, kopierLenke, LIM_INN, TRYGG_LENKE, type Avsnitt } from "@/lib/epost-lenke";
 import { Link } from "@tanstack/react-router";
@@ -123,9 +124,9 @@ export function OfferForm({ offerId }: { offerId?: string }) {
   const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
     queryKey: ["customers-simple"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("customers").select("id, name, email, phone, address").order("name");
-      if (error) throw error;
-      return data ?? [];
+      return alleRader((fra, til) =>
+        supabase.from("customers").select("id, name, email, phone, address").order("name").order("id").range(fra, til),
+      );
     },
   });
 

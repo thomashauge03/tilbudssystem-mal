@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Plus, Search, Pencil, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useTripletexStatus, hentKunderFraTripletex, kundeHentingTekst } from "@/lib/tripletex";
+import { alleRader } from "@/lib/alle-rader";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -55,12 +56,10 @@ function CustomersPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["customers-full"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("customers")
-        .select("*, offers(count)")
-        .order("name");
-      if (error) throw error;
-      return (data ?? []).map((x: any) => ({
+      const data = await alleRader((fra, til) =>
+        supabase.from("customers").select("*, offers(count)").order("name").order("id").range(fra, til),
+      );
+      return data.map((x: any) => ({
         ...x,
         offer_count: (x.offers?.[0]?.count ?? 0) as number,
       }));

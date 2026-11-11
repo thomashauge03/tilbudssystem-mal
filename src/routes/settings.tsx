@@ -249,17 +249,19 @@ function RefList({ refs, onChange }: { refs: OurRef[]; onChange: (refs: OurRef[]
 }
 
 /**
- * Nøklene til Tripletex. Har sin egen lagreknapp og hører ikke med i den faste
- * lagre-linja: nøklene går til edge functionen og testes før de lagres, og
- * skal aldri ligge i app_settings der alle i firmaet kan lese dem.
+ * Firmaets API-nøkkel til Tripletex. Har sin egen lagreknapp og hører ikke med
+ * i den faste lagre-linja: nøkkelen går til edge functionen og testes før den
+ * lagres, og skal aldri ligge i app_settings der alle i firmaet kan lese den.
  *
- * Feltene er alltid tomme. En lagret nøkkel vises aldri igjen — et tomt felt
- * ved lagring betyr «behold den som er der».
+ * Integrasjonsnøkkelen er appens egen og ligger på serveren — firmaene ser den
+ * aldri og trenger den ikke.
+ *
+ * Feltet er alltid tomt. En lagret nøkkel vises aldri igjen — et tomt felt ved
+ * lagring betyr «behold den som er der».
  */
 function TripletexOppsett() {
   const qc = useQueryClient();
   const { data: status, isLoading, error } = useTripletexStatus();
-  const [consumer, setConsumer] = useState("");
   const [employee, setEmployee] = useState("");
   const [miljo, setMiljo] = useState<"produksjon" | "test">("produksjon");
   const [arbeider, setArbeider] = useState<null | "lagre" | "kunder" | "fra">(null);
@@ -276,11 +278,9 @@ function TripletexOppsett() {
     try {
       const r = await tripletexKall<{ firma: string | null; bruker: string }>({
         handling: "lagre",
-        consumer_token: consumer,
         employee_token: employee,
         miljo,
       });
-      setConsumer("");
       setEmployee("");
       toast.success(`Koblet til Tripletex${r.firma ? ` — ${r.firma}` : ""}${r.bruker ? ` som ${r.bruker}` : ""}`);
       qc.invalidateQueries({ queryKey: ["tripletex-status"] });
@@ -334,7 +334,7 @@ function TripletexOppsett() {
     <>
       <SectionCard
         title="Tripletex"
-        description="Send tilbud over som ordre, og hent kundene fra Tripletex"
+        description="Lag ordre i Tripletex fra tilbudene, og hent kundene derfra"
       >
         <div className="flex items-center gap-2 text-sm">
           <span className={`h-2 w-2 rounded-full ${tilkoblet ? "bg-green-500" : "bg-muted-foreground/40"}`} />
@@ -343,28 +343,25 @@ function TripletexOppsett() {
             : <span className="text-muted-foreground">Ikke koblet til</span>}
         </div>
 
-        {!kanEndre ? (
+        {!status?.integrasjon_klar ? (
+          <p className="text-sm text-muted-foreground">
+            Tripletex-koblingen er ikke satt opp for appen ennå. Den blir tilgjengelig her når leverandøren har lagt
+            den inn.
+          </p>
+        ) : !kanEndre ? (
           <p className="text-sm text-muted-foreground">Bare administratorer kan endre Tripletex-koblingen.</p>
         ) : (
           <>
             <ol className="ml-4 list-decimal space-y-1.5 text-sm text-muted-foreground">
-              <li>Integrasjonsnøkkelen («consumer token») får du fra Tripletex når API-tilgangen er godkjent</li>
-              <li>Brukernøkkelen («employee token») lager du i Tripletex under din profil → API-tilgang</li>
-              <li>Lim inn begge her. De testes mot Tripletex før de lagres</li>
+              <li>Logg inn i Tripletex og gå til din profil → API-tilgang</li>
+              <li>Lag en ny nøkkel for denne appen og kopier den</li>
+              <li>Lim den inn her. Den testes mot Tripletex før den lagres</li>
             </ol>
+            <p className="text-xs text-muted-foreground">
+              Nøkkelen får de samme rettighetene i Tripletex som brukeren som lager den.
+            </p>
             <div className="space-y-2">
-              <Label>Integrasjonsnøkkel (consumer token)</Label>
-              <Input
-                type="password"
-                autoComplete="off"
-                value={consumer}
-                onChange={(e) => setConsumer(e.target.value)}
-                placeholder={tilkoblet ? "Lagret — la stå tom for å beholde" : ""}
-                className="max-w-lg font-mono text-xs"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Brukernøkkel (employee token)</Label>
+              <Label>API-nøkkel</Label>
               <Input
                 type="password"
                 autoComplete="off"
@@ -392,13 +389,13 @@ function TripletexOppsett() {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Testmiljøet (api-test.tripletex.tech) har egne nøkler. Nøkler fra det ekte regnskapet virker ikke der.
+                Testmiljøet (api-test.tripletex.tech) har egne nøkler. En nøkkel fra det ekte regnskapet virker ikke der.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={lagre}
-                disabled={!!arbeider || (!tilkoblet && (!consumer.trim() || !employee.trim()))}
+                disabled={!!arbeider || (!tilkoblet && !employee.trim())}
               >
                 <Save className="mr-2 h-4 w-4" />
                 {arbeider === "lagre" ? "Tester…" : tilkoblet ? "Lagre og test" : "Koble til"}

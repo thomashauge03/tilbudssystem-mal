@@ -322,6 +322,20 @@ function AdminPageContent() {
     toast.success("Tilgang fjernet");
   };
 
+  // Admin er den som kan koble firmaet til Tripletex og styre brukerne. Basen
+  // nekter å gjøre den siste admin-en i et firma om til vanlig bruker.
+  const byttRolle = async (tuId: string, rolle: string, epost: string) => {
+    const ny = rolle === "admin" ? "member" : "admin";
+    const tekst = ny === "admin"
+      ? `Gjøre ${epost} til admin? Admin kan koble firmaet til Tripletex og endre brukernes roller.`
+      : `Gjøre ${epost} til vanlig bruker? Brukeren mister tilgangen til admin-oppgavene.`;
+    if (!window.confirm(tekst)) return;
+    const { error } = await supabase.rpc("admin_set_role" as never, { p_tenant_user_id: tuId, p_role: ny } as never);
+    if (error) { toast.error(error.message); return; }
+    setTenantUsers(prev => prev.map(tu => tu.id === tuId ? { ...tu, role: ny } : tu));
+    toast.success(ny === "admin" ? `${epost} er nå admin` : `${epost} er nå vanlig bruker`);
+  };
+
   const deleteUser = async (user: AuthUser) => {
     // H6: use RPC instead of direct delete to respect security-definer logic
     const userTenantLinks = tenantUsers.filter(tu => tu.user_id === user.id);
@@ -579,13 +593,17 @@ function AdminPageContent() {
                         <span className="rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-medium">
                           {linked.tenant.name}
                         </span>
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          linked.role === "admin"
-                            ? "bg-primary/10 text-primary"
-                            : "bg-muted text-muted-foreground"
-                        }`}>
-                          {linked.role}
-                        </span>
+                        <button
+                          onClick={() => byttRolle(linked.tuId, linked.role, u.email)}
+                          title={linked.role === "admin" ? "Gjør til vanlig bruker" : "Gjør til admin"}
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                            linked.role === "admin"
+                              ? "bg-primary/10 text-primary hover:bg-primary/20"
+                              : "bg-muted text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground"
+                          }`}
+                        >
+                          {linked.role === "admin" ? "admin" : "bruker"}
+                        </button>
                         <button
                           onClick={() => unlinkUser(linked.tuId)}
                           title="Fjern fra kunde"
@@ -702,9 +720,13 @@ function AdminPageContent() {
                                 ? <CheckCircle2 className="h-3 w-3 text-green-500" />
                                 : <Clock className="h-3 w-3 text-amber-500" />}
                               <span>{u?.email ?? tu.user_id.slice(0, 8)}</span>
-                              <span className={`font-medium ${tu.role === "admin" ? "text-primary" : "text-muted-foreground"}`}>
-                                · {tu.role}
-                              </span>
+                              <button
+                                onClick={() => byttRolle(tu.id, tu.role, u?.email ?? tu.user_id.slice(0, 8))}
+                                title={tu.role === "admin" ? "Gjør til vanlig bruker" : "Gjør til admin"}
+                                className={`font-medium hover:underline ${tu.role === "admin" ? "text-primary" : "text-muted-foreground"}`}
+                              >
+                                · {tu.role === "admin" ? "admin" : "bruker"}
+                              </button>
                               <button
                                 onClick={() => unlinkUser(tu.id)}
                                 className="ml-0.5 text-muted-foreground hover:text-destructive"

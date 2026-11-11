@@ -15,9 +15,21 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Trash2, Send, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
+import { DelordreDialog } from "@/components/delordre-dialog";
+import {
+  useTripletexStatus, slettDelordre, synkTripletex, STATUS_TEKST, type Tripletexstatus,
+} from "@/lib/tripletex";
+
+const STATUS_STIL: Record<Tripletexstatus, string> = {
+  ordre: "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  fakturert: "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300",
+  delvis_betalt: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  betalt: "border-green-300 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300",
+  kreditert: "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
+};
 
 const getToday = () => new Date().toISOString().slice(0, 10);
 
@@ -55,6 +67,11 @@ export function PaymentsPanel({
   const [newDate, setNewDate] = useState(() => getToday());
   const [adding, setAdding] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [delordreApen, setDelordreApen] = useState(false);
+  const [synker, setSynker] = useState(false);
+  const { data: tripletex } = useTripletexStatus();
+  // Delordre gjelder tilbud: endringsmeldinger har ikke andel per post ennå.
+  const kanDelordre = parentType === "offers" && !!tripletex?.tilkoblet;
 
   const col = parentType === "offers" ? "offer_id" : "amendment_id";
 
@@ -76,7 +93,24 @@ export function PaymentsPanel({
     onSaved();
   };
 
+  const oppdaterFraTripletex = async () => {
+    setSynker(true);
+    try {
+      const r = await synkTripletex(parentType === "offers" ? parentId : undefined);
+      toast.success(r.endret || r.slettet
+        ? `Oppdatert fra Tripletex: ${r.endret} endret${r.slettet ? `, ${r.slettet} slettet` : ""}`
+        : "Alt stemmer med Tripletex");
+      invalidate();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSynker(false);
+    }
+  };
+
   const togglePaid = async (p: any) => {
+    // Betalt-haken på en ordre i Tripletex følger Tripletex, ikke klikk her.
+    if (p.tripletex_ordre_id) return;
     const paid = !p.paid;
     const { error } = await supabase
       .from("payments")
@@ -88,6 +122,21 @@ export function PaymentsPanel({
   };
 
   const deletePayment = async (id: string) => {
+    const rad = (payments ?? []).find((p: any) => p.id === id);
+    if (rad?.tripletex_ordre_id) {
+      // Ordren slettes i Tripletex først. Nekter Tripletex, blir raden stående.
+      try {
+        await slettDelordre(id);
+      } catch (e) {
+        toast.error((e as Error).message);
+        setDeleteTarget(null);
+        return;
+      }
+      toast.success(`Ordre ${rad.tripletex_ordre_nr} er slettet i Tripletex`);
+      setDeleteTarget(null);
+      invalidate();
+      return;
+    }
     const { error } = await supabase.from("payments").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     setDeleteTarget(null);
@@ -141,10 +190,14 @@ export function PaymentsPanel({
                 >
                   <button
                     onClick={() => togglePaid(p)}
-                    className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                    disabled={!!p.tripletex_ordre_id}
+                    title={p.tripletex_ordre_id ? "Følger Tripletex: settes når fakturaen er betalt der" : undefined}
+                    className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition-colors disabled:cursor-default ${
                       p.paid
                         ? "border-green-500 bg-green-500 text-white"
-                        : "border-muted-foreground hover:border-primary"
+                        : p.tripletex_ordre_id
+                          ? "border-muted-foreground/40"
+                          : "border-muted-foreground hover:border-primary"
                     }`}
                   >
                     {p.paid && <Check className="h-3 w-3" />}
@@ -152,17 +205,40 @@ export function PaymentsPanel({
                   <span className="w-24 flex-shrink-0 tabular-nums text-xs text-muted-foreground">
                     {p.invoice_date ? fmtDate(p.invoice_date) : "—"}
                   </span>
-                  <span className={`flex-1 ${p.paid ? "text-muted-foreground line-through" : ""}`}>
-                    {p.description || <span className="italic text-muted-foreground">Ingen beskrivelse</span>}
+                  <span className={`flex flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 ${p.paid || p.tripletex_status === "kreditert" ? "text-muted-foreground" : ""}`}>
+                    <span className={p.paid ? "line-through" : ""}>
+                      {p.description || <span className="italic text-muted-foreground">Ingen beskrivelse</span>}
+                    </span>
+                    {p.tripletex_ordre_id && (
+                      <>
+                        <span className="text-xs text-muted-foreground">
+                          Ordre {p.tripletex_ordre_nr}
+                          {p.tripletex_faktura_nr ? ` · faktura ${p.tripletex_faktura_nr}` : ""}
+                          {p.tripletex_faktura_dato ? ` (${fmtDate(p.tripletex_faktura_dato)})` : ""}
+                        </span>
+                        {p.tripletex_status && (
+                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${STATUS_STIL[p.tripletex_status as Tripletexstatus] ?? ""}`}>
+                            {STATUS_TEKST[p.tripletex_status as Tripletexstatus] ?? p.tripletex_status}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </span>
-                  <span className={`tabular-nums font-semibold ${p.paid ? "text-green-700 dark:text-green-400" : ""}`}>
+                  <span className={`tabular-nums font-semibold ${p.paid ? "text-green-700 dark:text-green-400" : p.tripletex_status === "kreditert" ? "text-muted-foreground line-through" : ""}`}>
                     {nok(Number(p.amount))}
                   </span>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    title="Slett faktura"
+                    // En ordre som er fakturert i Tripletex, slettes ikke herfra:
+                    // fakturaen må krediteres der, og synken tar det med seg.
+                    disabled={!!p.tripletex_ordre_id && p.tripletex_status !== "ordre"}
+                    title={p.tripletex_ordre_id
+                      ? p.tripletex_status === "ordre"
+                        ? "Slett ordren her og i Tripletex"
+                        : "Fakturert i Tripletex — krediter fakturaen der"
+                      : "Slett faktura"}
                     onClick={() => setDeleteTarget(p)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -212,22 +288,54 @@ export function PaymentsPanel({
               <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={() => setAdding(false)}>Avbryt</Button>
             </div>
           ) : (
-            <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => setAdding(true)}>
-              <Plus className="h-3.5 w-3.5" /> Legg til faktura
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {kanDelordre && (
+                <Button size="sm" className="gap-1.5 h-8" onClick={() => setDelordreApen(true)}>
+                  <Send className="h-3.5 w-3.5" /> Ny delordre i Tripletex
+                </Button>
+              )}
+              <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => setAdding(true)}>
+                <Plus className="h-3.5 w-3.5" /> {kanDelordre ? "Før faktura for hånd" : "Legg til faktura"}
+              </Button>
+              {tripletex?.tilkoblet && (payments ?? []).some((p: any) => p.tripletex_ordre_id) && (
+                <Button size="sm" variant="ghost" className="gap-1.5 h-8" onClick={oppdaterFraTripletex} disabled={synker}>
+                  <RefreshCw className={`h-3.5 w-3.5 ${synker ? "animate-spin" : ""}`} />
+                  {synker ? "Oppdaterer…" : "Oppdater fra Tripletex"}
+                </Button>
+              )}
+            </div>
           )}
         </>
+      )}
+
+      {kanDelordre && (
+        <DelordreDialog
+          offerId={parentId}
+          open={delordreApen}
+          onOpenChange={setDelordreApen}
+          onLaget={invalidate}
+        />
       )}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Slett faktura</AlertDialogTitle>
+            <AlertDialogTitle>{deleteTarget?.tripletex_ordre_id ? "Slett ordre" : "Slett faktura"}</AlertDialogTitle>
             <AlertDialogDescription>
-              Er du sikker på at du vil slette fakturaen på{" "}
-              <strong>{nok(Number(deleteTarget?.amount ?? 0))}</strong>
-              {deleteTarget?.description ? <> – {deleteTarget.description}</> : null}? Beløpet
-              trekkes fra det som er registrert som betalt. Dette kan ikke angres.
+              {deleteTarget?.tripletex_ordre_id ? (
+                <>
+                  Ordre <strong>{deleteTarget.tripletex_ordre_nr}</strong> på{" "}
+                  <strong>{nok(Number(deleteTarget.amount ?? 0))}</strong> slettes både her og i Tripletex.
+                  Andelene den tok med, blir åpne igjen. Dette kan ikke angres.
+                </>
+              ) : (
+                <>
+                  Er du sikker på at du vil slette fakturaen på{" "}
+                  <strong>{nok(Number(deleteTarget?.amount ?? 0))}</strong>
+                  {deleteTarget?.description ? <> – {deleteTarget.description}</> : null}? Beløpet
+                  trekkes fra det som er registrert som betalt. Dette kan ikke angres.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

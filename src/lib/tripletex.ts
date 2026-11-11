@@ -10,6 +10,8 @@ export interface TripletexStatus {
   miljo: "produksjon" | "test";
   sist_hentet_kunder: string | null;
   kan_endre: boolean;
+  /** Appens integrasjonsnøkkel er lagt inn. Uten den kan ingen firmaer koble til. */
+  integrasjon_klar: boolean;
 }
 
 /**
@@ -66,18 +68,76 @@ export function kundeHentingTekst(r: KundeHenting): string {
   return `${r.i_tripletex} kunder i Tripletex — ${deler.length ? deler.join(", ") : "alt var likt fra før"}`;
 }
 
-export interface SendtOrdre {
+// ─── Delordre ───────────────────────────────────────────────────────────────
+
+/** {offer_line_id: prosent} — hvor stor del av hver post som er tatt med totalt. */
+export type Andeler = Record<string, number>;
+
+export type Tripletexstatus = "ordre" | "fakturert" | "delvis_betalt" | "betalt" | "kreditert";
+
+export const STATUS_TEKST: Record<Tripletexstatus, string> = {
+  ordre: "Ordre",
+  fakturert: "Fakturert",
+  delvis_betalt: "Delvis betalt",
+  betalt: "Betalt",
+  kreditert: "Kreditert",
+};
+
+/**
+ * Hvor langt hver post er tatt med, etter delordrene som gjelder. Kreditert
+ * teller ikke. Tvilling av gjeldendeAndeler i edge functionen — den avgjør,
+ * denne viser bare tallene i dialogen.
+ */
+export function gjeldendeAndeler(
+  rader: Array<{ andeler?: unknown; tripletex_status?: string | null }>,
+): Andeler {
+  const ut: Andeler = {};
+  for (const r of rader ?? []) {
+    if (r.tripletex_status === "kreditert" || !r.andeler) continue;
+    for (const [id, pct] of Object.entries(r.andeler as Andeler)) {
+      ut[id] = Math.max(ut[id] ?? 0, Number(pct) || 0);
+    }
+  }
+  return ut;
+}
+
+export interface LagetOrdre {
   ordre_id: number;
   ordre_nr: string;
   sum: number;
   vedlegg_feil: string | null;
 }
 
-export function sendTilbudTilTripletex(offerId: string, pdf: Blob | null, paNytt: boolean) {
+export function lagDelordre(offerId: string, andeler: Andeler, pdf: Blob | null) {
   const form = new FormData();
-  form.append("handling", "send-tilbud");
+  form.append("handling", "lag-delordre");
   form.append("offer_id", offerId);
-  form.append("pa_nytt", String(paNytt));
+  form.append("andeler", JSON.stringify(andeler));
   if (pdf) form.append("pdf", pdf, "tilbud.pdf");
-  return tripletexKall<SendtOrdre>(form);
+  return tripletexKall<LagetOrdre>(form);
+}
+
+export function slettDelordre(paymentId: string) {
+  return tripletexKall<{ slettet: string }>({ handling: "slett-delordre", payment_id: paymentId });
+}
+
+export function synkTripletex(offerId?: string) {
+  return tripletexKall<{ endret: number; slettet: number }>({
+    handling: "synk",
+    offer_id: offerId,
+  });
+}
+
+/** Toasten etter en delordre: sier fra om PDF-en ikke kom med. */
+export function delordreTekst(r: LagetOrdre, pdfLaget: boolean): { ok: boolean; tekst: string } {
+  const sum = new Intl.NumberFormat("nb-NO", { style: "currency", currency: "NOK" }).format(r.sum);
+  if (!pdfLaget || r.vedlegg_feil) {
+    return {
+      ok: false,
+      tekst:
+        `Ordre ${r.ordre_nr} på ${sum} eks. mva er laget i Tripletex, men PDF-en kom ikke med` +
+        (r.vedlegg_feil ? `: ${r.vedlegg_feil}` : ". Legg den ved for hånd."),
+    };
+  }
+  return { ok: true, tekst: `Ordre ${r.ordre_nr} på ${sum} eks. mva er laget i Tripletex` };
 }

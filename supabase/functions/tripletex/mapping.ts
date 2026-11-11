@@ -30,87 +30,174 @@ export interface Ordrelinje {
 
 const kroner = (n: number) => Math.round(n * 100) / 100;
 
-/**
- * Summen av linjene før adm.påslag, eks. mva.
- *
- * Tvilling av `lineNet`/`offerTotal` i `src/lib/format.ts` (og `summerLinjer`
- * i varsel-epost), av samme grunn: Deno kan ikke importere fra `src/`. Endres
- * reglene der, må de endres her — ellers står det et annet beløp på ordren i
- * Tripletex enn i tilbudet kunden signerte.
- */
-export function linjegrunnlag(linjer: Tilbudslinje[]): number {
-  return (linjer ?? [])
-    .filter((l) => l.included !== false && !l.is_heading)
-    .reduce((s, l) => {
-      const brutto = Number(l.quantity ?? 0) * Number(l.unit_price ?? 0);
-      return s + brutto * (1 - Number(l.discount_pct ?? 0) / 100);
-    }, 0);
+// ─── Delordre: andel per post ───────────────────────────────────────────────
+
+/** {offer_line_id: prosent} — hvor stor del av hver post som er tatt med totalt. */
+export type Andeler = Record<string, number>;
+
+export interface Delordrerad {
+  andeler?: Andeler | null;
+  tripletex_status?: string | null;
 }
 
 /**
- * Teksten på ordrelinjen.
+ * Hvor langt hver post er tatt med, etter alle delordrene som gjelder.
  *
- * En ordrelinje i Tripletex uten produkt har ingen enhet, så enheten står i
- * teksten — ellers er «12» på en linje for graving ikke til å forstå. NS-koden
- * kommer først, slik den gjør i PDF-en. Kommentaren får egen linje.
+ * En kreditert ordre teller ikke: pengene er gitt tilbake, og andelen er åpen
+ * igjen. Andelene kan bare gå opp, så den høyeste er den siste.
  */
-export function linjetekst(l: Tilbudslinje): string {
-  const kode = (l.ns_code ?? "").trim();
-  const tekst = (l.description ?? "").trim();
-  const enhet = (l.unit ?? "").trim();
-  let ut = [kode, tekst].filter(Boolean).join(" ");
-  if (enhet && !l.is_heading) ut += ` (${enhet})`;
-  const kommentar = (l.comment ?? "").trim();
-  if (kommentar) ut += `\n${kommentar}`;
+export function gjeldendeAndeler(rader: Delordrerad[]): Andeler {
+  const ut: Andeler = {};
+  for (const r of rader ?? []) {
+    if (r.tripletex_status === "kreditert" || !r.andeler) continue;
+    for (const [id, pct] of Object.entries(r.andeler)) {
+      ut[id] = Math.max(ut[id] ?? 0, Number(pct) || 0);
+    }
+  }
   return ut;
 }
 
+const tall = (n: number, des = 2) =>
+  new Intl.NumberFormat("nb-NO", { minimumFractionDigits: des, maximumFractionDigits: des })
+    .format(n)
+    .replace(new RegExp("[\\u00a0\\u202f]", "g"), " ");
+
+const prosent = (n: number) => `${tall(n, Number.isInteger(n) ? 0 : 1)} %`;
+
 /**
- * Ordrelinjene et tilbud blir i Tripletex.
+ * Linjenettoen, eks. mva.
  *
- * - Linjer som ikke er tatt med i tilbudet, blir ikke med.
- * - Overskrifter blir tekstlinjer uten beløp, så ordren er delt opp som
- *   tilbudet.
- * - Adm.påslaget blir en egen linje til slutt, så summen på ordren blir den
- *   samme som tilbudssummen.
- *
- * Prisen sendes per enhet og rabatten for seg, slik Tripletex selv regner,
- * i stedet for et ferdig nettobeløp — da ser ordren ut som tilbudet.
+ * Tvilling av `lineNet` i `src/lib/format.ts` (og `summerLinjer` i
+ * varsel-epost), av samme grunn: Deno kan ikke importere fra `src/`. Endres
+ * reglene der, må de endres her — ellers står det et annet beløp på ordren i
+ * Tripletex enn i tilbudet kunden signerte. Overskrifter og linjer som ikke er
+ * med, er alt silt ut av den som kaller.
  */
-export function ordrelinjer(
-  linjer: Tilbudslinje[],
+const netto = (l: Tilbudslinje) =>
+  Number(l.quantity ?? 0) * Number(l.unit_price ?? 0) * (1 - Number(l.discount_pct ?? 0) / 100);
+
+export interface Delordre {
+  linjer: Ordrelinje[];
+  sum: number;
+  /** Andelene etter denne ordren — lagres på raden i payments. */
+  andeler: Andeler;
+}
+
+/**
+ * Ordrelinjene for økningen fra `forrige` til `nye`.
+ *
+ * Hver post som har økt, blir én linje på økningens beløp, med tekst som sier
+ * hva posten er og hvor langt den er kommet — for eksempel
+ * «Graving (12 m³ à 450,00) – utført 60 % (før 40 %)». Én linje med antall 1
+ * framfor en brøkdel av mengden: 2,4 m³ ser ut som en feil på fakturaen.
+ *
+ * Adm.påslaget kommer som egen linje av det som er tatt med denne gangen, så
+ * alle delordrene til sammen blir tilbudssummen.
+ *
+ * Kaster med en melding brukeren kan lese hvis en andel er ugyldig eller
+ * ingenting har økt.
+ */
+export function delordre(
+  linjer: Array<Tilbudslinje & { id: string }>,
+  forrige: Andeler,
+  nye: Andeler,
   adminPct: number | null | undefined,
   vatTypeId: number,
-): Ordrelinje[] {
-  const med = [...(linjer ?? [])]
-    .filter((l) => l.included !== false)
+): Delordre {
+  const poster = [...(linjer ?? [])]
+    .filter((l) => l.included !== false && !l.is_heading)
     .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
 
-  const ut: Ordrelinje[] = med.map((l, i) => ({
-    description: linjetekst(l),
-    count: l.is_heading ? 0 : Number(l.quantity ?? 0),
-    unitPriceExcludingVatCurrency: l.is_heading ? 0 : kroner(Number(l.unit_price ?? 0)),
-    discount: l.is_heading ? 0 : Number(l.discount_pct ?? 0),
-    vatType: { id: vatTypeId },
-    sortIndex: i + 1,
-  }));
+  const ut: Ordrelinje[] = [];
+  const andeler: Andeler = {};
+  let grunnlag = 0;
 
-  const pct = Number(adminPct ?? 0);
-  if (pct > 0) {
+  for (const l of poster) {
+    const for_ = Number(forrige[l.id] ?? 0);
+    const na = nye[l.id] === undefined ? for_ : Number(nye[l.id]);
+    const navn = (l.description ?? "").trim() || "posten";
+    if (!Number.isFinite(na) || na < 0 || na > 100) {
+      throw new Error(`Andelen for «${navn}» må være mellom 0 og 100 %`);
+    }
+    if (na < for_) {
+      throw new Error(
+        `«${navn}» er alt tatt med ${prosent(for_)}. Andelen kan ikke settes lavere — krediter i Tripletex i stedet.`,
+      );
+    }
+    andeler[l.id] = na;
+    if (na === for_) continue;
+
+    const belop = kroner(netto(l) * ((na - for_) / 100));
+    grunnlag += belop;
+
+    const kode = (l.ns_code ?? "").trim();
+    const enhet = (l.unit ?? "").trim();
+    const mengde = `${tall(Number(l.quantity ?? 0), Number.isInteger(Number(l.quantity ?? 0)) ? 0 : 2)}${enhet ? ` ${enhet}` : ""}`;
+    const rabatt = Number(l.discount_pct ?? 0) ? `, ${prosent(Number(l.discount_pct))} rabatt` : "";
+    let tekst =
+      [kode, navn].filter(Boolean).join(" ") +
+      ` (${mengde} à ${tall(Number(l.unit_price ?? 0))}${rabatt})` +
+      ` – utført ${prosent(na)}` +
+      (for_ > 0 ? ` (før ${prosent(for_)})` : "");
+    const kommentar = (l.comment ?? "").trim();
+    if (kommentar) tekst += `\n${kommentar}`;
+
     ut.push({
-      description: `Adm.påslag ${String(pct).replace(".", ",")} %`,
+      description: tekst,
       count: 1,
-      unitPriceExcludingVatCurrency: kroner(linjegrunnlag(med) * (pct / 100)),
+      unitPriceExcludingVatCurrency: belop,
       discount: 0,
       vatType: { id: vatTypeId },
       sortIndex: ut.length + 1,
     });
   }
-  return ut;
+
+  if (!ut.length) throw new Error("Ingen poster har fått høyere andel enn sist");
+
+  const pct = Number(adminPct ?? 0);
+  if (pct > 0) {
+    ut.push({
+      description: `Adm.påslag ${prosent(pct)}`,
+      count: 1,
+      unitPriceExcludingVatCurrency: kroner(grunnlag * (pct / 100)),
+      discount: 0,
+      vatType: { id: vatTypeId },
+      sortIndex: ut.length + 1,
+    });
+  }
+
+  return { linjer: ut, sum: ordresum(ut), andeler };
+}
+
+// ─── Status fra Tripletex ───────────────────────────────────────────────────
+
+export type Tripletexstatus = "ordre" | "fakturert" | "delvis_betalt" | "betalt" | "kreditert";
+
+export interface TripletexFaktura {
+  id: number;
+  invoiceNumber?: number | null;
+  invoiceDate?: string | null;
+  amount?: number | null;
+  amountOutstanding?: number | null;
+  isCredited?: boolean | null;
+  isCreditNote?: boolean | null;
+  orders?: Array<{ id: number }> | null;
+}
+
+/** Hvor ordren står, ut fra fakturaen Tripletex har laget av den (om noen). */
+export function fakturastatus(f: TripletexFaktura | null | undefined): Tripletexstatus {
+  if (!f) return "ordre";
+  if (f.isCredited) return "kreditert";
+  const belop = Math.abs(Number(f.amount ?? 0));
+  const utestaende = Number(f.amountOutstanding ?? belop);
+  // Øresavrunding kan la noen øre stå igjen på en faktura som er betalt.
+  if (utestaende <= 0.5) return "betalt";
+  if (utestaende < belop - 0.5) return "delvis_betalt";
+  return "fakturert";
 }
 
 /** Hva ordren blir på, eks. mva, regnet slik Tripletex regner linjene. */
-export function ordresum(linjer: Ordrelinje[]): number {
+function ordresum(linjer: Ordrelinje[]): number {
   return kroner(
     linjer.reduce(
       (s, l) => s + l.count * l.unitPriceExcludingVatCurrency * (1 - l.discount / 100),

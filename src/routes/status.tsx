@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,8 @@ import {
 } from "@/lib/format";
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { PaymentsPanel, syncInvoicedAmount } from "@/components/payments-panel";
+import { useTripletexStatus, synkTripletex } from "@/lib/tripletex";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/status")({
   component: StatusPage,
@@ -190,6 +192,25 @@ function StatusPage() {
     qc.invalidateQueries({ queryKey: ["status-offers"] });
     qc.invalidateQueries({ queryKey: ["status-amendments"] });
   };
+
+  // Hent ferske tall fra Tripletex hver gang siden åpnes. Synkjobben i basen
+  // går hvert 30. minutt, men den som sitter med siden skal se det som skjedde
+  // i Tripletex for et minutt siden — en faktura som nettopp ble betalt.
+  const { data: tripletex } = useTripletexStatus();
+  const synket = useRef(false);
+  useEffect(() => {
+    if (!tripletex?.tilkoblet || synket.current) return;
+    synket.current = true;
+    synkTripletex()
+      .then((r) => {
+        if (!r.endret && !r.slettet) return;
+        invalidate();
+        qc.invalidateQueries({ queryKey: ["payments"] });
+      })
+      .catch((e) => toast.error(`Fikk ikke hentet status fra Tripletex: ${(e as Error).message}`));
+    // invalidate er en ny funksjon hver opptegning; synken skal bare gå én gang.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripletex?.tilkoblet]);
 
   const FILTERS: { key: Filter; label: string }[] = [
     { key: "all", label: "Alle" },

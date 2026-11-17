@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState, Fragment } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { nok, fmtDate, offerTotal, amendmentTotal, compareAmendmentNumber, isAmendmentRejected, OFFER_WON_STATUSES } from "@/lib/format";
+import { nok, fmtDate, offerTotal, amendmentTotal, compareAmendmentNumber, isAmendmentRejected, OFFER_WON_STATUSES, gjenstarOgAndel } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Search, CheckCircle2, Circle, ChevronDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -261,7 +261,7 @@ function OrdrePage() {
               const e = endringerFor(o.id);
               const total = sumOf(o);
               const invoiced = fakturertOf(o);
-              const pct = total > 0 ? (invoiced / total) * 100 : 0;
+              const { pct } = gjenstarOgAndel(total, invoiced);
               const ordreStatus = getOrdreStatus(invoiced, total);
               return (
                 <Fragment key={o.id}>

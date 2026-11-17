@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   nok, fmtDate, compareAmendmentNumber, OFFER_WON_STATUSES, OFFER_COMPLETED,
-  offerTotal, amendmentTotal, isAmendmentRejected, type LineLike,
+  offerTotal, amendmentTotal, isAmendmentRejected, gjenstarOgAndel, type LineLike,
 } from "@/lib/format";
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { PaymentsPanel, syncInvoicedAmount } from "@/components/payments-panel";
@@ -338,8 +338,7 @@ function StatusPage() {
                 filteredOffers.map((o: any, i: number) => {
                   const total = offerTotal(o.offer_lines, o.admin_cost_pct);
                   const inv = Number(o.invoiced_amount ?? 0);
-                  const rem = total - inv;
-                  const pct = total > 0 ? (inv / total) * 100 : 0;
+                  const { rem, pct } = gjenstarOgAndel(total, inv);
                   const isExpanded = expanded.has(o.id);
                   return (
                     <Fragment key={o.id}>
@@ -358,7 +357,7 @@ function StatusPage() {
                             {nok(inv)}
                           </span>
                         </td>
-                        <td className={`px-4 py-3 text-right font-medium ${rem < 0 ? "text-destructive" : rem === 0 ? "text-green-600" : ""}`}>
+                        <td className={`px-4 py-3 text-right font-medium ${rem === 0 ? "text-green-600" : ""}`}>
                           {nok(rem)}
                         </td>
                         <td className="px-4 py-3">
@@ -425,8 +424,7 @@ function StatusPage() {
                 filteredAmendments.map((a: any, i: number) => {
                   const total = amendmentTotal(a.amendment_lines);
                   const inv = Number(a.invoiced_amount ?? 0);
-                  const rem = total - inv;
-                  const pct = total > 0 ? (inv / total) * 100 : 0;
+                  const { rem, pct } = gjenstarOgAndel(total, inv);
                   const isExpanded = expanded.has(a.id);
                   return (
                     <Fragment key={a.id}>
@@ -445,7 +443,7 @@ function StatusPage() {
                             {nok(inv)}
                           </span>
                         </td>
-                        <td className={`px-4 py-3 text-right font-medium ${rem < 0 ? "text-destructive" : rem === 0 ? "text-green-600" : ""}`}>
+                        <td className={`px-4 py-3 text-right font-medium ${rem === 0 ? "text-green-600" : ""}`}>
                           {nok(rem)}
                         </td>
                         <td className="px-4 py-3">

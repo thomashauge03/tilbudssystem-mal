@@ -85,6 +85,19 @@ export function offerTotal(lines: LineLike[] | null | undefined, adminPct?: numb
   return base + base * (Number(adminPct ?? 0) / 100);
 }
 
+/**
+ * Hva som gjenstår å fakturere, og hvor stor andel som er fakturert.
+ *
+ * Er det fakturert mer enn summen, står gjenstår på 0 og andelen på 100 %.
+ * Overfakturering skjer når mengdene ble større enn i tilbudet, og da er
+ * jobben ferdig fakturert, ikke noe som skal se ut som en feil i tabellen.
+ */
+export function gjenstarOgAndel(total: number, fakturert: number) {
+  const rem = Math.max(0, total - fakturert);
+  const pct = total > 0 ? Math.min(100, (fakturert / total) * 100) : 0;
+  return { rem, pct };
+}
+
 /** Endringslinjer har ikke inkludert-hake og ikke adm.påslag. */
 export function amendmentTotal(lines: LineLike[] | null | undefined) {
   return (lines ?? []).reduce((s, l) => s + lineNet(l), 0);

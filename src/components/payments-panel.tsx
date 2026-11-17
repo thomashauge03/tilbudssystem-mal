@@ -207,7 +207,9 @@ export function PaymentsPanel({
                   <button
                     onClick={() => togglePaid(p)}
                     disabled={!!p.tripletex_ordre_id}
-                    title={p.tripletex_ordre_id ? "Følger Tripletex: settes når fakturaen er betalt der" : undefined}
+                    // Synken huker av når fakturaen er sendt til kunden: da
+                    // regnes pengene som inne. Tripletex følger opp forfall og betaling.
+                    title={p.tripletex_ordre_id ? "Følger Tripletex: hukes av når fakturaen er sendt til kunden" : undefined}
                     className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition-colors disabled:cursor-default ${
                       p.paid
                         ? "border-green-500 bg-green-500 text-white"

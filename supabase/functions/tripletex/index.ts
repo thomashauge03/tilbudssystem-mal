@@ -781,7 +781,6 @@ async function synk(
     }
 
     const status = fakturastatus(faktura);
-    const betalt = status === "betalt";
     const fakturaNr = faktura?.invoiceNumber != null ? String(faktura.invoiceNumber) : null;
     // Betalt og kreditert sier mer enn «sendt», så da spørres det ikke — ellers
     // ville en betalt faktura som aldri ble sendt herfra, blitt spurt om hver
@@ -789,6 +788,12 @@ async function synk(
     const sending = faktura && !r.tripletex_sendt && (status === "fakturert" || status === "delvis_betalt")
       ? await sendelogg(tx, faktura.id)
       : null;
+    // En sendt faktura regnes som betalt i appen: Tripletex følger opp forfall
+    // og innbetaling, og her skal pengene telle med fra fakturaen er sendt.
+    // Kreditert er aldri betalt.
+    const sendt = sending?.sendt ?? r.tripletex_sendt ?? null;
+    const betalt = status === "betalt" || (!!sendt && status !== "kreditert" && status !== "ordre");
+    const betaltDato = sendt ? osloDato(0, Date.parse(sendt)) : idag;
     const uendret =
       status === r.tripletex_status &&
       fakturaNr === (r.tripletex_faktura_nr ?? null) &&
@@ -805,7 +810,7 @@ async function synk(
               tripletex_faktura_nr: fakturaNr,
               tripletex_faktura_dato: faktura?.invoiceDate ?? null,
               paid: betalt,
-              paid_date: betalt ? (r.paid ? undefined : idag) : null,
+              paid_date: betalt ? (r.paid ? undefined : betaltDato) : null,
               ...(sending ? { tripletex_sendt: sending.sendt, tripletex_sendt_til: sending.til } : {}),
               tripletex_synket: new Date().toISOString(),
             },

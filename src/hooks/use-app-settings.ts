@@ -57,7 +57,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   logo_url: "",
   units: ["stk", "m", "m²", "m³", "tonn", "time", "LS", "RS"],
   forbehold: [],
-  payment_terms: "30 dager netto",
+  payment_terms: "14 dager netto",
   default_offer_text: "",
   email_subject_template: "Tilbud #{nr} – {tittel}",
   vat_pct: 25,

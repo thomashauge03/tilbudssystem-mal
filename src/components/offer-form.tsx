@@ -911,7 +911,7 @@ export function OfferForm({ offerId }: { offerId?: string }) {
       // Kontrakten går foran tilbudet ved motstrid (§2), så §5 må si samme
       // betalingsfrist som tilbuds-PDF-en. Uten dette feltet skrev kontrakten
       // alltid 14 dager, mens tilbudet sto med firmaets egne vilkår.
-      payment_terms: appSettings?.payment_terms ?? "30 dager netto",
+      payment_terms: appSettings?.payment_terms ?? "14 dager netto",
       // Kolonnene finnes i app_settings, men innstillingssiden har ingen felt for
       // dem ennå — derfor står entreprenørens adresse tom i §1 inntil videre.
       company_address: (appSettings as any)?.company_address ?? "",

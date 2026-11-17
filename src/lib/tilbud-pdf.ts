@@ -77,7 +77,7 @@ export function skrivTilbudsPdf(
       company_tagline: innst?.company_tagline ?? "",
       logo_url: innst?.logo_url ?? "",
       company_org_nr: innst?.company_org_nr ?? "",
-      payment_terms: innst?.payment_terms ?? "30 dager netto",
+      payment_terms: innst?.payment_terms ?? "14 dager netto",
       vat_pct: innst?.vat_pct ?? 25,
       ref_phone: ref?.phone ?? "",
       ref_email: ref?.email ?? "",

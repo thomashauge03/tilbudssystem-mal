@@ -653,10 +653,13 @@ function SettingsPage() {
           <Input
             value={paymentTerms}
             onChange={(e) => setPaymentTerms(e.target.value)}
-            placeholder="F.eks. «30 dager netto»"
+            placeholder="F.eks. «14 dager netto»"
             className="max-w-xs"
           />
-          <p className="text-xs text-muted-foreground">Vises i bunnen av tilbuds-PDF.</p>
+          <p className="text-xs text-muted-foreground">
+            Vises i bunnen av tilbuds-PDF og i kontrakten. Endrer du det her, gjelder det alle tilbud, også de som
+            alt er laget.
+          </p>
         </div>
 
         <div className="space-y-2">

@@ -9,88 +9,38 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as StatusRouteImport } from './routes/status'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as ProsjekterRouteImport } from './routes/prosjekter'
-import { Route as PotensielleKunderRouteImport } from './routes/potensielle-kunder'
-import { Route as OrdreRouteImport } from './routes/ordre'
-import { Route as MobilRouteImport } from './routes/mobil'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as KunderRouteImport } from './routes/kunder'
-import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as AnbudRouteImport } from './routes/anbud'
-import { Route as AdmkostRouteImport } from './routes/admkost'
-import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as TilbudIndexRouteImport } from './routes/tilbud.index'
-import { Route as KalkyleIndexRouteImport } from './routes/kalkyle.index'
-import { Route as FremdriftsplanIndexRouteImport } from './routes/fremdriftsplan.index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AdmkostRouteImport } from './routes/admkost'
+import { Route as AnbudRouteImport } from './routes/anbud'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as KunderRouteImport } from './routes/kunder'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as MobilRouteImport } from './routes/mobil'
+import { Route as OrdreRouteImport } from './routes/ordre'
+import { Route as PotensielleKunderRouteImport } from './routes/potensielle-kunder'
+import { Route as ProsjekterRouteImport } from './routes/prosjekter'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as EndringsmeldingerIndexRouteImport } from './routes/endringsmeldinger.index'
-import { Route as TilbudNyRouteImport } from './routes/tilbud.ny'
-import { Route as TilbudIdRouteImport } from './routes/tilbud.$id'
-import { Route as SignerTokenRouteImport } from './routes/signer.$token'
-import { Route as SignerEndringTokenRouteImport } from './routes/signer-endring.$token'
-import { Route as KalkyleNyRouteImport } from './routes/kalkyle.ny'
-import { Route as KalkyleKodebankRouteImport } from './routes/kalkyle.kodebank'
-import { Route as KalkyleIdRouteImport } from './routes/kalkyle.$id'
-import { Route as FremdriftsplanNyRouteImport } from './routes/fremdriftsplan.ny'
-import { Route as FremdriftsplanIdRouteImport } from './routes/fremdriftsplan.$id'
-import { Route as EndringsmeldingerNyRouteImport } from './routes/endringsmeldinger.ny'
 import { Route as EndringsmeldingerIdRouteImport } from './routes/endringsmeldinger.$id'
+import { Route as EndringsmeldingerNyRouteImport } from './routes/endringsmeldinger.ny'
+import { Route as FremdriftsplanIndexRouteImport } from './routes/fremdriftsplan.index'
+import { Route as FremdriftsplanIdRouteImport } from './routes/fremdriftsplan.$id'
+import { Route as FremdriftsplanNyRouteImport } from './routes/fremdriftsplan.ny'
+import { Route as KalkyleIndexRouteImport } from './routes/kalkyle.index'
+import { Route as KalkyleIdRouteImport } from './routes/kalkyle.$id'
+import { Route as KalkyleKodebankRouteImport } from './routes/kalkyle.kodebank'
+import { Route as KalkyleNyRouteImport } from './routes/kalkyle.ny'
+import { Route as SignerEndringTokenRouteImport } from './routes/signer-endring.$token'
+import { Route as SignerTokenRouteImport } from './routes/signer.$token'
+import { Route as TilbudIndexRouteImport } from './routes/tilbud.index'
+import { Route as TilbudIdRouteImport } from './routes/tilbud.$id'
+import { Route as TilbudNyRouteImport } from './routes/tilbud.ny'
 
-const StatusRoute = StatusRouteImport.update({
-  id: '/status',
-  path: '/status',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProsjekterRoute = ProsjekterRouteImport.update({
-  id: '/prosjekter',
-  path: '/prosjekter',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PotensielleKunderRoute = PotensielleKunderRouteImport.update({
-  id: '/potensielle-kunder',
-  path: '/potensielle-kunder',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OrdreRoute = OrdreRouteImport.update({
-  id: '/ordre',
-  path: '/ordre',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MobilRoute = MobilRouteImport.update({
-  id: '/mobil',
-  path: '/mobil',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KunderRoute = KunderRouteImport.update({
-  id: '/kunder',
-  path: '/kunder',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AnbudRoute = AnbudRouteImport.update({
-  id: '/anbud',
-  path: '/anbud',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdmkostRoute = AdmkostRouteImport.update({
-  id: '/admkost',
-  path: '/admkost',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -98,24 +48,59 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AdmkostRoute = AdmkostRouteImport.update({
+  id: '/admkost',
+  path: '/admkost',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TilbudIndexRoute = TilbudIndexRouteImport.update({
-  id: '/tilbud/',
-  path: '/tilbud/',
+const AnbudRoute = AnbudRouteImport.update({
+  id: '/anbud',
+  path: '/anbud',
   getParentRoute: () => rootRouteImport,
 } as any)
-const KalkyleIndexRoute = KalkyleIndexRouteImport.update({
-  id: '/kalkyle/',
-  path: '/kalkyle/',
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FremdriftsplanIndexRoute = FremdriftsplanIndexRouteImport.update({
-  id: '/fremdriftsplan/',
-  path: '/fremdriftsplan/',
+const KunderRoute = KunderRouteImport.update({
+  id: '/kunder',
+  path: '/kunder',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MobilRoute = MobilRouteImport.update({
+  id: '/mobil',
+  path: '/mobil',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdreRoute = OrdreRouteImport.update({
+  id: '/ordre',
+  path: '/ordre',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PotensielleKunderRoute = PotensielleKunderRouteImport.update({
+  id: '/potensielle-kunder',
+  path: '/potensielle-kunder',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProsjekterRoute = ProsjekterRouteImport.update({
+  id: '/prosjekter',
+  path: '/prosjekter',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EndringsmeldingerIndexRoute = EndringsmeldingerIndexRouteImport.update({
@@ -123,49 +108,9 @@ const EndringsmeldingerIndexRoute = EndringsmeldingerIndexRouteImport.update({
   path: '/endringsmeldinger/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TilbudNyRoute = TilbudNyRouteImport.update({
-  id: '/tilbud/ny',
-  path: '/tilbud/ny',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TilbudIdRoute = TilbudIdRouteImport.update({
-  id: '/tilbud/$id',
-  path: '/tilbud/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignerTokenRoute = SignerTokenRouteImport.update({
-  id: '/signer/$token',
-  path: '/signer/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignerEndringTokenRoute = SignerEndringTokenRouteImport.update({
-  id: '/signer-endring/$token',
-  path: '/signer-endring/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KalkyleNyRoute = KalkyleNyRouteImport.update({
-  id: '/kalkyle/ny',
-  path: '/kalkyle/ny',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KalkyleKodebankRoute = KalkyleKodebankRouteImport.update({
-  id: '/kalkyle/kodebank',
-  path: '/kalkyle/kodebank',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KalkyleIdRoute = KalkyleIdRouteImport.update({
-  id: '/kalkyle/$id',
-  path: '/kalkyle/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FremdriftsplanNyRoute = FremdriftsplanNyRouteImport.update({
-  id: '/fremdriftsplan/ny',
-  path: '/fremdriftsplan/ny',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FremdriftsplanIdRoute = FremdriftsplanIdRouteImport.update({
-  id: '/fremdriftsplan/$id',
-  path: '/fremdriftsplan/$id',
+const EndringsmeldingerIdRoute = EndringsmeldingerIdRouteImport.update({
+  id: '/endringsmeldinger/$id',
+  path: '/endringsmeldinger/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EndringsmeldingerNyRoute = EndringsmeldingerNyRouteImport.update({
@@ -173,9 +118,64 @@ const EndringsmeldingerNyRoute = EndringsmeldingerNyRouteImport.update({
   path: '/endringsmeldinger/ny',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EndringsmeldingerIdRoute = EndringsmeldingerIdRouteImport.update({
-  id: '/endringsmeldinger/$id',
-  path: '/endringsmeldinger/$id',
+const FremdriftsplanIndexRoute = FremdriftsplanIndexRouteImport.update({
+  id: '/fremdriftsplan/',
+  path: '/fremdriftsplan/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FremdriftsplanIdRoute = FremdriftsplanIdRouteImport.update({
+  id: '/fremdriftsplan/$id',
+  path: '/fremdriftsplan/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FremdriftsplanNyRoute = FremdriftsplanNyRouteImport.update({
+  id: '/fremdriftsplan/ny',
+  path: '/fremdriftsplan/ny',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KalkyleIndexRoute = KalkyleIndexRouteImport.update({
+  id: '/kalkyle/',
+  path: '/kalkyle/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KalkyleIdRoute = KalkyleIdRouteImport.update({
+  id: '/kalkyle/$id',
+  path: '/kalkyle/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KalkyleKodebankRoute = KalkyleKodebankRouteImport.update({
+  id: '/kalkyle/kodebank',
+  path: '/kalkyle/kodebank',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KalkyleNyRoute = KalkyleNyRouteImport.update({
+  id: '/kalkyle/ny',
+  path: '/kalkyle/ny',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignerEndringTokenRoute = SignerEndringTokenRouteImport.update({
+  id: '/signer-endring/$token',
+  path: '/signer-endring/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignerTokenRoute = SignerTokenRouteImport.update({
+  id: '/signer/$token',
+  path: '/signer/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TilbudIndexRoute = TilbudIndexRouteImport.update({
+  id: '/tilbud/',
+  path: '/tilbud/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TilbudIdRoute = TilbudIdRouteImport.update({
+  id: '/tilbud/$id',
+  path: '/tilbud/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TilbudNyRoute = TilbudNyRouteImport.update({
+  id: '/tilbud/ny',
+  path: '/tilbud/ny',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -396,81 +396,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/status': {
-      id: '/status'
-      path: '/status'
-      fullPath: '/status'
-      preLoaderRoute: typeof StatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/prosjekter': {
-      id: '/prosjekter'
-      path: '/prosjekter'
-      fullPath: '/prosjekter'
-      preLoaderRoute: typeof ProsjekterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/potensielle-kunder': {
-      id: '/potensielle-kunder'
-      path: '/potensielle-kunder'
-      fullPath: '/potensielle-kunder'
-      preLoaderRoute: typeof PotensielleKunderRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ordre': {
-      id: '/ordre'
-      path: '/ordre'
-      fullPath: '/ordre'
-      preLoaderRoute: typeof OrdreRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mobil': {
-      id: '/mobil'
-      path: '/mobil'
-      fullPath: '/mobil'
-      preLoaderRoute: typeof MobilRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/kunder': {
-      id: '/kunder'
-      path: '/kunder'
-      fullPath: '/kunder'
-      preLoaderRoute: typeof KunderRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/anbud': {
-      id: '/anbud'
-      path: '/anbud'
-      fullPath: '/anbud'
-      preLoaderRoute: typeof AnbudRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admkost': {
-      id: '/admkost'
-      path: '/admkost'
-      fullPath: '/admkost'
-      preLoaderRoute: typeof AdmkostRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -480,32 +410,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/admkost': {
+      id: '/admkost'
+      path: '/admkost'
+      fullPath: '/admkost'
+      preLoaderRoute: typeof AdmkostRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/tilbud/': {
-      id: '/tilbud/'
-      path: '/tilbud'
-      fullPath: '/tilbud/'
-      preLoaderRoute: typeof TilbudIndexRouteImport
+    '/anbud': {
+      id: '/anbud'
+      path: '/anbud'
+      fullPath: '/anbud'
+      preLoaderRoute: typeof AnbudRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/kalkyle/': {
-      id: '/kalkyle/'
-      path: '/kalkyle'
-      fullPath: '/kalkyle/'
-      preLoaderRoute: typeof KalkyleIndexRouteImport
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/fremdriftsplan/': {
-      id: '/fremdriftsplan/'
-      path: '/fremdriftsplan'
-      fullPath: '/fremdriftsplan/'
-      preLoaderRoute: typeof FremdriftsplanIndexRouteImport
+    '/kunder': {
+      id: '/kunder'
+      path: '/kunder'
+      fullPath: '/kunder'
+      preLoaderRoute: typeof KunderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mobil': {
+      id: '/mobil'
+      path: '/mobil'
+      fullPath: '/mobil'
+      preLoaderRoute: typeof MobilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ordre': {
+      id: '/ordre'
+      path: '/ordre'
+      fullPath: '/ordre'
+      preLoaderRoute: typeof OrdreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/potensielle-kunder': {
+      id: '/potensielle-kunder'
+      path: '/potensielle-kunder'
+      fullPath: '/potensielle-kunder'
+      preLoaderRoute: typeof PotensielleKunderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prosjekter': {
+      id: '/prosjekter'
+      path: '/prosjekter'
+      fullPath: '/prosjekter'
+      preLoaderRoute: typeof ProsjekterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/endringsmeldinger/': {
@@ -515,67 +494,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EndringsmeldingerIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/tilbud/ny': {
-      id: '/tilbud/ny'
-      path: '/tilbud/ny'
-      fullPath: '/tilbud/ny'
-      preLoaderRoute: typeof TilbudNyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tilbud/$id': {
-      id: '/tilbud/$id'
-      path: '/tilbud/$id'
-      fullPath: '/tilbud/$id'
-      preLoaderRoute: typeof TilbudIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/signer/$token': {
-      id: '/signer/$token'
-      path: '/signer/$token'
-      fullPath: '/signer/$token'
-      preLoaderRoute: typeof SignerTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/signer-endring/$token': {
-      id: '/signer-endring/$token'
-      path: '/signer-endring/$token'
-      fullPath: '/signer-endring/$token'
-      preLoaderRoute: typeof SignerEndringTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/kalkyle/ny': {
-      id: '/kalkyle/ny'
-      path: '/kalkyle/ny'
-      fullPath: '/kalkyle/ny'
-      preLoaderRoute: typeof KalkyleNyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/kalkyle/kodebank': {
-      id: '/kalkyle/kodebank'
-      path: '/kalkyle/kodebank'
-      fullPath: '/kalkyle/kodebank'
-      preLoaderRoute: typeof KalkyleKodebankRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/kalkyle/$id': {
-      id: '/kalkyle/$id'
-      path: '/kalkyle/$id'
-      fullPath: '/kalkyle/$id'
-      preLoaderRoute: typeof KalkyleIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/fremdriftsplan/ny': {
-      id: '/fremdriftsplan/ny'
-      path: '/fremdriftsplan/ny'
-      fullPath: '/fremdriftsplan/ny'
-      preLoaderRoute: typeof FremdriftsplanNyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/fremdriftsplan/$id': {
-      id: '/fremdriftsplan/$id'
-      path: '/fremdriftsplan/$id'
-      fullPath: '/fremdriftsplan/$id'
-      preLoaderRoute: typeof FremdriftsplanIdRouteImport
+    '/endringsmeldinger/$id': {
+      id: '/endringsmeldinger/$id'
+      path: '/endringsmeldinger/$id'
+      fullPath: '/endringsmeldinger/$id'
+      preLoaderRoute: typeof EndringsmeldingerIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/endringsmeldinger/ny': {
@@ -585,11 +508,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EndringsmeldingerNyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/endringsmeldinger/$id': {
-      id: '/endringsmeldinger/$id'
-      path: '/endringsmeldinger/$id'
-      fullPath: '/endringsmeldinger/$id'
-      preLoaderRoute: typeof EndringsmeldingerIdRouteImport
+    '/fremdriftsplan/': {
+      id: '/fremdriftsplan/'
+      path: '/fremdriftsplan'
+      fullPath: '/fremdriftsplan/'
+      preLoaderRoute: typeof FremdriftsplanIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fremdriftsplan/$id': {
+      id: '/fremdriftsplan/$id'
+      path: '/fremdriftsplan/$id'
+      fullPath: '/fremdriftsplan/$id'
+      preLoaderRoute: typeof FremdriftsplanIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fremdriftsplan/ny': {
+      id: '/fremdriftsplan/ny'
+      path: '/fremdriftsplan/ny'
+      fullPath: '/fremdriftsplan/ny'
+      preLoaderRoute: typeof FremdriftsplanNyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kalkyle/': {
+      id: '/kalkyle/'
+      path: '/kalkyle'
+      fullPath: '/kalkyle/'
+      preLoaderRoute: typeof KalkyleIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kalkyle/$id': {
+      id: '/kalkyle/$id'
+      path: '/kalkyle/$id'
+      fullPath: '/kalkyle/$id'
+      preLoaderRoute: typeof KalkyleIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kalkyle/kodebank': {
+      id: '/kalkyle/kodebank'
+      path: '/kalkyle/kodebank'
+      fullPath: '/kalkyle/kodebank'
+      preLoaderRoute: typeof KalkyleKodebankRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kalkyle/ny': {
+      id: '/kalkyle/ny'
+      path: '/kalkyle/ny'
+      fullPath: '/kalkyle/ny'
+      preLoaderRoute: typeof KalkyleNyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signer-endring/$token': {
+      id: '/signer-endring/$token'
+      path: '/signer-endring/$token'
+      fullPath: '/signer-endring/$token'
+      preLoaderRoute: typeof SignerEndringTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signer/$token': {
+      id: '/signer/$token'
+      path: '/signer/$token'
+      fullPath: '/signer/$token'
+      preLoaderRoute: typeof SignerTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tilbud/': {
+      id: '/tilbud/'
+      path: '/tilbud'
+      fullPath: '/tilbud/'
+      preLoaderRoute: typeof TilbudIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tilbud/$id': {
+      id: '/tilbud/$id'
+      path: '/tilbud/$id'
+      fullPath: '/tilbud/$id'
+      preLoaderRoute: typeof TilbudIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tilbud/ny': {
+      id: '/tilbud/ny'
+      path: '/tilbud/ny'
+      fullPath: '/tilbud/ny'
+      preLoaderRoute: typeof TilbudNyRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

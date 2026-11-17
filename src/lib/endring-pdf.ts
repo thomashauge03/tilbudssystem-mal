@@ -80,7 +80,7 @@ export function skrivEndringsPdf(
       logo_url: innst?.logo_url ?? "",
       company_org_nr: innst?.company_org_nr ?? "",
       vat_pct: innst?.vat_pct ?? 25,
-      payment_terms: innst?.payment_terms ?? "30 dager netto",
+      payment_terms: innst?.payment_terms ?? "14 dager netto",
       ref_phone: ref?.phone ?? "",
       ref_email: ref?.email ?? "",
       ref_position: ref?.position ?? "",

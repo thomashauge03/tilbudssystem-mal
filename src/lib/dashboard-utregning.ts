@@ -102,7 +102,7 @@ export type Raadata = {
   payments: RaaBetaling[];
   /** Tom når tabellen mangler eller ikke kunne leses. */
   delpostFullfort: RaaFullfort[];
-  /** Fra app_settings, f.eks. «30 dager netto». */
+  /** Fra app_settings, f.eks. «14 dager netto». */
   paymentTerms: string | null;
 };
 
@@ -181,11 +181,11 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
-/** Første tall i «30 dager netto». Ellers 30. */
+/** Første tall i «14 dager netto». Ellers 14, som er standarden. */
 export function betalingsfrist(terms: string | null | undefined) {
   const m = String(terms ?? "").match(/\d+/);
   const n = m ? parseInt(m[0], 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : 30;
+  return Number.isFinite(n) && n > 0 ? n : 14;
 }
 
 // ─── Regler ────────────────────────────────────────────────────────────────

@@ -31,6 +31,7 @@ import {
   andelerPasser,
   gjeldendeAndeler,
   fakturastatus,
+  forsteSending,
   mvaNummer,
   planleggKunder,
   tilTripletexKunde,
@@ -40,6 +41,7 @@ import {
   type AppKunde,
   type TripletexKunde,
   type TripletexFaktura,
+  type TripletexSending,
 } from "./mapping.ts";
 
 const BASER = {
@@ -693,10 +695,30 @@ async function slettDelordre(tx: Tripletex, bruker: SupabaseClient, paymentId: s
 // ─── Synk ───────────────────────────────────────────────────────────────────
 
 /**
+ * Første sending av fakturaen som kom fram, eller null.
+ *
+ * sendHistory står ikke i Tripletex sin API-oversikt, selv om typen den gir
+ * tilbake gjør det. Feiler kallet, skal ikke resten av synken stoppe — da
+ * står delordren bare uten «Sendt» til neste runde.
+ */
+async function sendelogg(tx: Tripletex, fakturaId: number) {
+  try {
+    const svar = await tx.kall("GET", `/invoice/${fakturaId}/sendHistory`, { ingen404: true });
+    return forsteSending((svar?.value ?? null) as TripletexSending[] | null);
+  } catch (e) {
+    console.warn(`sendHistory for faktura ${fakturaId}:`, (e as Error).message);
+    return null;
+  }
+}
+
+/**
  * Henter status for firmaets ordre fra Tripletex og skriver den inn i appen.
  *
  * Kreditert er endelig og hoppes over. Betalt sjekkes fortsatt, fordi en
  * betalt faktura kan bli kreditert etterpå.
+ *
+ * Er fakturaen ikke sendt ennå, leses sendeloggen også. Når den først er
+ * sendt, spørres det ikke mer — da står det fast.
  */
 async function synk(
   db: SupabaseClient,
@@ -708,7 +730,7 @@ async function synk(
   let sporring = db
     .from("payments")
     .select(
-      "id, offer_id, amendment_id, created_at, paid, tripletex_ordre_id, tripletex_status, tripletex_faktura_nr",
+      "id, offer_id, amendment_id, created_at, paid, tripletex_ordre_id, tripletex_status, tripletex_faktura_nr, tripletex_sendt",
     )
     .eq("tenant_id", tenantId)
     .not("tripletex_ordre_id", "is", null)
@@ -761,10 +783,17 @@ async function synk(
     const status = fakturastatus(faktura);
     const betalt = status === "betalt";
     const fakturaNr = faktura?.invoiceNumber != null ? String(faktura.invoiceNumber) : null;
+    // Betalt og kreditert sier mer enn «sendt», så da spørres det ikke — ellers
+    // ville en betalt faktura som aldri ble sendt herfra, blitt spurt om hver
+    // halvtime for alltid.
+    const sending = faktura && !r.tripletex_sendt && (status === "fakturert" || status === "delvis_betalt")
+      ? await sendelogg(tx, faktura.id)
+      : null;
     const uendret =
       status === r.tripletex_status &&
       fakturaNr === (r.tripletex_faktura_nr ?? null) &&
-      betalt === r.paid;
+      betalt === r.paid &&
+      !sending;
 
     await db
       .from("payments")
@@ -777,6 +806,7 @@ async function synk(
               tripletex_faktura_dato: faktura?.invoiceDate ?? null,
               paid: betalt,
               paid_date: betalt ? (r.paid ? undefined : idag) : null,
+              ...(sending ? { tripletex_sendt: sending.sendt, tripletex_sendt_til: sending.til } : {}),
               tripletex_synket: new Date().toISOString(),
             },
       )

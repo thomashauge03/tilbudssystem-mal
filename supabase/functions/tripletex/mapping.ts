@@ -250,6 +250,43 @@ export function fakturastatus(f: TripletexFaktura | null | undefined): Tripletex
   return "fakturert";
 }
 
+/** Ett forsøk på å sende fakturaen, fra GET /invoice/{id}/sendHistory. */
+export interface TripletexSending {
+  sentAt?: string | null;
+  method?: string | null;
+  recipient?: string | null;
+  status?: string | null;
+}
+
+// SENT: levert videre uten kvittering. DELIVERED: kom fram. DISPUTED: kom fram,
+// men kunden er uenig i innholdet. PENDING er ikke sendt ennå, og BOUNCED,
+// BLOCKED, DECLINED og FAILED kom aldri fram.
+const SENDT_OK = new Set(["SENT", "DELIVERED", "DISPUTED"]);
+
+const KANAL: Record<string, string> = {
+  EHF: "EHF",
+  EFAKTURA: "eFaktura",
+  AVTALEGIRO: "AvtaleGiro",
+  VIPPS: "Vipps",
+  PAPER: "papir",
+};
+
+/**
+ * Første sending som kom fram til kunden, eller null. `til` er e-postadressen,
+ * eller kanalen når fakturaen gikk på EHF, eFaktura, papir og lignende.
+ */
+export function forsteSending(
+  logg: TripletexSending[] | null | undefined,
+): { sendt: string; til: string | null } | null {
+  const ok = (logg ?? [])
+    .filter((s) => !!s.sentAt && SENDT_OK.has(String(s.status ?? "").toUpperCase()))
+    .sort((a, b) => Date.parse(a.sentAt!) - Date.parse(b.sentAt!));
+  const f = ok[0];
+  if (!f) return null;
+  const til = f.recipient?.trim() || KANAL[String(f.method ?? "").toUpperCase()] || null;
+  return { sendt: new Date(f.sentAt!).toISOString(), til };
+}
+
 /** Hva ordren blir på, eks. mva, regnet slik Tripletex regner linjene. */
 function ordresum(linjer: Ordrelinje[]): number {
   return kroner(

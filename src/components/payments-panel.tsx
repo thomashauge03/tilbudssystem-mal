@@ -31,6 +31,21 @@ const STATUS_STIL: Record<Tripletexstatus, string> = {
   kreditert: "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
 };
 
+const SENDT_STIL =
+  "border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300";
+
+/**
+ * Merket på delordren. En fakturert ordre som er sendt til kunden, står som
+ * «Sendt»: det er det neste som skjer etter fakturert, og det anleggslederen
+ * vil vite er om kunden har fått fakturaen. Betalt og kreditert sier mer enn
+ * sendt, så de beholder sitt eget merke.
+ */
+function merke(p: { tripletex_status?: string | null; tripletex_sendt?: string | null }) {
+  const status = p.tripletex_status as Tripletexstatus;
+  if (status === "fakturert" && p.tripletex_sendt) return { tekst: "Sendt", stil: SENDT_STIL };
+  return { tekst: STATUS_TEKST[status] ?? p.tripletex_status ?? "", stil: STATUS_STIL[status] ?? "" };
+}
+
 const getToday = () => new Date().toISOString().slice(0, 10);
 
 // Summen skrives tilbake på tilbudet/endringsmeldingen. Feiler lesingen, ville en
@@ -216,10 +231,13 @@ export function PaymentsPanel({
                           Ordre {p.tripletex_ordre_nr}
                           {p.tripletex_faktura_nr ? ` · faktura ${p.tripletex_faktura_nr}` : ""}
                           {p.tripletex_faktura_dato ? ` (${fmtDate(p.tripletex_faktura_dato)})` : ""}
+                          {p.tripletex_sendt
+                            ? ` · sendt ${fmtDate(p.tripletex_sendt)}${p.tripletex_sendt_til ? ` til ${p.tripletex_sendt_til}` : ""}`
+                            : ""}
                         </span>
                         {p.tripletex_status && (
-                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${STATUS_STIL[p.tripletex_status as Tripletexstatus] ?? ""}`}>
-                            {STATUS_TEKST[p.tripletex_status as Tripletexstatus] ?? p.tripletex_status}
+                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${merke(p).stil}`}>
+                            {merke(p).tekst}
                           </span>
                         )}
                       </>

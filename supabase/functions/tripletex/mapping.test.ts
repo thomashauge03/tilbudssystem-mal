@@ -9,6 +9,7 @@ import {
   andelerPasser,
   gjeldendeAndeler,
   fakturastatus,
+  forsteSending,
   mvaNummer,
   kundefelt,
   planleggKunder,
@@ -294,6 +295,46 @@ sjekk(
   "kreditert vinner over betalt",
   fakturastatus({ id: 1, amount: 1250, amountOutstanding: 0, isCredited: true }),
   "kreditert",
+);
+
+// ─── Er fakturaen sendt? ────────────────────────────────────────────────────
+
+sjekk("ingen logg: ikke sendt", forsteSending([]), null);
+sjekk("null: ikke sendt", forsteSending(null), null);
+sjekk(
+  "e-post levert: sendt til adressen",
+  forsteSending([
+    { sentAt: "2026-11-17T18:32:29+01:00", method: "EMAIL", recipient: "kunde@example.no", status: "DELIVERED" },
+  ]),
+  { sendt: "2026-11-17T17:32:29.000Z", til: "kunde@example.no" },
+);
+sjekk(
+  "avvist e-post teller ikke",
+  forsteSending([
+    { sentAt: "2026-11-17T18:32:29+01:00", method: "EMAIL", recipient: "feil@example.no", status: "BOUNCED" },
+  ]),
+  null,
+);
+sjekk(
+  "venter: ikke sendt ennå",
+  forsteSending([{ sentAt: "2026-11-17T18:32:29+01:00", method: "EMAIL", recipient: "a@b.no", status: "PENDING" }]),
+  null,
+);
+sjekk(
+  "feilet først, så EHF: første som kom fram, med kanal",
+  forsteSending([
+    { sentAt: "2026-11-18T09:00:00+01:00", method: "EHF", recipient: null, status: "SENT" },
+    { sentAt: "2026-11-17T09:00:00+01:00", method: "EMAIL", recipient: "feil@example.no", status: "FAILED" },
+  ]),
+  { sendt: "2026-11-18T08:00:00.000Z", til: "EHF" },
+);
+sjekk(
+  "to vellykkede: den første",
+  forsteSending([
+    { sentAt: "2026-11-20T10:00:00+01:00", method: "EMAIL", recipient: "ny@example.no", status: "SENT" },
+    { sentAt: "2026-11-17T10:00:00+01:00", method: "EMAIL", recipient: "forste@example.no", status: "DELIVERED" },
+  ]),
+  { sendt: "2026-11-17T09:00:00.000Z", til: "forste@example.no" },
 );
 
 sjekk("mva 25 % er kode 3", mvaNummer(25), "3");
